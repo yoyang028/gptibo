@@ -38,6 +38,8 @@ npx vite --config services/storefront/vite.config.ts
 
 见 [后端运行说明](services/storefront/README.md)。需要 Go 1.26+ 和独立 PostgreSQL 数据库，或使用 Docker Compose。默认不启用邮件和任何真实交易渠道。
 
+Windows 原生本地运行的脚本、文件邮件收件箱和登录步骤见 [本地搭建说明](docs/LOCAL_SETUP.md)，实际测试范围与未接入功能见 [第一轮本地验收报告](docs/LOCAL_ACCEPTANCE.md)。
+
 ```sh
 cd services/storefront
 go test ./...

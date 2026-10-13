@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"net"
 	"net/netip"
 	"net/url"
 	"os"
@@ -139,6 +140,25 @@ func LoadHTTP() (HTTP, error) {
 	enabled := strings.ToLower(os.Getenv("MAIL_ENABLED"))
 	if enabled != "" && enabled != "false" && enabled != "true" {
 		return h, errors.New("MAIL_ENABLED must be true or false")
+	}
+	if directory := os.Getenv("LOCAL_MAIL_DIR"); directory != "" && !h.Rehearsal {
+		listen := os.Getenv("LISTEN_ADDR")
+		if listen == "" {
+			listen = "127.0.0.1:8093"
+		}
+		host, _, listenErr := net.SplitHostPort(listen)
+		address := net.ParseIP(host)
+		if !local || listenErr != nil || address == nil || !address.IsLoopback() || enabled == "true" {
+			return h, errors.New("LOCAL_MAIL_DIR requires a loopback origin and listener, with MAIL_ENABLED disabled")
+		}
+		if h.Auth.Secret == "" {
+			return h, errors.New("AUTH_SECRET required before enabling local mail")
+		}
+		sender, e := mailer.NewLocalMailbox(directory, os.Getenv("MAIL_FROM"), h.Origin)
+		if e != nil {
+			return h, e
+		}
+		h.Auth.Sender = sender
 	}
 	if enabled == "true" && !h.Rehearsal {
 		if h.Auth.Secret == "" {

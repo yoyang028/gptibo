@@ -13,9 +13,13 @@ export default defineConfig({
     },
   }],
   resolve: { alias: { '@': fileURLToPath(new URL('../../src', import.meta.url)) } },
+  // Local tools, mailboxes and test artifacts may contain unrelated HTML files.
+  optimizeDeps: { entries: [fileURLToPath(new URL('../../index.html', import.meta.url))] },
   build: { outDir: 'services/storefront/.preview', emptyOutDir: true },
   server: {
     host: '127.0.0.1', port: 5175, strictPort: true,
+    // PostgreSQL and Go caches change frequently and are not frontend inputs.
+    watch: { ignored: ['**/artifacts/**', '**/services/storefront/.preview/**'] },
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8093', changeOrigin: true,
