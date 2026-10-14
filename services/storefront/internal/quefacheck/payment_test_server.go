@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"image/png"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -248,7 +249,7 @@ func (s *PaymentTestServer) request(ctx context.Context, path string, body *stri
 
 func validateTestOrder(order paymentTestOrder, merchant, knownID string) error {
 	_, expErr := time.Parse(time.RFC3339Nano, order.Expires)
-	if !paymentID.MatchString(order.ID) || order.Merchant != merchant || knownID != "" && order.ID != knownID || order.Purpose != "payment_test" || order.Product != "payment_test_1_cny" || order.Quantity != 1 || order.Sale != "1.00" || order.Supply != "0.00" || order.Margin != "0.00" || order.Currency != "CNY" || order.Collection != "platform_collect" || order.Scope != "retail" || order.Fulfillment != nil || order.Delivery != nil || order.FulfillmentURL != nil || order.Voucher != nil || order.FulfillmentStatus != nil || order.Fallback || expErr != nil || !slices.Contains([]string{"pending", "paid", "expired", "closed", "refunded", "partially_refunded"}, order.Payment) {
+	if !paymentID.MatchString(order.ID) || order.Merchant != merchant || knownID != "" && order.ID != knownID || order.Purpose != "payment_test" || order.Product != "payment_test_1_cny" || order.Quantity != 1 || order.Sale != "1.00" || order.Supply != "1.00" || order.Margin != "0.00" || order.Currency != "CNY" || order.Collection != "platform_collect" || order.Scope != "retail" || order.Fulfillment != nil || order.Delivery != nil || order.FulfillmentURL != nil || order.Voucher != nil || order.FulfillmentStatus != nil || order.Fallback || expErr != nil || !slices.Contains([]string{"pending", "paid", "expired", "closed", "refunded", "partially_refunded"}, order.Payment) {
 		return errors.New("supplier response is not the bound one-CNY payment-only order")
 	}
 	return nil
@@ -539,6 +540,12 @@ func (s *PaymentTestServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			err = s.refresh(ctx)
 		}
 		if err != nil {
+			var apiError *recharge.APIError
+			if errors.As(err, &apiError) {
+				log.Printf("one-CNY action %s: supplier status=%d code=%s request_id=%s", r.URL.Path, apiError.HTTPStatus, apiError.Code, apiError.RequestID)
+			} else {
+				log.Printf("one-CNY action %s: %v", r.URL.Path, err)
+			}
 			http.Error(w, "本次请求尚未完成，请保留原单并刷新核对。不会自动另开订单。", 503)
 			return
 		}

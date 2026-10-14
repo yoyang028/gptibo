@@ -52,7 +52,7 @@ func newPaymentFixture(t *testing.T) *paymentFixture {
 	if err = os.WriteFile(filepath.Join(directory, "callback.json"), []byte(`{"notify_url":"https://callback.example.test/api/recharge/webhook"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	f := &paymentFixture{server: s, order: paymentTestOrder{ID: "ord_fixture_one_cny", Merchant: s.state.Merchant, Purpose: "payment_test", Product: "payment_test_1_cny", Quantity: 1, Sale: "1.00", Supply: "0.00", Margin: "0.00", Currency: "CNY", Collection: "platform_collect", Scope: "retail", Payment: "pending", Expires: time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339)}}
+	f := &paymentFixture{server: s, order: paymentTestOrder{ID: "ord_fixture_one_cny", Merchant: s.state.Merchant, Purpose: "payment_test", Product: "payment_test_1_cny", Quantity: 1, Sale: "1.00", Supply: "1.00", Margin: "0.00", Currency: "CNY", Collection: "platform_collect", Scope: "retail", Payment: "pending", Expires: time.Now().Add(10 * time.Minute).UTC().Format(time.RFC3339)}}
 	var imageBytes bytes.Buffer
 	if err = png.Encode(&imageBytes, image.NewGray(image.Rect(0, 0, 21, 21))); err != nil {
 		t.Fatal(err)
@@ -292,6 +292,7 @@ func TestOneCnyRejectsWrongPurposeAmountAndCode(t *testing.T) {
 		{"agent collect", func(f *paymentFixture) { f.order.Collection = "agent_collect" }},
 		{"commission", func(f *paymentFixture) { f.order.Margin = "0.10" }},
 		{"supply charge", func(f *paymentFixture) { f.order.Supply = "110.00" }},
+		{"wrong zero test cost", func(f *paymentFixture) { f.order.Supply = "0.00" }},
 		{"fulfillment", func(f *paymentFixture) { v := "direct"; f.order.Fulfillment = &v }},
 		{"voucher", func(f *paymentFixture) { v := "FIXTURE"; f.order.Voucher = &v }},
 		{"wrong code amount", func(f *paymentFixture) { f.code.Amount = "2.00" }},
