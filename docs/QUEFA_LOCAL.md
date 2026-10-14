@@ -128,4 +128,10 @@
 
 本地准备验收：39 项检查工具测试及子用例与 64 项原充值客户端测试及子用例全部通过，失败和跳过测试均为 0；Go vet、命令入口构建通过。已运行的两个监听均只绑定 `127.0.0.1`，8768 上所有 GET 探测均为 404。浏览器表单和回执展示采用拦截的合成响应测试，未保存真实回调密钥，也未验证供应商发来的公网通知。证据位于 `artifacts/local/evidence/quefa-webhook-prep/`。
 
-为下一步测试准备了 Cloudflare 官方便携客户端，放在 D 盘 `artifacts/local/tools/cloudflared/`，校验官方发布的 SHA256，仅执行版本与帮助检查，没有创建公网通道或系统服务。拟使用 [Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) 为 8768 测试端口生成临时 HTTPS 地址；8767 密钥页和商城端口不作为代理目标。由于初始任务限定本地搭建，实际开启这个公网入口前需取得用户明确同意。当前没有可登记的公网回调 URL，也未在供应商登记回调或触发真实支付、采购、充值。
+Cloudflare 官方便携客户端放在 D 盘 `artifacts/local/tools/cloudflared/`，已校验官方发布的 SHA256，不安装系统服务。[Cloudflare Quick Tunnel](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) 为 8768 测试端口提供临时 HTTPS 地址；8767 密钥页和商城端口不作为代理目标。这个入口仅用于测试通知，不能作为商城上线或正式业务回调已经完成的证明。
+
+2026-10-14 用户明确同意后，已启动临时通道，连接日志确认隧道注册成功，并通过公开 HTTPS 地址完成 8 项范围检查：6 个 GET 请求（根路径、后台、状态、密钥控制、通知状态和回调路径）全部返回 404；缺少签名头的 POST 返回 401；业务事件 `order.paid` 返回 403。8767 本机页面返回 200，两个接收工具端口仍只监听 `127.0.0.1`。这验证了公网请求可抵达隔离接收端及其访问范围，尚未验证供应商测试通知的签名。
+
+当次临时完整回调地址及探测结果仅保存在被 Git 忽略的 `artifacts/local/evidence/quefa-webhook-prep/public-tunnel-result.json`，进程身份保存在 `artifacts/local/run/quefa-webhook-tunnel-process.json`，日志在 `artifacts/local/logs/quefa-webhook-tunnel*`。地址随临时通道生命周期变化，不写入源码或正式商城配置；停止进程前必须核对记录中的 PID、可执行路径和启动时间，避免误停其他进程。
+
+下一步由用户在 Quefa 回调管理中登记当次完整 HTTPS 地址，取得独立 Webhook Secret，并在 8767 页面下方点击“加密保存回调密钥”；如可选择订阅事件，仅选择 `webhook.test`。随后通过供应商工作台发送测试通知，核对本机页面显示“测试通知验签通过”和供应商投递结果为 2xx。当前尚未保存真实回调密钥或收到供应商验签成功的通知，未创建支付、采购、充值或退款交易。测试结束后停止当次隧道，并停用供应商登记的临时地址。
