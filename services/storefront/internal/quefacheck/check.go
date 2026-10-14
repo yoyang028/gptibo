@@ -35,15 +35,16 @@ type Check struct {
 }
 
 type Result struct {
-	CheckedAt string  `json:"checked_at"`
-	APIBase   string  `json:"api_base"`
-	Passed    bool    `json:"passed"`
-	Tier      string  `json:"tier,omitempty"`
-	Supply    string  `json:"plus_supply_price,omitempty"`
-	Checks    []Check `json:"checks"`
-	ErrorCode string  `json:"error_code,omitempty"`
-	HTTPCode  int     `json:"http_status,omitempty"`
-	RequestID string  `json:"request_id,omitempty"`
+	CheckedAt string   `json:"checked_at"`
+	APIBase   string   `json:"api_base"`
+	Passed    bool     `json:"passed"`
+	Tier      string   `json:"tier,omitempty"`
+	Supply    string   `json:"plus_supply_price,omitempty"`
+	Methods   []string `json:"payment_methods,omitempty"`
+	Checks    []Check  `json:"checks"`
+	ErrorCode string   `json:"error_code,omitempty"`
+	HTTPCode  int      `json:"http_status,omitempty"`
+	RequestID string   `json:"request_id,omitempty"`
 }
 
 // readOnlyTransport is a final guard, even if a future caller changes Request.
@@ -54,7 +55,7 @@ type readOnlyTransport struct {
 }
 
 func (t readOnlyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if r.Method != http.MethodGet || r.URL.Scheme != t.base.Scheme || r.URL.Host != t.base.Host || r.URL.User != nil || r.URL.RawQuery != "" || r.URL.Fragment != "" || r.URL.RawPath != "" || r.ContentLength != 0 || r.Body != nil && r.Body != http.NoBody || !slices.Contains([]string{"/v1/agent-profile", "/v1/products"}, r.URL.Path) {
+	if r.Method != http.MethodGet || r.URL.Scheme != t.base.Scheme || r.URL.Host != t.base.Host || r.URL.User != nil || r.URL.RawQuery != "" || r.URL.Fragment != "" || r.URL.RawPath != "" || r.ContentLength != 0 || r.Body != nil && r.Body != http.NoBody || !slices.Contains([]string{"/v1/agent-profile", "/v1/products", "/v1/payment-methods"}, r.URL.Path) {
 		return nil, errors.New("read-only supplier check rejected request")
 	}
 	return t.next.RoundTrip(r)
@@ -142,6 +143,19 @@ func Probe(ctx context.Context, base string, credentials Credentials, transport 
 	if !found {
 		add("Plus 商品目录", false, "", "商品目录没有返回 ChatGPT Plus。")
 	}
+	var methods []struct {
+		Code string `json:"code"`
+	}
+	if err = client.Request(ctx, "/payment-methods", nil, "", &methods); err != nil {
+		return failed(result, "收款通道查询", err)
+	}
+	add("收款通道查询", true, "收款通道查询已返回有效数据。", "")
+	for _, method := range methods {
+		if slices.Contains([]string{"alipay", "usdt"}, method.Code) && !slices.Contains(result.Methods, method.Code) {
+			result.Methods = append(result.Methods, method.Code)
+		}
+	}
+	add("支付宝收款通道", slices.Contains(result.Methods, "alipay"), "供应商当前开放支付宝收款。", "供应商没有返回已启用的支付宝通道，需对方核对支付配置。")
 	result.Passed = true
 	for _, check := range result.Checks {
 		result.Passed = result.Passed && check.State == "pass"

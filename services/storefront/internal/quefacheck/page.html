@@ -6,8 +6,8 @@ body{font:16px/1.65 system-ui,sans-serif;background:#f6f7f9;color:#20242c;max-wi
 </style>
 <main>
 <h1>Quefa 账户与商品检查</h1>
-<p>查询当前账号的接口权限、ChatGPT Plus 授权和供货价。</p>
-<p class="muted">目标 API：<code>{{.Base}}</code><br>仅发送账户和商品的两个 GET 查询。不会创建订单、付款、采购、充值或退款，也不会修改现有商城配置。</p>
+<p>查询当前账号的接口权限、ChatGPT Plus 授权、供货价和可用收款通道。</p>
+<p class="muted">目标 API：<code>{{.Base}}</code><br>仅查询账户、商品与收款通道（3 个 GET 接口）。不会创建订单、付款、采购、充值或退款，也不会修改现有商城配置。</p>
 <p class="muted">凭据仅提交到本机，并由当前 Windows 用户加密保存在 D 盘。请使用 Quefa 服务端应用凭据。</p>
 <form id="credentials" autocomplete="off">
 <label for="partner">partner_id（代理标识）</label><input id="partner" name="partner_id" required spellcheck="false" maxlength="128" autocomplete="off">
@@ -29,6 +29,7 @@ function show(result) {
   const parts = [new Date(result.checked_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai'})];
   if (result.tier) parts.push('账户等级：' + result.tier);
   if (result.plus_supply_price) parts.push('Plus 供货价：' + result.plus_supply_price);
+  if (result.payment_methods?.length) parts.push('已启用收款通道：' + result.payment_methods.join('、'));
   if (result.error_code) parts.push('错误码：' + result.error_code);
   if (result.http_status) parts.push('HTTP ' + result.http_status);
   if (result.request_id) parts.push('请求编号：' + result.request_id);

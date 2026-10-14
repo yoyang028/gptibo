@@ -16,7 +16,7 @@ type transportFunc func(*http.Request) (*http.Response, error)
 
 func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestProbeSignsOnlyTwoReadsAndSanitizesOutput(t *testing.T) {
+func TestProbeSignsOnlyAllowedReadsAndSanitizesOutput(t *testing.T) {
 	credentials := Credentials{"pt_fixture", "key_fixture", "fixture_only_secret_for_checks"}
 	profile := map[string]any{
 		"merchant":            map[string]any{"partnerId": credentials.Partner, "status": "active", "name": "DO_NOT_PERSIST_PRIVATE_NAME"},
@@ -24,7 +24,7 @@ func TestProbeSignsOnlyTwoReadsAndSanitizesOutput(t *testing.T) {
 		"productSupplyPrices": map[string]string{PlusCode: "11000"}, "collectionModes": []string{"platform_collect"},
 	}
 	product := recharge.Product{Code: PlusCode, Supply: "110.00", Currency: "CNY", Quantity: 1, Available: true, Modes: []string{"auto_recharge"}}
-	for _, name := range []string{"valid", "suspended", "identity mismatch", "redemption disabled", "missing payment code flag", "no collection mode", "unauthorized Plus", "price mismatch", "unavailable", "missing product", "duplicate product", "wrong currency", "no auto recharge"} {
+	for _, name := range []string{"valid", "suspended", "identity mismatch", "redemption disabled", "missing payment code flag", "no collection mode", "unauthorized Plus", "price mismatch", "unavailable", "missing product", "duplicate product", "wrong currency", "no auto recharge", "no payment channels", "USDT only", "payment channel query rejected"} {
 		t.Run(name, func(t *testing.T) {
 			// Deep copy the wire fixture; do not share mutable maps between cases.
 			raw, _ := json.Marshal(profile)
@@ -71,6 +71,17 @@ func TestProbeSignsOnlyTwoReadsAndSanitizesOutput(t *testing.T) {
 					data = p
 				case "/v1/products":
 					data = products
+				case "/v1/payment-methods":
+					data = []map[string]string{{"code": "alipay"}}
+					if name == "no payment channels" {
+						data = []map[string]string{}
+					}
+					if name == "USDT only" {
+						data = []map[string]string{{"code": "usdt"}}
+					}
+					if name == "payment channel query rejected" {
+						return &http.Response{StatusCode: 403, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"api_access_required"}}`))}, nil
+					}
 				default:
 					t.Fatal("unexpected endpoint")
 				}
@@ -81,7 +92,7 @@ func TestProbeSignsOnlyTwoReadsAndSanitizesOutput(t *testing.T) {
 				}
 				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(body)))}, nil
 			}))
-			if result.Passed != (name == "valid") || len(paths) != 2 || paths[0] != "/v1/agent-profile" || paths[1] != "/v1/products" {
+			if result.Passed != (name == "valid") || len(paths) != 3 || paths[0] != "/v1/agent-profile" || paths[1] != "/v1/products" || paths[2] != "/v1/payment-methods" {
 				t.Fatal("incorrect check result or requests", result)
 			}
 			output, _ := json.Marshal(result)
@@ -90,7 +101,7 @@ func TestProbeSignsOnlyTwoReadsAndSanitizesOutput(t *testing.T) {
 					t.Fatal("private value in result")
 				}
 			}
-			if name == "valid" && (result.Supply != "110.00 CNY" || result.Tier != "partner") {
+			if name == "valid" && (result.Supply != "110.00 CNY" || result.Tier != "partner" || len(result.Methods) != 1 || result.Methods[0] != "alipay") {
 				t.Fatal("missing price or tier")
 			}
 		})
@@ -104,6 +115,7 @@ func TestReadOnlyTransportRejectsWritesOtherEndpointsAndDestinations(t *testing.
 	for _, tc := range []struct{ method, address, body string }{
 		{"POST", "https://supplier.example.test/v1/agent-profile", "{}"},
 		{"POST", "https://supplier.example.test/v1/orders", "{}"},
+		{"POST", "https://supplier.example.test/v1/payment-methods", "{}"},
 		{"GET", "https://supplier.example.test/v1/orders", ""},
 		{"GET", "https://other.example.test/v1/products", ""},
 		{"GET", "http://supplier.example.test/v1/products", ""},
