@@ -62,6 +62,8 @@ export interface Env {
   RECHARGE_PRODUCT_MAP?: string
   RECHARGE_COLLECTION_MODE?: string
   RECHARGE_CHECKOUT_ENABLED?: string
+  /** Query-only integration validation; blocks every supplier write, including old orders. */
+  RECHARGE_READ_ONLY?: string
   XGIFT_API_BASE?: string
   XGIFT_USER_ID?: string
   XGIFT_KEY_ID?: string

@@ -56,29 +56,28 @@ function setup(t: Context) {
   const calls: { path: string; body: string; key: string; nonce: string }[] = []
   const products = [{ product_code: 'demo_plus', supply_price: '110.00', max_sale_price: '159.00', currency: 'CNY', max_quantity: 1, available: true, delivery_modes: ['auto_recharge', 'cdk'] }]
   const remoteOrder = () => ({ order_id: 'ord_test', merchant_order_no: merchant, product_code: products[0].product_code, quantity: 1, sale_amount: retail, supply_amount: products[0].supply_price, merchant_margin: Math.max(0, Number(retail) - Number(products[0].supply_price) - (refundStatus === 'succeeded' ? Number(refundAmount) : 0)).toFixed(2), currency: 'CNY', collection_mode: 'platform_collect', payment_scope: 'retail', delivery_mode: 'auto_recharge', payment_status: payment, qr_payload: faceToFace ? 'https://recharge.example.invalid/payments/ord_test?token=public-test-token-123456' : 'https://recharge.example.invalid/pay/example', expires_at: expiry, refunded_amount: refundStatus === 'succeeded' ? refundAmount : '0.00' })
-  const redemption = () => ({ redemption_id: redemptionId, order_id: 'ord_test', status: taskStatus, failure_code: taskStatus === 'failed' ? 'session_invalid' : null, fallback_recharge_available: fallback, retry_allowed: fallback, next_action: fallback ? 'resubmit' : ['queued','running'].includes(taskStatus) ? 'wait' : 'none', account_email_masked: 't***@example.test', finished_at: ['succeeded','failed'].includes(taskStatus) ? new Date().toISOString() : null, message: 'PRIVATE-TOKEN-NOT-FOR-STORAGE' })
+  const redemption = () => ({ redemption_id: redemptionId, order_id: 'ord_test', attempt_no: Math.max(1, redemptionKeys.size), status: taskStatus, failure_code: taskStatus === 'failed' ? 'session_invalid' : null, fallback_recharge_available: fallback, retry_allowed: fallback, next_action: fallback ? 'resubmit' : ['queued','running'].includes(taskStatus) ? 'wait' : 'none', account_email_masked: 't***@example.test', finished_at: ['succeeded','failed'].includes(taskStatus) ? new Date().toISOString() : null, message: 'PRIVATE-TOKEN-NOT-FOR-STORAGE' })
   const remoteRefund = () => ({ refund_id: 'rf_test', order_id: 'ord_test', merchant_refund_no: refundNo, amount: refundAmount, status: refundStatus })
   let override: ((path: string, raw: string) => Response | Promise<Response | undefined> | undefined) | undefined
   t.mock.method(globalThis, 'fetch', async (input: string, options: RequestInit) => {
     const url = new URL(input); const headers = new Headers(options.headers); const raw = String(options.body ?? '')
     assert.equal(url.origin, 'https://recharge.example.invalid'); assert.equal(options.redirect, 'manual')
-    if (url.pathname.startsWith('/payments/')) {
-      assert.equal(url.search, '?token=public-test-token-123456')
-      assert.equal(headers.get('X-Signature'), null)
-      calls.push({ path: url.pathname, body: raw, key: '', nonce: '' })
-      const changed = await override?.(url.pathname, raw); if (changed) return changed
-      if (url.pathname.endsWith('/start')) { assert.equal(options.method, 'POST'); qr = 'https://qr.alipay.com/bax01234567890' }
-      else assert.equal(options.method, 'GET')
-      return Response.json({ status: payment, amount: retail, expires_at: expiry, expired: false, can_start: true, qr_code: qr, delivery_mode: 'auto_recharge', ...quotePatch })
-    }
     assert.equal(headers.get('X-Partner-Id'), env.RECHARGE_PARTNER_ID); assert.equal(headers.get('X-Key-Id'), env.RECHARGE_KEY_ID)
     const canonical = [options.method, url.pathname, '', headers.get('X-Timestamp'), headers.get('X-Nonce'), headers.get('X-Key-Id'), headers.get('Idempotency-Key') ?? '', digest(raw)].join('\n')
     assert.equal(headers.get('X-Signature'), mac(canonical))
     calls.push({ path: url.pathname, body: raw, key: headers.get('Idempotency-Key') ?? '', nonce: headers.get('X-Nonce')! })
     const changed = await override?.(url.pathname, raw); if (changed) return changed
     let data: unknown
-    if (url.pathname === '/v1/products') data = products
+    if (url.pathname === '/v1/agent-profile') data = { merchant: { partnerId: env.RECHARGE_PARTNER_ID, status: 'active' }, profile: { customRedemptionEnabled: true }, collectionModes: ['platform_collect'], productSupplyPrices: Object.fromEntries(products.map(p => [p.product_code, String(Math.round(Number(p.supply_price) * 100))])) }
+    else if (url.pathname === '/v1/products') data = products
     else if (url.pathname === '/v1/payment-methods') data = [{ code: 'alipay' }]
+    else if (/^\/v1\/orders\/[A-Za-z0-9_-]+\/payment-code$/.test(url.pathname)) {
+      const id = url.pathname.split('/')[3]
+      assert.equal(options.method, 'POST'); assert.equal(raw, '{}'); assert.equal(headers.get('Idempotency-Key'), 'paycode:' + id)
+      qr ??= 'https://qr.alipay.com/bax01234567890'
+      data = { order_id: id, merchant_order_no: db.prepare('SELECT order_id FROM recharge_orders WHERE remote_id=?').get(id)?.order_id ?? merchant, amount: retail, currency: 'CNY', payment_status: payment, payment_code_type: 'alipay_precreate', payment_code: qr, expires_at: expiry, ...quotePatch }
+    }
+    else if (/^\/v1\/orders\/[A-Za-z0-9_-]+\/fulfillments$/.test(url.pathname)) data = db.prepare('SELECT remote_id fulfillment_id,attempt_no FROM recharge_redemptions WHERE remote_id IS NOT NULL').all().map(r => ({ ...r, order_id: url.pathname.split('/')[3] }))
     else if (url.pathname === '/v1/orders' && options.method === 'POST') { const payload = JSON.parse(raw); merchant = payload.merchant_order_no; retail = payload.sale_amount; data = remoteOrder() }
     else if (url.pathname === '/v1/orders/ord_test') data = remoteOrder()
     else if (url.pathname === '/v1/redemptions' && options.method === 'POST') { const key = headers.get('Idempotency-Key')!; if (!redemptionKeys.has(key)) redemptionKeys.set(key, redemptionKeys.size === 0 ? 'ful_test' : 'ful_test_' + (redemptionKeys.size + 1)); redemptionId = redemptionKeys.get(key)!; data = redemption() }
@@ -99,7 +98,7 @@ function setup(t: Context) {
     return '__Host-ymx_partner=' + token
   }
   const notice = (id: string) => {
-    const stamp = String(Math.floor(Date.now()/1000)); const raw = JSON.stringify({ event_id: id, type: 'refund.succeeded' })
+    const stamp = String(Math.floor(Date.now()/1000)); const raw = JSON.stringify({ event_id: id, type: 'refund.succeeded', data: { order_id: 'ord_test' } })
     return worker.fetch(new Request('https://shop.example.invalid/api/recharge/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Quefa-Event': 'refund.succeeded', 'X-Quefa-Event-Id': id, 'X-Quefa-Delivery': 'dlv_'+id, 'X-Quefa-Timestamp': stamp, 'X-Quefa-Signature': `t=${stamp},v1=${mac(stamp+'.'+raw,webhookSecret)}` }, body: raw }), env)
   }
   return { db, env, call, buyer, create, query, submit, login, partner, notice, calls, products, remoteOrder, redemption, faceToFace: () => { faceToFace = true }, quote: (patch: Record<string, unknown>) => { quotePatch = patch }, setExpiry: (value: number) => { expiry = new Date(value).toISOString() }, setQr: (value: string | null) => { qr = value }, setPayment: (v: string) => { payment = v }, setTask: (v: string, retry = false) => { taskStatus = v; fallback = retry }, setRefund: (v: string) => { refundStatus = v }, override: (v: typeof override) => { override = v } }
@@ -476,12 +475,12 @@ test('blocked pending orders cannot create or expose payment entrances, while an
   await s.query(order.id,buyer)
   let current=await getOrder(s.env,order.id)
   assert.equal((await s.call(`/api/admin/orders/${order.id}/actions`,{action:'redemption-control',blocked:true,note:'作废不退款',version:current.version},admin)).status,200)
-  const starts=s.calls.filter(c=>c.path==='/payments/ord_test/start').length
+  const starts=s.calls.filter(c=>c.path==='/v1/orders/ord_test/payment-code').length
   const response=await s.query(order.id,buyer)
   assert.equal(response.status,200)
   const visible=(await response.json()).order
   assert.equal(visible.fulfillment.paymentQr,null); assert.equal(visible.fulfillment.paymentUrl,null)
-  assert.equal(s.calls.filter(c=>c.path==='/payments/ord_test/start').length,starts)
+  assert.equal(s.calls.filter(c=>c.path==='/v1/orders/ord_test/payment-code').length,starts)
   s.setPayment('paid'); await s.query(order.id,buyer)
   current=await getOrder(s.env,order.id)
   assert.equal(current.payment_status,'paid'); assert.equal(current.redemption_blocked,1)
@@ -502,110 +501,94 @@ test('Alipay 当面付 validates and renders only the real Alipay QR payload', (
   for (const payload of ['https://recharge.example.invalid/payments/ord_test', 'https://qr.alipay.com.attacker.test/bax01234567890', 'http://qr.alipay.com/bax01234567890', 'https://user@qr.alipay.com/bax01234567890', 'https://qr.alipay.com/bax01234567890?redirect=evil', 'https://qr.alipay.com/bax01234567890#evil', 'javascript:alert(1)']) assert.throws(() => alipayQr(payload))
 })
 
-test('platform 当面付 creates one QR for the same alipay order and removes it after signed payment', async t => {
-  const s = setup(t); s.faceToFace(); const buyer = await s.buyer(); const order = await s.create(buyer)
+test('signed payment codes bind the existing Alipay order and reuse the same business key', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
   let response = await s.query(order.id, buyer); assert.equal(response.status, 200, await response.clone().text())
   let current = (await response.json()).order
   assert.equal(current.fulfillment.paymentQr, 'https://qr.alipay.com/bax01234567890')
-  assert.equal(current.fulfillment.paymentUrl, null)
+  assert.equal(current.fulfillment.paymentUrl, null); assert.equal(current.fulfillment.canSubmit, false)
   assert.equal(JSON.stringify(current).includes('recharge.example.invalid'), false)
-  assert.equal(JSON.stringify(current).includes('public-test-token'), false)
-  assert.equal(current.paymentStatus, 'unpaid'); assert.equal(current.fulfillment.canSubmit, false)
-  const snapshot = s.db.prepare('SELECT create_body FROM recharge_orders').get()!.create_body
   await s.query(order.id, buyer)
+  const codes = s.calls.filter(c => c.path.endsWith('/payment-code'))
+  assert.equal(codes.length, 2); assert.equal(codes[0].key, codes[1].key)
+  assert.equal(codes[0].body, '{}'); assert.notEqual(codes[0].nonce, codes[1].nonce)
   assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
-  assert.equal(s.calls.filter(c => c.path === '/payments/ord_test/start').length, 1)
-  assert.equal(s.db.prepare('SELECT create_body FROM recharge_orders').get()!.create_body, snapshot)
+  assert.equal(s.calls.some(c => c.path.startsWith('/payments/')), false)
   s.setPayment('paid'); response = await s.query(order.id, buyer); current = (await response.json()).order
   assert.equal(current.status, 'session'); assert.equal(current.fulfillment.canSubmit, true)
-  assert.equal(current.fulfillment.paymentQr, null); assert.equal(current.fulfillment.paymentUrl, null)
+  assert.equal(current.fulfillment.paymentQr, null)
   assert.equal(s.db.prepare('SELECT payment_qr FROM recharge_orders').get()!.payment_qr, null)
 })
 
-test('customer and partner responses keep supplier cashier private, including legacy and unsafe cached QR data', async t => {
+test('customer and partner responses keep cashier capabilities and unsafe cached QR private', async t => {
   const s = setup(t); s.faceToFace(); const partner = s.partner(); const buyer = await s.buyer()
   const created = await s.call('/api/orders', { plan: 'plus', partner: 'partner-test', expectedPrice: 15900, email: 'buyer@example.test', key: crypto.randomUUID() }, buyer)
-  assert.equal(created.status, 201)
-  const order = (await created.json()).order
+  assert.equal(created.status, 201); const order = (await created.json()).order
   assert.equal((await s.query(order.id, buyer)).status, 200)
-  assert.match(s.db.prepare('SELECT payment_url FROM recharge_orders WHERE order_id=?').get(order.id)!.payment_url as string, /recharge\.example\.invalid/)
   for (const cached of ['https://qr.alipay.com/bax01234567890', 'https://recharge.example.invalid/payments/ord_test?token=private-cashier-token']) {
     s.db.prepare('UPDATE recharge_orders SET payment_qr=? WHERE order_id=?').run(cached, order.id)
     for (const [path, cookie] of [[`/api/orders/${order.id}`, buyer], ['/api/orders', buyer], ['/api/partner/orders', partner]]) {
-      const response = await s.call(path, undefined, cookie)
-      assert.equal(response.status, 200)
+      const response = await s.call(path, undefined, cookie); assert.equal(response.status, 200)
       const raw = await response.text()
-      assert.equal(raw.includes('recharge.example.invalid'), false, path)
-      assert.equal(raw.includes('public-test-token'), false, path)
-      assert.equal(raw.includes('private-cashier-token'), false, path)
+      for (const hidden of ['recharge.example.invalid', 'public-test-token', 'private-cashier-token']) assert.equal(raw.includes(hidden), false, path)
     }
   }
 })
 
-test('lost cashier start recovers QR through status without recreating the signed order or starting a second payment', async t => {
-  const s = setup(t); s.faceToFace(); const buyer = await s.buyer(); const order = await s.create(buyer)
-  s.override(path => { if (path === '/payments/ord_test/start') { s.setQr('https://qr.alipay.com/bax01234567890'); throw new TypeError('network lost after creating QR') } })
+test('a lost payment-code response recovers the original order with identical signed body and key', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  s.override(path => { if (path.endsWith('/payment-code')) throw new TypeError('network lost after creating QR') })
   assert.equal((await s.query(order.id, buyer)).status, 503)
   assert.equal(s.db.prepare('SELECT remote_id FROM recharge_orders').get()!.remote_id, 'ord_test')
-  s.override(undefined)
-  const response = await s.query(order.id, buyer); assert.equal(response.status, 200)
+  s.override(undefined); const response = await s.query(order.id, buyer); assert.equal(response.status, 200)
   assert.equal((await response.json()).order.fulfillment.paymentQr, 'https://qr.alipay.com/bax01234567890')
+  const codes = s.calls.filter(c => c.path.endsWith('/payment-code'))
+  assert.equal(codes.length, 2); assert.equal(codes[0].key, codes[1].key)
+  assert.equal(codes[0].body, codes[1].body); assert.notEqual(codes[0].nonce, codes[1].nonce)
   assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
-  assert.equal(s.calls.filter(c => c.path === '/payments/ord_test/start').length, 1)
-  assert.equal(s.calls.filter(c => c.path === '/v1/orders/ord_test').length, 1)
 })
 
-test('cashier status never authorizes payment and quote amount/expiry/QR mismatches withhold QR', async t => {
-  const s = setup(t); s.faceToFace(); const buyer = await s.buyer(); const order = await s.create(buyer)
-  s.quote({ status: 'paid' }); let response = await s.query(order.id, buyer)
-  assert.equal(response.status, 200); let current = (await response.json()).order
-  assert.equal(current.paymentStatus, 'unpaid'); assert.equal(current.status, 'pending'); assert.equal(current.fulfillment.canSubmit, false); assert.equal(current.fulfillment.paymentQr, null)
-  for (const patch of [{ amount: '138.00' }, { expires_at: new Date(Date.now() + 60000).toISOString() }, { delivery_mode: 'cdk' }, { qr_code: 'https://recharge.example.invalid/payments/ord_test' }]) {
-    s.quote(patch); response = await s.query(order.id, buyer); assert.equal(response.status, 503)
+test('payment-code identity, amount, expiry, currency, type and QR mismatches never authorize payment', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  for (const patch of [{ order_id: 'another' }, { merchant_order_no: 'another' }, { payment_status: 'paid' }, { amount: '138.00' }, { expires_at: new Date(Date.now() + 60000).toISOString() }, { currency: 'USD' }, { payment_code_type: 'cdk' }, { payment_code: 'https://recharge.example.invalid/payments/ord_test' }, { payment_code: null }]) {
+    s.quote(patch); const response = await s.query(order.id, buyer); assert.equal(response.status, 503)
     assert.equal(s.db.prepare('SELECT remote_id FROM recharge_orders').get()!.remote_id, 'ord_test')
     assert.equal(s.db.prepare('SELECT payment_qr FROM recharge_orders').get()!.payment_qr, null)
-    assert.equal((await getOrder(s.env, order.id)).payment_status, 'unpaid')
+    const current = await getOrder(s.env, order.id); assert.equal(current.payment_status, 'unpaid'); assert.equal(current.status, 'pending')
   }
-  assert.equal(s.calls.filter(c => c.path === '/payments/ord_test/start').length, 0)
-  s.quote({}); response = await s.query(order.id, buyer); current = (await response.json()).order
-  assert.equal(current.fulfillment.paymentQr, 'https://qr.alipay.com/bax01234567890')
+  s.quote({}); assert.equal((await s.query(order.id, buyer)).status, 200)
 })
 
-test('a transient QR status failure retains only a previously validated live QR; invalid replacement clears it', async t => {
-  const s = setup(t); s.faceToFace(); const buyer = await s.buyer(); const order = await s.create(buyer)
+test('transient payment-code failure retains only the previously validated live QR; invalid replacement clears it', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
   await s.query(order.id, buyer)
-  s.override(path => path === '/payments/ord_test/status' ? new Response('unavailable', { status: 503 }) : undefined)
+  s.override(path => path.endsWith('/payment-code') ? Response.json({ error: { code: 'temporarily_unavailable', retryable: true } }, { status: 503 }) : undefined)
   assert.equal((await s.query(order.id, buyer)).status, 503)
   assert.equal(s.db.prepare('SELECT payment_qr FROM recharge_orders').get()!.payment_qr, 'https://qr.alipay.com/bax01234567890')
   s.override(undefined); s.quote({ amount: '1.00' })
   assert.equal((await s.query(order.id, buyer)).status, 503)
   assert.equal(s.db.prepare('SELECT payment_qr FROM recharge_orders').get()!.payment_qr, null)
-  assert.equal(s.db.prepare('SELECT remote_id FROM recharge_orders').get()!.remote_id, 'ord_test')
 })
 
-test('cashier binding, channel and signed currency must match before QR start', async t => {
-  const s = setup(t); s.faceToFace(); const buyer = await s.buyer(); const order = await s.create(buyer)
+test('cashier binding, channel and signed currency must match before requesting a payment code', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
   for (const patch of [{ qr_payload: 'https://recharge.example.invalid/payments/other?token=public-test-token-123456' }, { qr_payload: 'https://recharge.example.invalid/payments/ord_test?token=public-test-token-123456&redirect=evil' }, { payment_channel: 'usdt' }, { currency: 'USD' }]) {
     s.override(path => path === '/v1/orders' || path === '/v1/orders/ord_test' ? Response.json({ data: { ...s.remoteOrder(), merchant_order_no: order.id, ...patch } }) : undefined)
     assert.equal((await s.query(order.id, buyer)).status, 503)
-    assert.equal(s.calls.filter(c => c.path.startsWith('/payments/')).length, 0)
+    assert.equal(s.calls.filter(c => c.path.endsWith('/payment-code')).length, 0)
     assert.equal((await getOrder(s.env, order.id)).payment_status, 'unpaid')
   }
 })
 
-test('closed, expired and paused orders stop exposing or starting QR; legacy cashier remains a link', async t => {
+test('closed, expired and refund-held orders stop exposing or requesting payment codes', async t => {
   const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
-  assert.equal((await (await s.query(order.id, buyer)).json()).order.fulfillment.paymentQr, null)
-  assert.equal(s.calls.filter(c => c.path.startsWith('/payments/')).length, 0)
-  s.faceToFace(); await s.query(order.id, buyer)
+  await s.query(order.id, buyer); const before = s.calls.filter(c => c.path.endsWith('/payment-code')).length
   s.db.prepare('UPDATE orders SET refund_hold=1 WHERE id=?').run(order.id)
   let current = (await (await s.query(order.id, buyer)).json()).order
   assert.equal(current.fulfillment.paymentQr, null); assert.equal(current.fulfillment.paymentUrl, null)
+  assert.equal(s.calls.filter(c => c.path.endsWith('/payment-code')).length, before)
   s.db.prepare('UPDATE orders SET refund_hold=0 WHERE id=?').run(order.id)
-  s.quote({ expired: true }); current = (await (await s.query(order.id, buyer)).json()).order
-  assert.equal(current.fulfillment.paymentQr, null)
-  s.quote({}); await s.query(order.id, buyer); s.setPayment('expired')
-  current = (await (await s.query(order.id, buyer)).json()).order
+  s.setPayment('expired'); current = (await (await s.query(order.id, buyer)).json()).order
   assert.equal(current.status, 'cancelled'); assert.equal(current.fulfillment.paymentQr, null)
   assert.equal(s.db.prepare('SELECT payment_qr FROM recharge_orders').get()!.payment_qr, null)
 })
@@ -621,7 +604,7 @@ test('unpaid orders expire at creation +15 minutes even if supplier extends its 
   clock = deadline - 1
   current = (await (await s.query(order.id, buyer)).json()).order
   assert.equal(current.status, 'pending'); assert.equal(current.fulfillment.paymentExpired, false)
-  const cashierCalls = s.calls.filter(c => c.path.startsWith('/payments/')).length
+  const cashierCalls = s.calls.filter(c => c.path.endsWith('/payment-code')).length
   clock = deadline
   for (let i = 0; i < 2; i++) {
     current = (await (await s.query(order.id, buyer)).json()).order
@@ -629,7 +612,7 @@ test('unpaid orders expire at creation +15 minutes even if supplier extends its 
     assert.equal(current.fulfillment.paymentQr, null); assert.equal(current.fulfillment.paymentUrl, null)
     assert.equal(current.fulfillment.canSubmit, false)
   }
-  assert.equal(s.calls.filter(c => c.path.startsWith('/payments/')).length, cashierCalls)
+  assert.equal(s.calls.filter(c => c.path.endsWith('/payment-code')).length, cashierCalls)
   assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
   assert.equal(s.db.prepare("SELECT COUNT(*) n FROM order_events WHERE action='payment-expired'").get()!.n, 1)
   assert.equal(s.db.prepare('SELECT payment_qr FROM recharge_orders').get()!.payment_qr, null)
@@ -638,7 +621,7 @@ test('unpaid orders expire at creation +15 minutes even if supplier extends its 
   assert.equal(current.status, 'session'); assert.equal(current.paymentStatus, 'paid')
   assert.equal(current.fulfillment.paymentExpired, false); assert.equal(current.fulfillment.canSubmit, true)
   assert.equal((await s.submit(order.id, buyer)).status, 200)
-  assert.equal(s.calls.filter(c => c.path.startsWith('/payments/')).length, cashierCalls)
+  assert.equal(s.calls.filter(c => c.path.endsWith('/payment-code')).length, cashierCalls)
 })
 
 test('never-attempted expired orders close on read without creating a supplier payment', async t => {
@@ -651,14 +634,14 @@ test('never-attempted expired orders close on read without creating a supplier p
   assert.equal(current.status, 'cancelled'); assert.equal(current.fulfillment.paymentExpired, true)
   assert.equal((await s.query(order.id, buyer)).status, 200)
   await reconcileRecharge(s.env)
-  assert.equal(s.calls.filter(c => c.path === '/v1/orders' || c.path.startsWith('/payments/')).length, 0)
+  assert.equal(s.calls.filter(c => c.path === '/v1/orders' || c.path.endsWith('/payment-code')).length, 0)
 })
 
-test('cashier status crossing the deadline cannot start a QR or leave an order payable', async t => {
+test('a payment-code response crossing the deadline cannot leave an order payable', async t => {
   let clock = Date.now(); t.mock.method(Date, 'now', () => clock)
   const s = setup(t); s.faceToFace(); s.setExpiry(clock + 3600000)
   const buyer = await s.buyer(); const order = await s.create(buyer)
-  s.override(path => { if (path.endsWith('/status')) clock = order.createdAt + 900000 })
+  s.override(path => { if (path.endsWith('/payment-code')) clock = order.createdAt + 900000 })
   const response = await s.query(order.id, buyer); assert.equal(response.status, 200)
   const current = (await response.json()).order
   assert.equal(current.status, 'cancelled'); assert.equal(current.fulfillment.paymentExpired, true)
@@ -695,7 +678,7 @@ test('lost supplier creation recovers the same idempotent write after expiry thr
   for (const attempt of attempts) {
     assert.equal(attempt.key, attempts[0].key); assert.equal(attempt.body, attempts[0].body)
   }
-  assert.equal(s.calls.filter(c => c.path.startsWith('/payments/')).length, 0)
+  assert.equal(s.calls.filter(c => c.path.endsWith('/payment-code')).length, 0)
 })
 
 test('configured catalog is independent of supplier prices; orders still enforce live price bounds', async t => {
@@ -1348,4 +1331,97 @@ test('only platform margins accept signed money, while sale, supply and refunds 
   assert.equal(marginCents('-110.00'), -11000); assert.equal(marginCents('29.00'), 2900)
   for (const value of ['-110.00','-0.01','+1.00','1.1',1,null]) assert.throws(() => moneyCents(value))
   for (const value of ['--1.00','-1.1','-01.00','-Infinity']) assert.throws(() => marginCents(value))
+})
+
+test('read-only validation allows exactly three catalogue queries and blocks supplier writes even for existing orders', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  s.env.RECHARGE_READ_ONLY = 'true'
+  const before = s.calls.length
+  for (const path of ['/agent-profile', '/products', '/payment-methods']) await supplierRequest(s.env, path)
+  assert.equal(s.calls.length, before + 3)
+  const blocked = s.calls.length
+  for (const [path, body] of [['/orders', '{}'], ['/orders/ord_test/payment-code', '{}'], ['/redemptions', '{}'], ['/orders/ord_test/refunds', '{}'], ['/orders/ord_test', undefined], ['/products?extra=true', undefined]] as const) {
+    await assert.rejects(() => supplierRequest(s.env, path, body, 'readonly-test-key'))
+  }
+  assert.equal(s.calls.length, blocked)
+  assert.equal((await s.query(order.id, buyer)).status, 409)
+  assert.equal((await (await s.call('/api/catalog')).json()).checkoutEnabled, false)
+})
+
+test('checkout requires the active matching agent, automatic recharge permission and the current authorized price', async t => {
+  const s = setup(t); const buyer = await s.buyer()
+  const profile = { merchant: { partnerId: s.env.RECHARGE_PARTNER_ID, status: 'active' }, profile: { customRedemptionEnabled: true }, collectionModes: ['platform_collect'], productSupplyPrices: { demo_plus: '11000' } }
+  for (const patch of [{ merchant: { ...profile.merchant, partnerId: 'other' } }, { merchant: { ...profile.merchant, status: 'disabled' } }, { profile: { customRedemptionEnabled: false } }, { collectionModes: ['agent_collect'] }, { productSupplyPrices: {} }, { productSupplyPrices: { demo_plus: '11001' } }]) {
+    s.override(path => path === '/v1/agent-profile' ? Response.json({ data: { ...profile, ...patch } }) : undefined)
+    const response = await s.call('/api/orders', { plan: 'plus', expectedPrice: 13900, email: 'buyer@example.test', key: crypto.randomUUID() }, buyer)
+    assert.equal(response.status, 409)
+  }
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 0)
+  assert.equal(s.calls.some(c => c.path === '/v1/orders'), false)
+})
+
+test('the original fulfillment list recovers an accepted submission whose response was lost without replaying credentials', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  const remote = { ...s.redemption(), redemption_id: 'ful_lost', attempt_no: 1, progress_version: 1 }
+  s.override(path => {
+    if (path === '/v1/redemptions') throw new TypeError('accepted but response lost')
+    if (path.endsWith('/fulfillments')) return Response.json({ data: [{ fulfillment_id: remote.redemption_id, order_id: remote.order_id, attempt_no: 1 }] })
+    if (path === '/v1/redemptions/ful_lost') return Response.json({ data: remote })
+  })
+  const key = crypto.randomUUID(); assert.equal((await s.submit(order.id, buyer, key)).status, 503)
+  assert.equal(s.db.prepare('SELECT status FROM recharge_redemptions').get()!.status, 'unknown')
+  assert.equal((await s.query(order.id, buyer)).status, 200)
+  const saved = s.db.prepare('SELECT * FROM recharge_redemptions').get()!
+  assert.equal(saved.id, key); assert.equal(saved.remote_id, 'ful_lost'); assert.equal(saved.status, 'queued')
+  assert.equal(saved.remote_attempt_no, 1); assert.equal(saved.request_hash, digest(JSON.stringify({ mode: 'auto_recharge', order_id: 'ord_test', credential: { mode: 'session', session }, customer_confirmed_email: true })))
+  assert.equal((await s.submit(order.id, buyer)).status, 409)
+  assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 1)
+})
+
+test('newer upstream tasks replace historical results on the original order, while stale and conflicting lists stay rejected', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer); await s.submit(order.id, buyer)
+  let number = 2; let conflict = false
+  s.override(path => {
+    if (path.endsWith('/fulfillments')) return Response.json({ data: conflict ? [{ fulfillment_id: 'ful_new', order_id: 'ord_test', attempt_no: 2 }, { fulfillment_id: 'ful_other', order_id: 'ord_test', attempt_no: 2 }] : [{ fulfillment_id: number === 2 ? 'ful_new' : 'ful_test', order_id: 'ord_test', attempt_no: number }] })
+    if (path === '/v1/redemptions/ful_new') return Response.json({ data: { ...s.redemption(), redemption_id: 'ful_new', attempt_no: 2, status: 'running', progress_version: 3, progress_stage: 'processing' } })
+  })
+  assert.equal((await s.query(order.id, buyer)).status, 200)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions').get()!.n, 2)
+  let current = (await (await s.call('/api/orders/' + order.id, undefined, buyer)).json()).order
+  assert.equal(current.fulfillment.attemptNo, 2); assert.equal(current.fulfillment.canSubmit, false)
+  number = 1; assert.equal((await s.query(order.id, buyer)).status, 503)
+  number = 2; conflict = true; assert.equal((await s.query(order.id, buyer)).status, 503)
+  current = await getOrder(s.env, order.id); assert.equal(current.status, 'processing')
+  assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
+  assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 1)
+})
+
+test('paused tasks never grant retry permission and terminal statuses override a stale queued stage', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer); await s.submit(order.id, buyer)
+  let paused = true
+  s.setTask('failed', true)
+  s.override(path => path.startsWith('/v1/redemptions/') ? Response.json({ data: { ...s.redemption(), paused, progress_stage: 'queued', progress_version: 2 } }) : undefined)
+  let response = await s.query(order.id, buyer); assert.equal(response.status, 200)
+  let current = (await response.json()).order
+  assert.equal(current.status, 'failed'); assert.equal(current.fulfillment.progressStage, 'failed')
+  assert.equal(current.fulfillment.paused, true); assert.equal(current.fulfillment.canSubmit, false)
+  assert.equal((await s.submit(order.id, buyer)).status, 409)
+  paused = false; response = await s.query(order.id, buyer); current = (await response.json()).order
+  assert.equal(current.fulfillment.canSubmit, true)
+})
+
+test('concurrent duplicate callbacks wake only their matching order once, and test notifications never wake business orders', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer); await s.query(order.id, buyer)
+  const other = await s.create(buyer)
+  const responses = await Promise.all([s.notice('evt_parallel'), s.notice('evt_parallel')])
+  assert.deepEqual(responses.map(r => r.status), [200, 200])
+  assert.equal(s.db.prepare('SELECT notify_version FROM recharge_orders WHERE order_id=?').get(order.id)!.notify_version, 1)
+  assert.equal(s.db.prepare('SELECT notify_version FROM recharge_orders WHERE order_id=?').get(other.id)!.notify_version, 0)
+  const stamp = String(Math.floor(Date.now() / 1000)); const raw = JSON.stringify({ event_id: 'evt_probe', type: 'webhook.test' })
+  const response = await worker.fetch(new Request('https://shop.example.invalid/api/recharge/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Quefa-Event': 'webhook.test', 'X-Quefa-Event-Id': 'evt_probe', 'X-Quefa-Delivery': 'dlv_probe', 'X-Quefa-Timestamp': stamp, 'X-Quefa-Signature': `t=${stamp},v1=${mac(stamp + '.' + raw, webhookSecret)}` }, body: raw }), s.env)
+  assert.equal(response.status, 200)
+  assert.equal(s.db.prepare('SELECT SUM(notify_version) n FROM recharge_orders').get()!.n, 1)
 })

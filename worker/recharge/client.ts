@@ -42,7 +42,7 @@ export function notifyUrl(env: Env) {
 }
 export function checkoutEnabled(env: Env) {
   try {
-    return env.ORDER_TESTING_ENABLED !== 'true' && env.RECHARGE_CHECKOUT_ENABLED === 'true' && configured(env) && !!env.RECHARGE_WEBHOOK_SECRET && !!notifyUrl(env) && Object.keys(productMap(env)).length > 0 && collectionMode(env) === 'platform_collect'
+    return env.RECHARGE_READ_ONLY !== 'true' && env.ORDER_TESTING_ENABLED !== 'true' && env.RECHARGE_CHECKOUT_ENABLED === 'true' && configured(env) && !!env.RECHARGE_WEBHOOK_SECRET && !!notifyUrl(env) && Object.keys(productMap(env)).length > 0 && collectionMode(env) === 'platform_collect'
   } catch { return false }
 }
 export class RechargeError extends ApiError {
@@ -70,6 +70,7 @@ export async function request<T>(env: Env, path: string, rawBody?: string, idemp
   if (!/^\/[a-z0-9][A-Za-z0-9_/?=&%.-]*$/.test(path)) throw new Error('Invalid Recharge path')
   const url = new URL(c.base + path)
   const method = rawBody === undefined ? 'GET' : 'POST'
+  if (env.RECHARGE_READ_ONLY === 'true' && (method !== 'GET' || !['/agent-profile', '/products', '/payment-methods'].includes(path))) throw new ApiError('当前供货接入仅允许只读检查。', 409)
   if (method === 'POST' && (idempotency.length < 8 || idempotency.length > 128)) throw new Error('Invalid idempotency key')
   const timestamp = String(Math.floor(Date.now() / 1000)); const nonce = crypto.randomUUID()
   const headers: Record<string, string> = { 'X-Partner-Id': c.partner, 'X-Key-Id': c.key, 'X-Timestamp': timestamp, 'X-Nonce': nonce, 'X-Signature': await signature(c.secret, method, url, timestamp, nonce, c.key, idempotency, rawBody ?? ''), Accept: 'application/json' }
@@ -110,7 +111,6 @@ export function alipayQr(value: unknown) {
   if (url.origin !== 'https://qr.alipay.com' || url.username || url.password || url.search || url.hash || !/^\/[A-Za-z0-9]{8,128}$/.test(url.pathname)) throw new Error('Invalid Alipay QR')
   return url.href
 }
-type CashierStatus = { status: string; amount: string; expires_at: string; expired: boolean; can_start: boolean; qr_code: string | null; delivery_mode: string }
 export function cashierLink(env: Env, link: string | null, orderId: string) {
   if (!link) return null
   const url = new URL(link)
@@ -118,33 +118,27 @@ export function cashierLink(env: Env, link: string | null, orderId: string) {
   if (url.pathname !== '/payments/' + orderId || url.origin !== new URL(config(env).base).origin || url.hash || url.username || url.password || url.searchParams.size !== 1 || url.searchParams.getAll('token').length !== 1 || !/^[A-Za-z0-9_-]{16,256}$/.test(url.searchParams.get('token') ?? '')) throw new Error('Supplier cashier mismatch')
   return url
 }
-// The platform's own /payments/:id page uses these endpoints for 当面付.
-// Its signed order still returns the cashier URL, never the Alipay QR payload.
-export async function paymentQr(env: Env, link: string | null, remote: RemoteOrder, deadline = Date.parse(remote.expires_at)) {
-  // Keep historical payment-page contracts intact. Never turn a cashier URL into a QR.
-  const url = cashierLink(env, link, remote.order_id)
-  if (!url || deadline <= Date.now()) return null
-  const read = async (action: 'status' | 'start') => {
-    const endpoint = new URL(url); endpoint.pathname += '/' + action
-    let response: Response
-    try { response = await fetch(endpoint.href, { method: action === 'start' ? 'POST' : 'GET', headers: { Accept: 'application/json' }, redirect: 'manual', signal: AbortSignal.timeout(10000) }) }
-    catch { throw new RechargeError('payment_transport_unknown', true) }
-    if (!response.ok) throw new RechargeError('payment_request_rejected', response.status >= 500 || response.status === 429)
-    let data: CashierStatus
-    try { data = JSON.parse(await readRaw(response, 16000)) } catch { throw new RechargeError('invalid_payment_response', true) }
-    if (!data || !['pending', 'paid', 'expired', 'closed', 'partially_refunded', 'refunded'].includes(data.status) || moneyCents(data.amount) !== moneyCents(remote.sale_amount) || data.delivery_mode !== remote.delivery_mode || typeof data.expired !== 'boolean' || typeof data.can_start !== 'boolean' || !Number.isFinite(Date.parse(data.expires_at)) || Date.parse(data.expires_at) !== Date.parse(remote.expires_at)) throw new Error('Supplier cashier quote mismatch')
-    return data
-  }
-  // Recover a lost /start response by querying this same payment first.
-  let data = await read('status')
-  if (data.status !== 'pending' || data.expired || Math.min(deadline, Date.parse(data.expires_at)) <= Date.now()) return null
-  if (!data.qr_code && data.can_start) data = await read('start')
-  if (data.status !== 'pending' || data.expired || Math.min(deadline, Date.parse(data.expires_at)) <= Date.now()) return null
-  return alipayQr(data.qr_code)
+// Partner API 1.4.1: the signed payment-code request is bound to the existing
+// order. The browser never receives a supplier cashier capability or API key.
+export async function paymentQr(env: Env, remote: RemoteOrder, deadline = Date.parse(remote.expires_at)) {
+  if (remote.payment_status !== 'pending' || deadline <= Date.now()) return null
+  const data = await request<{ order_id: string; merchant_order_no: string; amount: string; currency: string; payment_status: string; payment_code_type: string; payment_code: string; expires_at: string }>(env, '/orders/' + remote.order_id + '/payment-code', '{}', 'paycode:' + remote.order_id)
+  if (!data || data.order_id !== remote.order_id || data.merchant_order_no !== remote.merchant_order_no || data.amount !== remote.sale_amount || data.currency !== 'CNY' || data.payment_status !== 'pending' || data.payment_code_type !== 'alipay_precreate' || !Number.isFinite(Date.parse(data.expires_at)) || Date.parse(data.expires_at) !== Date.parse(remote.expires_at)) throw new Error('Payment code order binding mismatch')
+  if (Math.min(deadline, Date.parse(data.expires_at)) <= Date.now()) return null
+  const qr = alipayQr(data.payment_code)
+  if (!qr) throw new Error('Missing Alipay QR')
+  return qr
+}
+export type AgentProfile = { merchant: { partnerId: string; status: string }; profile: { customRedemptionEnabled: boolean }; collectionModes: string[]; productSupplyPrices: Record<string, string> }
+export async function authorizedProduct(env: Env, code: string) {
+  const profile = await request<AgentProfile>(env, '/agent-profile')
+  const price = profile?.productSupplyPrices?.[code]
+  if (profile?.merchant?.partnerId !== config(env).partner || profile.merchant.status !== 'active' || profile.profile?.customRedemptionEnabled !== true || !Array.isArray(profile.collectionModes) || !profile.collectionModes.includes('platform_collect') || typeof price !== 'string' || !/^(0|[1-9]\d{0,9})$/.test(price) || !Number.isSafeInteger(Number(price))) throw new ApiError('充值代理或该套餐尚未获得购买与自动充值权限。', 409)
+  return Number(price)
 }
 export type Product = { product_code: string; supply_price: string; max_sale_price: string; currency: string; max_quantity: number; available: boolean; delivery_modes: string[] }
 export type RemoteOrder = { order_id: string; merchant_order_no: string; product_code: string; quantity: number; currency: string; collection_mode: string; payment_scope: string; delivery_mode: string; payment_channel?: string; sale_amount: string; supply_amount: string; merchant_margin: string; refunded_amount?: string; payment_status: string; fulfillment_status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | null; qr_payload: string | null; expires_at: string }
-export type Redemption = { redemption_id: string; order_id: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; failure_code: string | null; error_category?: string | null; result_code?: string | null; fallback_recharge_available: boolean; account_email_masked: string | null; finished_at: string | null; progress_stage?: string | null; progress_version?: number; progress_updated_at?: string | null; attempt_no?: number; retry_allowed?: boolean; next_action?: 'wait' | 'resubmit' | 'none'; recovery_action?: 'retry' | 'refund' | null }
+export type Redemption = { redemption_id: string; order_id: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; failure_code: string | null; error_category?: string | null; result_code?: string | null; fallback_recharge_available: boolean; account_email_masked: string | null; finished_at: string | null; progress_stage?: string | null; progress_version?: number; progress_updated_at?: string | null; attempt_no?: number; retry_allowed?: boolean; next_action?: 'wait' | 'resubmit' | 'none'; recovery_action?: 'retry' | 'refund' | null; paused?: boolean }
 export type RemoteRefund = { refund_id: string; order_id: string; merchant_refund_no: string; amount: string; status: string }
 export function moneyCents(value: unknown) {
   if (typeof value !== 'string' || !/^(0|[1-9]\d{0,7})\.\d{2}$/.test(value)) throw new Error('Invalid supplier money')

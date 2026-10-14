@@ -40,6 +40,8 @@ RECHARGE_WEBHOOK_SECRET= # Configure locally; never commit a real value.
 RECHARGE_NOTIFY_URL="https://shop.example.invalid/api/recharge/webhook"
 RECHARGE_PRODUCT_MAP='{}'
 RECHARGE_CHECKOUT_ENABLED="false"
+RECHARGE_READ_ONLY="true"
+RECHARGE_COLLECTION_MODE="platform_collect"
 
 ACCOUNT_SUPPLIER_API_BASE="https://accounts.example.invalid"
 ACCOUNT_SUPPLIER_APP_ID= # Configure locally; never commit a real value.
