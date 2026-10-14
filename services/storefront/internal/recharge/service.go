@@ -71,6 +71,10 @@ func (s *Service) Quote(ctx context.Context, plan string, price int64, cost *int
 	if !s.Checkout || s.Client == nil || s.Products[plan] == "" {
 		return snap, fault.New(409, "该服务暂未开放购买。")
 	}
+	authorizedCost, e := s.Client.AuthorizedProduct(ctx, s.Products[plan])
+	if e != nil {
+		return snap, e
+	}
 	var products []Product
 	if e := s.Client.Request(ctx, "/products", nil, "", &products); e != nil {
 		return snap, e
@@ -81,8 +85,7 @@ func (s *Service) Quote(ctx context.Context, plan string, price int64, cost *int
 			continue
 		}
 		supply, e1 := Money(p.Supply)
-		maxSale, e2 := Money(p.MaxSale)
-		ok = e1 == nil && e2 == nil && p.Available && p.Currency == "CNY" && p.Quantity >= 1 && slices.Contains(p.Modes, "auto_recharge") && price >= supply && price <= maxSale && (cost == nil || *cost >= supply)
+		ok = e1 == nil && supply == authorizedCost && p.Available && p.Currency == "CNY" && p.Quantity >= 1 && slices.Contains(p.Modes, "auto_recharge") && price >= supply && (cost == nil || *cost >= supply)
 	}
 	if !ok {
 		return snap, fault.New(409, "套餐暂不可售或价格已更新，请刷新商品。")
@@ -272,7 +275,8 @@ func (s *Service) apply(ctx context.Context, r Row, v RemoteOrder, cashier bool)
 	payable := v.Payment == "pending" && min(o.Created+900000, expiry) > time.Now().UnixMilli() && o.Status == "pending" && o.Payment == "unpaid" && o.Blocked == 0 && o.Hold == 0 && o.Refunded == 0
 	// Reuse only the QR bound to this unchanged, still-payable cashier.
 	// Status reconciliation must not depend on another cashier request succeeding.
-	cachedQR := r.QR != nil && *r.QR != "" && r.URL != nil && link != nil && *r.URL == *link && r.Expires != nil && *r.Expires == expiry
+	sameLink := r.URL == nil && link == nil || r.URL != nil && link != nil && *r.URL == *link
+	cachedQR := r.QR != nil && *r.QR != "" && r.Remote != nil && *r.Remote == v.ID && sameLink && r.Expires != nil && *r.Expires == expiry
 	_, e = tx.Exec(ctx, `UPDATE recharge_orders SET remote_id=$1,payment_status=$2,payment_qr=CASE WHEN $3 AND payment_url IS NOT DISTINCT FROM $4 AND expires_at=$5 THEN payment_qr ELSE NULL END,payment_url=$4,expires_at=$5,supply_cents=$6,merchant_margin_cents=$7,reported_margin_cents=$8,refunded_cents=$9,verified_at=$10,financial_hold=CASE WHEN $9::bigint=$11::bigint THEN 0 ELSE 1 END WHERE order_id=$12`, v.ID, v.Payment, payable, link, expiry, supply, max(int64(0), margin), margin, refunded, time.Now().UnixMilli(), o.Refunded, o.ID)
 	if e != nil {
 		return e

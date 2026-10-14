@@ -124,7 +124,7 @@ ALTER TABLE auth_sessions DROP COLUMN domain_scope;
 ALTER TABLE catalog_plans DROP COLUMN supports_warranty;
 ALTER TABLE orders DROP COLUMN supports_warranty;
 ALTER TABLE partner_order_versions DROP COLUMN hidden_product_ids;
-ALTER TABLE recharge_redemptions DROP COLUMN public_message, DROP COLUMN recovery_action;
+ALTER TABLE recharge_redemptions DROP COLUMN public_message, DROP COLUMN recovery_action, DROP COLUMN paused;
 DELETE FROM storefront_migrations WHERE name > '020_partner_payout_account.sql'`)
 	if err := app.VerifyRuntime(ctx); err == nil {
 		t.Fatal("new binary accepted unmigrated database")

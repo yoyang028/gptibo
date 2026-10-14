@@ -53,7 +53,7 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
   const image = qrImage?.orderId === order.id && qrImage.source === qr ? qrImage.data : null
   const imageError = qrError?.orderId === order.id && qrError.source === qr
   const remaining = Math.max(0, Math.ceil((deadline - clock) / 1000))
-  const watching = open && !paused && (order.status === 'pending' || order.status === 'processing' || unknown)
+  const watching = open && !paused && !info.paused && (order.status === 'pending' || order.status === 'processing' || unknown)
   const supportProblem = submitFailure || failure || error || (failed ? info.message ?? '充值未完成' : touched ? input.problem : null)
   useOrderSupportGuide(!paused && !busy && order.status !== 'success' && supportProblem ? `${order.id}:${supportProblem}` : null)
 
@@ -143,7 +143,7 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
         {expired ? <PaymentMessage state="expired" title="订单已过期">付款有效期已结束，请重新下单。若已付款，请先核对付款结果，勿重复支付。</PaymentMessage> : qr ? <PaymentCard qr={qr} image={image} imageError={Boolean(imageError)} remaining={remaining} price={order.price} quantity={product.quantity} /> : <PaymentMessage state="loading" title="正在生成支付二维码">订单已保存，准备好后自动显示。长时间未显示，请刷新进度或联系客服。</PaymentMessage>}
       </div>}
 
-      <CheckoutStageTransition stage={info.canSubmit ? 'input' : order.status === 'processing' && !unknown ? 'processing' : 'other'}>{stage => <>
+      <CheckoutStageTransition stage={info.canSubmit ? 'input' : info.paused || order.status === 'processing' && !unknown ? 'processing' : 'other'}>{stage => <>
       {stage === 'input' && <>
         {unknown && busy !== 'submit' ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>提交待确认</AlertTitle><AlertDescription>{submitFailure && <>{submitFailure}<br /></>}充值服务尚未确认收到本次提交，暂不能确认已开始充值。先刷新查询；仍未确认时，粘贴原 Session 核对同一次提交。请勿重新付款。</AlertDescription></Alert>
           : failed && busy !== 'submit' ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>{failureTitle}</AlertTitle><AlertDescription>{info.message ?? '请获取新的 Session 后重试。'} 本订单无需重复付款。</AlertDescription></Alert>
@@ -151,7 +151,7 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
         <LiveSessionForm session={session} confirmed={confirmed} touched={touched} busy={busy} precheckRequired={info.precheckRequired} precheck={precheck} retryMode={info.retryMode} retryKey={info.retryKey} failed={failed} onSessionChange={value => { setSession(value); setConfirmed(false); setTouched(false); setPrecheck(null) }} onConfirmChange={setConfirmed} onTouch={() => setTouched(true)} onSubmit={() => void run(true)} />
       </>}
 
-      {stage === 'processing' && <LiveRechargeProcessing progressStage={info.progressStage} progressUpdatedAt={info.progressUpdatedAt} rechargeStatus={info.rechargeStatus} syncError={Boolean(info.syncError || failure || error)} />}
+      {stage === 'processing' && (info.paused ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>充值结果待核对</AlertTitle><AlertDescription>{info.message ?? '处理已暂停，请刷新查询原任务或联系支持，无需重新付款。'}</AlertDescription></Alert> : <LiveRechargeProcessing progressStage={info.progressStage} progressUpdatedAt={info.progressUpdatedAt} rechargeStatus={info.rechargeStatus} syncError={Boolean(info.syncError || failure || error)} />)}
       </>}</CheckoutStageTransition>
       {order.status === 'success' && <LiveRechargeSuccess accountEmailMasked={info.accountEmailMasked} finishedAt={info.finishedAt} supportContacts={order.supportContacts} partnerName={order.partnerName} onOrders={onOrders} />}
       {order.status === 'cancelled' && (info.paymentExpired ? <PaymentMessage state="expired" title="订单已过期">付款有效期已结束，请重新下单。若已付款，请先核对付款结果，勿重复支付。</PaymentMessage> : <PaymentMessage state="closed" title="订单已关闭">此订单不再接受付款。</PaymentMessage>)}

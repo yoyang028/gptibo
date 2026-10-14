@@ -161,18 +161,13 @@ func (s *Service) Precheck(ctx context.Context, id, attempt string, c Credential
 		return PrecheckResult{}, err
 	}
 	if previous != nil && previous.ID == attempt {
-		raw := Raw(struct {
-			Mode       string     `json:"mode"`
-			Order      string     `json:"order_id"`
-			Credential Credential `json:"credential"`
-			Confirmed  bool       `json:"customer_confirmed_email"`
-		}{"auto_recharge", *r.Remote, c, true})
+		raw := redemptionBody(*r.Remote, c, previous.Number > 1)
 		if expired(*previous) || previous.Hash != security.Hash(raw) {
 			return PrecheckResult{}, orders.Conflict()
 		}
 		return PrecheckResult{State: "recovery", Code: "original_submission", Target: o.Plan}, nil
 	}
-	if previous != nil && previous.Status != "rejected" && previous.Fallback == 0 {
+	if previous != nil && (previous.Paused || (previous.Status != "rejected" && previous.Fallback == 0)) {
 		return PrecheckResult{}, orders.Conflict()
 	}
 	if err = credentialExpiry(c, time.Now()); err != nil {

@@ -49,6 +49,7 @@ export function latestCode(email) {
 }
 
 function showCodes(mode, watch) {
+  const frontendPort = process.argv.includes('--quefa') ? 5176 : 5175
   const email = mode === 'admin' ? 'admin@example.invalid' : mode === 'partner' ? 'partner@example.invalid' : mode
   const secret = mode === 'admin' ? fs.readFileSync(path.join(secrets, 'admin-totp'), 'utf8') : null
   let previous = ''
@@ -56,11 +57,11 @@ function showCodes(mode, watch) {
     const now = Date.now()
     const lines = ['GPTibo 本地登录助手', '']
     if (mode === 'admin') {
-      lines.push('管理后台: http://127.0.0.1:5175/admin', '管理员用户名: dev-admin')
+      lines.push(`管理后台: http://127.0.0.1:${frontendPort}/admin`, '管理员用户名: dev-admin')
       lines.push('当前 TOTP（填写到“2FA 验证码”）: ' + totp(secret, now))
     } else {
       lines.push('登录邮箱: ' + email)
-      if (mode === 'partner') lines.push('代理后台: http://127.0.0.1:5175/partner')
+      if (mode === 'partner') lines.push(`代理后台: http://127.0.0.1:${frontendPort}/partner`)
     }
     try {
       const message = latestCode(email)

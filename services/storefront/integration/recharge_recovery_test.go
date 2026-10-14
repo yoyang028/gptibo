@@ -2,11 +2,12 @@ package integration_test
 
 import (
 	"context"
+	"encoding/json"
 	"gptibo/storefront/internal/httpapi"
 	"gptibo/storefront/internal/orders"
+	"gptibo/storefront/internal/recharge"
 	"gptibo/storefront/internal/security"
 	"gptibo/storefront/internal/store"
-	"gptibo/storefront/internal/recharge"
 	"io"
 	"log/slog"
 	"net/http"
@@ -176,13 +177,34 @@ func TestRechargeAdminRetryUsesOriginalOrderAndPreventsDuplicates(t *testing.T) 
 	if success != 1 || conflict != 1 || f.fake.submitCalls != 2 || f.fake.createCalls != 1 {
 		t.Fatal("duplicate retry or new paid order", success, conflict, f.fake.submitCalls)
 	}
-	if f.fake.bodies[0] != f.fake.bodies[1] || f.fake.keys[0] == f.fake.keys[1] {
+	var first, second map[string]any
+	_ = json.Unmarshal([]byte(f.fake.bodies[0]), &first)
+	_ = json.Unmarshal([]byte(f.fake.bodies[1]), &second)
+	if first["retry_confirmation"] != nil || second["retry_confirmation"] != true || first["order_id"] != second["order_id"] || recharge.Raw(first["credential"]) != recharge.Raw(second["credential"]) || f.fake.keys[0] == f.fake.keys[1] {
 		t.Fatal("retry lost original credential/order or reused previous attempt key")
 	}
 	f.post(t, "retry", 409)
 	var count int
 	if err := f.owner.DB.QueryRow(context.Background(), `SELECT count(*) FROM order_events WHERE order_id=$1 AND action='recharge-resend' AND actor LIKE 'admin:%'`, f.id).Scan(&count); err != nil || count != 1 {
 		t.Fatal("retry audit missing", err)
+	}
+}
+
+func TestRechargePausedTaskNeverAllowsNewAttempt(t *testing.T) {
+	f := newRecoveryFixture(t)
+	f.failed()
+	f.fake.redemption.Paused = true
+	if err := f.service.Verify(context.Background(), f.id); err != nil {
+		t.Fatal(err)
+	}
+	view := object(t, request(f.handler, "GET", "/api/orders/"+f.id, nil, f.buyer), 200)["order"].(map[string]any)["fulfillment"].(map[string]any)
+	if view["paused"] != true || view["canSubmit"] != false {
+		t.Fatal("paused task exposed a recharge input")
+	}
+	f.post(t, "retry", 409)
+	object(t, request(f.handler, "POST", "/api/admin/orders/"+f.id+"/recharge-retry", map[string]any{"attemptId": f.attempt}, f.admin), 409)
+	if f.fake.submitCalls != 1 {
+		t.Fatal("paused task was submitted again")
 	}
 }
 func TestRechargeRetryDeniedAndHistoricalCredentialsUnavailable(t *testing.T) {

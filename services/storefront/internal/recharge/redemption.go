@@ -19,6 +19,7 @@ import (
 )
 
 type Attempt struct {
+	Paused   bool    `json:"paused"`
 	Message  string  `json:"public_message"`
 	ID       string  `json:"id"`
 	Order    string  `json:"order_id"`
@@ -160,10 +161,10 @@ func (s *Service) applyRedemption(ctx context.Context, r Row, a Attempt, v Redem
 		recovery = v.Recovery
 	}
 	fallback := 0
-	if *v.Fallback && v.Retry && v.Next == "resubmit" && v.Recovery != "refund" && slices.Contains([]string{"failed", "cancelled"}, v.Status) {
+	if !v.Paused && *v.Fallback && v.Retry && v.Next == "resubmit" && v.Recovery != "refund" && slices.Contains([]string{"failed", "cancelled"}, v.Status) {
 		fallback = 1
 	}
-	_, e = tx.Exec(ctx, `UPDATE recharge_redemptions SET remote_id=$1,status=$2,fallback=$3,failure_code=$4,error_category=$5,result_code=$6,account_email_masked=$7,finished_at=$8,progress_stage=$9,progress_version=$10,progress_updated_at=$11,public_message=$13,recovery_action=$14 WHERE id=$12`, v.ID, v.Status, fallback, failure, category, result, masked, finished, stage, version, updated, a.ID, message, recovery)
+	_, e = tx.Exec(ctx, `UPDATE recharge_redemptions SET remote_id=$1,status=$2,fallback=$3,failure_code=$4,error_category=$5,result_code=$6,account_email_masked=$7,finished_at=$8,progress_stage=$9,progress_version=$10,progress_updated_at=$11,public_message=$13,recovery_action=$14,paused=$15 WHERE id=$12`, v.ID, v.Status, fallback, failure, category, result, masked, finished, stage, version, updated, a.ID, message, recovery, v.Paused)
 	if e != nil {
 		return e
 	}
@@ -213,6 +214,18 @@ type Input struct {
 	Credential      Credential `json:"credential"`
 }
 
+// A manual new attempt has a different body; recovering that same attempt must
+// reproduce its exact confirmation and hash, including during precheck recovery.
+func redemptionBody(remote string, credential Credential, retry bool) string {
+	return Raw(struct {
+		Mode       string     `json:"mode"`
+		Order      string     `json:"order_id"`
+		Credential Credential `json:"credential"`
+		Confirmed  bool       `json:"customer_confirmed_email"`
+		Retry      bool       `json:"retry_confirmation,omitempty"`
+	}{"auto_recharge", remote, credential, true, retry})
+}
+
 func (s *Service) Action(ctx context.Context, id string, in Input) error {
 	if in.Action == "poll" {
 		return s.Sync(ctx, id, false)
@@ -260,17 +273,19 @@ func (s *Service) submit(ctx context.Context, id string, in Input, c Credential,
 	if o.Blocked != 0 || o.Hold != 0 || o.Refunded != 0 || r.Hold != 0 || r.Remote == nil || r.Payment != "paid" || o.Payment != "paid" || o.Status == "success" {
 		return orders.Conflict()
 	}
-	raw := Raw(struct {
-		Mode       string     `json:"mode"`
-		Order      string     `json:"order_id"`
-		Credential Credential `json:"credential"`
-		Confirmed  bool       `json:"customer_confirmed_email"`
-	}{"auto_recharge", *r.Remote, c, true})
-	digest := security.Hash(raw)
 	a, e := latest(ctx, tx, id)
 	if e != nil {
 		return e
 	}
+	number := int64(1)
+	if a != nil {
+		number = a.Number
+		if a.ID != in.Key {
+			number++
+		}
+	}
+	raw := redemptionBody(*r.Remote, c, number > 1)
+	digest := security.Hash(raw)
 	if a != nil && a.ID == in.Key {
 		if expired(*a) || a.Hash != digest {
 			return fault.New(409, "原提交编号与资料不一致或已超过幂等保护期，请核对原任务。")
@@ -279,7 +294,7 @@ func (s *Service) submit(ctx context.Context, id string, in Input, c Credential,
 			return tx.Commit(ctx)
 		}
 	} else {
-		if a != nil && a.Status != "rejected" && a.Fallback == 0 {
+		if a != nil && (a.Paused || (a.Status != "rejected" && a.Fallback == 0)) {
 			return fault.New(409, "原充值结果尚未确认，请查询原任务，勿重复提交。")
 		}
 		// Preserve same-key recovery above; only new attempts require fresh input.
@@ -290,10 +305,6 @@ func (s *Service) submit(ctx context.Context, id string, in Input, c Credential,
 			if e = s.verifyPrecheck(in.PrecheckReceipt, id, o.Plan, in.Key, c, time.Now()); e != nil {
 				return e
 			}
-		}
-		number := int64(1)
-		if a != nil {
-			number = a.Number + 1
 		}
 		now := time.Now().UnixMilli()
 		_, e = tx.Exec(ctx, `INSERT INTO recharge_redemptions(id,order_id,attempt_no,request_hash,credential_mode,created_at) VALUES($1,$2,$3,$4,$5,$6)`, in.Key, id, number, digest, c.Mode, now)

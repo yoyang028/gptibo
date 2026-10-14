@@ -90,6 +90,9 @@ var requestMessages = map[string]string{
 	"invalid_credential":                      "登录凭据已失效，请重新登录后提交。",
 	"session_invalid":                         "登录凭据已失效，请重新登录后提交。",
 	"invalid_signature":                       "充值服务认证异常，请联系客服。",
+	"api_access_required":                     "充值服务接口权限尚未启用，请联系客服。",
+	"custom_redemption_disabled":              "自动充值权限尚未启用，请联系客服。",
+	"direct_payment_code_disabled":            "当前收款码暂不可用，请联系客服。",
 	"timestamp_out_of_range":                  "充值服务时间校验异常，请联系客服。",
 	"nonce_replayed":                          "请求校验重复，请刷新原订单核对结果。",
 	"ip_not_allowed":                          "充值服务访问受限，请联系客服。",
@@ -222,6 +225,7 @@ type RemoteOrder struct {
 	Expires     string  `json:"expires_at"`
 }
 type Redemption struct {
+	Paused   bool    `json:"paused"`
 	Message  *string `json:"message"`
 	ID       string  `json:"redemption_id"`
 	Order    string  `json:"order_id"`
@@ -282,74 +286,33 @@ func (c *Client) PaymentLink(value *string, id string) (*url.URL, error) {
 	return u, nil
 }
 func (c *Client) QR(ctx context.Context, r RemoteOrder, deadline int64) (*string, error) {
-	u, e := c.PaymentLink(r.URL, r.ID)
-	if e != nil {
+	if r.Payment != "pending" || deadline <= time.Now().UnixMilli() {
+		return nil, nil
+	}
+	var data struct {
+		ID       string `json:"order_id"`
+		Merchant string `json:"merchant_order_no"`
+		Amount   string `json:"amount"`
+		Currency string `json:"currency"`
+		Status   string `json:"payment_status"`
+		Type     string `json:"payment_code_type"`
+		Code     string `json:"payment_code"`
+		Expires  string `json:"expires_at"`
+	}
+	raw := "{}"
+	if e := c.Request(ctx, "/orders/"+r.ID+"/payment-code", &raw, "paycode:"+r.ID, &data); e != nil {
 		return nil, e
 	}
-	if u == nil || u.Path != "/payments/"+r.ID || deadline <= time.Now().UnixMilli() {
-		return nil, nil
+	exp, e1 := time.Parse(time.RFC3339Nano, data.Expires)
+	original, e2 := time.Parse(time.RFC3339Nano, r.Expires)
+	if e1 != nil || e2 != nil || data.ID != r.ID || data.Merchant != r.Merchant || data.Amount != r.Sale || data.Currency != "CNY" || data.Type != "alipay_precreate" || data.Status != "pending" || !exp.Equal(original) || exp.UnixMilli() <= time.Now().UnixMilli() {
+		return nil, errors.New("payment code order binding mismatch")
 	}
-	type cashier struct {
-		Status   string  `json:"status"`
-		Amount   string  `json:"amount"`
-		Expires  string  `json:"expires_at"`
-		Expired  *bool   `json:"expired"`
-		Start    *bool   `json:"can_start"`
-		QR       *string `json:"qr_code"`
-		Delivery string  `json:"delivery_mode"`
-	}
-	read := func(action string) (cashier, error) {
-		var out cashier
-		v := *u
-		v.Path += "/" + action
-		method := "GET"
-		if action == "start" {
-			method = "POST"
-		}
-		req, e := http.NewRequestWithContext(ctx, method, v.String(), nil)
-		if e != nil {
-			return out, e
-		}
-		req.Header.Set("Accept", "application/json")
-		res, e := c.HTTP.Do(req)
-		if e != nil {
-			return out, &APIError{Code: "payment_transport_unknown", Retryable: true}
-		}
-		defer res.Body.Close()
-		b, e := bounded(res.Body, 16000)
-		if e != nil || res.StatusCode != 200 || json.Unmarshal(b, &out) != nil {
-			return out, &APIError{Code: "invalid_payment_response", Retryable: true, HTTPStatus: res.StatusCode}
-		}
-		exp, e1 := time.Parse(time.RFC3339Nano, out.Expires)
-		original, e2 := time.Parse(time.RFC3339Nano, r.Expires)
-		a, e3 := Money(out.Amount)
-		want, e4 := Money(r.Sale)
-		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || a != want || !exp.Equal(original) || out.Delivery != r.Delivery || out.Start == nil || out.Expired == nil || !paymentStatus(out.Status) {
-			return out, errors.New("cashier quote mismatch")
-		}
-		return out, nil
-	}
-	data, e := read("status")
-	if e != nil {
-		return nil, e
-	}
-	if data.Status != "pending" || *data.Expired || deadline <= time.Now().UnixMilli() {
-		return nil, nil
-	}
-	if data.QR == nil && *data.Start {
-		data, e = read("start")
-		if e != nil {
-			return nil, e
-		}
-	}
-	if data.Status != "pending" || *data.Expired || deadline <= time.Now().UnixMilli() || data.QR == nil {
-		return nil, nil
-	}
-	v, e := url.Parse(*data.QR)
+	v, e := url.Parse(data.Code)
 	if e != nil || v.Scheme != "https" || v.Host != "qr.alipay.com" || v.User != nil || v.RawQuery != "" || v.Fragment != "" || !regexp.MustCompile(`^/[A-Za-z0-9]{8,128}$`).MatchString(v.Path) {
 		return nil, errors.New("invalid Alipay QR")
 	}
-	return data.QR, nil
+	return &data.Code, nil
 }
 func paymentStatus(s string) bool {
 	return slices.Contains([]string{"pending", "paid", "closed", "expired", "partially_refunded", "refunded"}, s)

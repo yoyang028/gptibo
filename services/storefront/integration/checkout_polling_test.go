@@ -14,8 +14,8 @@ import (
 	"gptibo/storefront/internal/delivery"
 	"gptibo/storefront/internal/domains"
 	"gptibo/storefront/internal/httpapi"
-	"gptibo/storefront/internal/security"
 	"gptibo/storefront/internal/recharge"
+	"gptibo/storefront/internal/security"
 )
 
 func TestCheckoutPollRecoversQRAndAdvancesPaymentAndRecharge(t *testing.T) {
@@ -42,17 +42,17 @@ func checkoutPollFlow(t *testing.T, custom bool) {
 		if deadline, ok := r.Context().Deadline(); !ok || time.Until(deadline) < 30*time.Second {
 			t.Error("supplier chain still has the short generic request deadline")
 		}
-		if strings.HasPrefix(r.URL.Path, "/payments/") {
+		if strings.HasSuffix(r.URL.Path, "/payment-code") {
 			cashierCalls++
 			if failCashier {
 				return nil, errors.New("temporary cashier failure")
 			}
-			var qr any
-			if strings.HasSuffix(r.URL.Path, "/start") {
-				starts++
-				qr = "https://qr.alipay.com/abcdefghijklmnop"
+			starts++
+			raw, _ := io.ReadAll(r.Body)
+			if string(raw) != "{}" || r.Header.Get("X-Signature") == "" || r.Header.Get("Idempotency-Key") == "" {
+				t.Fatal("payment-code request missing signing or exact empty JSON")
 			}
-			body := recharge.Raw(map[string]any{"status": "pending", "amount": fake.order.Sale, "expires_at": fake.order.Expires, "expired": false, "can_start": true, "qr_code": qr, "delivery_mode": fake.order.Delivery})
+			body := recharge.Raw(map[string]any{"data": map[string]any{"order_id": fake.order.ID, "merchant_order_no": fake.order.Merchant, "payment_status": "pending", "amount": fake.order.Sale, "currency": "CNY", "expires_at": fake.order.Expires, "payment_code_type": "alipay_precreate", "payment_code": "https://qr.alipay.com/abcdefghijklmnop"}})
 			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
 		}
 		return fake.round(r)

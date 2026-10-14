@@ -17,9 +17,9 @@ import (
 	"gptibo/storefront/internal/httpapi"
 	"gptibo/storefront/internal/management"
 	"gptibo/storefront/internal/orders"
+	"gptibo/storefront/internal/recharge"
 	"gptibo/storefront/internal/refunds"
 	"gptibo/storefront/internal/security"
-	"gptibo/storefront/internal/recharge"
 )
 
 type rechargeTransport func(*http.Request) (*http.Response, error)
@@ -83,6 +83,8 @@ type rechargeFake struct {
 func (f *rechargeFake) round(r *http.Request) (*http.Response, error) {
 	var data any
 	switch r.URL.Path {
+	case "/v1/agent-profile":
+		data = map[string]any{"merchant": map[string]any{"partnerId": r.Header.Get("X-Partner-Id"), "status": "active"}, "profile": map[string]any{"customRedemptionEnabled": true}, "productSupplyPrices": map[string]string{"plus": "6000"}, "collectionModes": []string{"platform_collect"}}
 	case "/v1/products":
 		data = []recharge.Product{{Code: "plus", Supply: "60.00", MaxSale: "200.00", Currency: "CNY", Quantity: 1, Available: true, Modes: []string{"auto_recharge"}}}
 	case "/v1/payment-methods":
@@ -95,6 +97,8 @@ func (f *rechargeFake) round(r *http.Request) (*http.Response, error) {
 		data = f.order
 	case "/v1/orders/original":
 		data = f.order
+	case "/v1/orders/original/payment-code":
+		data = map[string]any{"order_id": "original", "merchant_order_no": f.order.Merchant, "amount": f.order.Sale, "currency": "CNY", "payment_status": "pending", "payment_code_type": "alipay_precreate", "payment_code": "https://qr.alipay.com/abcdefghijklmnop", "expires_at": f.order.Expires}
 	case "/v1/redemptions":
 		f.submitCalls++
 		b, _ := io.ReadAll(r.Body)

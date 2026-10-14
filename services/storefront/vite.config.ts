@@ -3,6 +3,10 @@ import { defineConfig } from 'vite'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
 
+const mock = process.env.LOCAL_QUEFA_MOCK === 'true'
+const frontendPort = mock ? 5176 : 5175
+const backendOrigin = mock ? 'http://127.0.0.1:8094' : 'http://127.0.0.1:8093'
+
 // Independent frontend preview; production Worker configuration is unchanged.
 export default defineConfig({
   root: fileURLToPath(new URL('../../', import.meta.url)),
@@ -15,17 +19,17 @@ export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('../../src', import.meta.url)) } },
   // Local tools, mailboxes and test artifacts may contain unrelated HTML files.
   optimizeDeps: { entries: [fileURLToPath(new URL('../../index.html', import.meta.url))] },
-  build: { outDir: 'services/storefront/.preview', emptyOutDir: true },
+  build: { outDir: mock ? 'services/storefront/.preview-quefa' : 'services/storefront/.preview', emptyOutDir: true },
   server: {
-    host: '127.0.0.1', port: 5175, strictPort: true,
+    host: '127.0.0.1', port: frontendPort, strictPort: true,
     // PostgreSQL and Go caches change frequently and are not frontend inputs.
-    watch: { ignored: ['**/artifacts/**', '**/services/storefront/.preview/**'] },
+    watch: { ignored: ['**/artifacts/**', '**/services/storefront/.preview/**', '**/services/storefront/.preview-quefa/**'] },
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8093', changeOrigin: true,
+        target: backendOrigin, changeOrigin: true,
         configure(proxy) {
           proxy.on('proxyReq', (outgoing, incoming) => {
-            if (incoming.headers.origin === 'http://127.0.0.1:5175') outgoing.setHeader('Origin', 'http://127.0.0.1:8093')
+            if (incoming.headers.origin === `http://127.0.0.1:${frontendPort}`) outgoing.setHeader('Origin', backendOrigin)
           })
         },
       },

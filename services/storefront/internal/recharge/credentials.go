@@ -108,7 +108,7 @@ func (s *Service) AdminRetry(ctx context.Context, id, attempt, actor string) err
 		if err != nil {
 			return err
 		}
-		if a == nil || a.ID != attempt || (a.Status != "failed" && a.Status != "cancelled") || a.Fallback != 1 {
+		if a == nil || a.ID != attempt || a.Paused || (a.Status != "failed" && a.Status != "cancelled") || a.Fallback != 1 {
 			return fault.New(409, "最新任务未明确允许补发，请同步状态后核对，勿重复充值。")
 		}
 		c, err := s.credential(ctx, s.Store.DB, id, attempt)

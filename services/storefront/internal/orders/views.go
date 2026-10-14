@@ -88,7 +88,8 @@ func (s Service) renderView(o Order, admin bool, related viewRelations) (map[str
 			unknownExpired = time.Now().UnixMilli()-created >= 7*86400000
 		}
 		f["precheckRequired"] = s.SessionPrecheckRequired
-		f["canSubmit"] = s.SupplierReady && o.Blocked == 0 && o.Hold == 0 && o.Refunded == 0 && t["financial_hold"] == int64(0) && t["payment_status"] == "paid" && o.Payment == "paid" && o.Status != "success" && (len(a) == 0 || (a["status"] == "unknown" && !unknownExpired) || a["status"] == "rejected" || a["fallback"] == int64(1))
+		f["paused"] = a["paused"] == true
+		f["canSubmit"] = a["paused"] != true && s.SupplierReady && o.Blocked == 0 && o.Hold == 0 && o.Refunded == 0 && t["financial_hold"] == int64(0) && t["payment_status"] == "paid" && o.Payment == "paid" && o.Status != "success" && (len(a) == 0 || (a["status"] == "unknown" && !unknownExpired) || a["status"] == "rejected" || a["fallback"] == int64(1))
 		if unknownExpired {
 			f["message"] = "原提交长期未确认，请联系客服核对原任务，勿重新提交。"
 		} else if a["status"] == "failed" || a["status"] == "cancelled" || a["status"] == "rejected" {

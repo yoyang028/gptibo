@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"gptibo/storefront/internal/recharge"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -22,6 +23,24 @@ func LoadRecharge() (*recharge.Service, error) {
 	client, e := recharge.NewClient(os.Getenv("RECHARGE_API_BASE"), os.Getenv("RECHARGE_PARTNER_ID"), os.Getenv("RECHARGE_KEY_ID"), key)
 	if e != nil {
 		return nil, e
+	}
+	localMock, e := flag("LOCAL_QUEFA_MOCK")
+	if e != nil {
+		return nil, e
+	}
+	if localMock {
+		origin, err := url.Parse(os.Getenv("PUBLIC_ORIGIN"))
+		host, _, listenErr := net.SplitHostPort(os.Getenv("LISTEN_ADDR"))
+		if err != nil || !loopbackIP(origin.Hostname()) || listenErr != nil || !loopbackIP(host) || os.Getenv("DB_NAME") != "gptibo_quefa_local" {
+			return nil, errors.New("LOCAL_QUEFA_MOCK requires loopback HTTP listeners and the isolated gptibo_quefa_local database")
+		}
+		pem, err := os.ReadFile(os.Getenv("RECHARGE_LOCAL_CA_FILE"))
+		if err != nil {
+			return nil, err
+		}
+		if err = client.UseLoopbackCA(pem); err != nil {
+			return nil, err
+		}
 	}
 	s := &recharge.Service{Client: client, Products: map[string]string{}}
 	precheck, e := flag("SESSION_PRECHECK_ENABLED")
@@ -63,7 +82,7 @@ func LoadRecharge() (*recharge.Service, error) {
 	s.Notify = os.Getenv("RECHARGE_NOTIFY_URL")
 	if s.Notify != "" {
 		u, e := url.Parse(s.Notify)
-		if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/api/recharge/webhook" {
+		if e != nil || (u.Scheme != "https" && !(localMock && u.Scheme == "http" && loopbackIP(u.Hostname()))) || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "/api/recharge/webhook" {
 			return nil, errors.New("invalid RECHARGE_NOTIFY_URL")
 		}
 	}
@@ -71,4 +90,9 @@ func LoadRecharge() (*recharge.Service, error) {
 		return nil, errors.New("Recharge checkout requires products, webhook secret and platform_collect notification URL")
 	}
 	return s, nil
+}
+
+func loopbackIP(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

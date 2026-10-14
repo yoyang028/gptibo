@@ -57,3 +57,4 @@ artifacts/*
 .open-source-release/
 coverage/
 .preview/
+.preview-quefa/

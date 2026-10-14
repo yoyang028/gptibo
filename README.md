@@ -40,6 +40,8 @@ npx vite --config services/storefront/vite.config.ts
 
 Windows 原生本地运行的脚本、文件邮件收件箱和登录步骤见 [本地搭建说明](docs/LOCAL_SETUP.md)，实际测试范围与未接入功能见 [第一轮本地验收报告](docs/LOCAL_ACCEPTANCE.md)。
 
+ChatGPT Plus 的新版供货协议适配、本地模拟控制台和独立业务库见 [Quefa 本地对接说明](docs/QUEFA_LOCAL.md)。该环境仅连接回环模拟接口，不调用真实支付或充值服务。
+
 ```sh
 cd services/storefront
 go test ./...
