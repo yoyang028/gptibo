@@ -45,7 +45,46 @@ export function latestCode(email) {
     const code = message.text.match(/\b\d{6}\b/)
     if (code) return {code: code[0], receivedAt: new Date(file.updated).toISOString()}
   }
-  throw new Error('No local verification email yet. Click 获取验证码 in the browser first.')
+  throw Object.assign(new Error('No local verification email yet. Click 获取验证码 in the browser first.'), {code: 'LOCAL_MAIL_NOT_FOUND'})
+}
+
+function showCodes(mode, watch) {
+  const email = mode === 'admin' ? 'admin@example.invalid' : mode === 'partner' ? 'partner@example.invalid' : mode
+  const secret = mode === 'admin' ? fs.readFileSync(path.join(secrets, 'admin-totp'), 'utf8') : null
+  let previous = ''
+  const display = () => {
+    const now = Date.now()
+    const lines = ['GPTibo 本地登录助手', '']
+    if (mode === 'admin') {
+      lines.push('管理后台: http://127.0.0.1:5175/admin', '管理员用户名: dev-admin')
+      lines.push('当前 TOTP（填写到“2FA 验证码”）: ' + totp(secret, now))
+    } else {
+      lines.push('登录邮箱: ' + email)
+      if (mode === 'partner') lines.push('代理后台: http://127.0.0.1:5175/partner')
+    }
+    try {
+      const message = latestCode(email)
+      if (now - Date.parse(message.receivedAt) >= 10 * 60 * 1000) {
+        lines.push('邮箱验证码: 最近一封已过期，请在登录页重新点击“获取验证码”。')
+      } else {
+        lines.push('邮箱验证码: ' + message.code + '（收到时间 ' + new Date(message.receivedAt).toLocaleString('zh-CN', {hour12: false}) + '）')
+      }
+    } catch (error) {
+      if (!['ENOENT', 'LOCAL_MAIL_NOT_FOUND'].includes(error.code)) throw error
+      lines.push('邮箱验证码: 等待本地邮件，请先在登录页点击“获取验证码”。')
+    }
+    lines.push('', mode === 'admin' ? '获取验证码后保持登录页打开，将两种验证码分别填写。' : '获取验证码后保持登录页打开，填写最新的邮箱验证码。', '邮箱验证码只能使用一次；已登录或刷新页面后，请重新获取。')
+    if (mode === 'admin') lines.push('2FA 动态码每 30 秒更新，请使用当前显示的号码。')
+    if (watch) lines.push('窗口会自动更新；关闭窗口或按 Ctrl+C 退出。')
+    const output = lines.join('\n')
+    if (output !== previous) {
+      if (watch && process.stdout.isTTY) console.clear()
+      console.log(output)
+      previous = output
+    }
+  }
+  display()
+  if (watch) setInterval(display, 1000)
 }
 
 const isEntry = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
@@ -59,12 +98,6 @@ if (isEntry) {
     }
     console.log('Independent development secrets initialized; existing values preserved.')
   } else {
-    const email = mode === 'admin' ? 'admin@example.invalid' : mode === 'partner' ? 'partner@example.invalid' : mode
-    if (mode === 'admin') {
-      console.log('管理员用户名: dev-admin')
-      console.log('当前 TOTP: ' + totp(fs.readFileSync(path.join(secrets, 'admin-totp'), 'utf8')))
-    }
-    const message = latestCode(email)
-    console.log('邮箱验证码: ' + message.code + '（收到时间 ' + message.receivedAt + '）')
+    showCodes(mode, process.argv.includes('--watch'))
   }
 }

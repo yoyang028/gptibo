@@ -56,20 +56,30 @@
 ./scripts/local/start.ps1
 ```
 
-管理员用户名为 `dev-admin`。在后台先点击获取验证码，然后在项目根目录运行：
+管理员用户名为 `dev-admin`。打开管理后台填写用户名，点击获取验证码，保持登录页打开。随后双击项目根目录的 `local-login.cmd`，窗口会显示邮箱验证码与当前 2FA 动态码，并在收到新邮件或动态码更新时自动刷新。分别填入后台的“邮箱验证码”和“2FA 验证码”，再点击登录。
+
+也可在任意 Windows PowerShell（包括系统自带的 x86 版本）中运行下面一行；它直接使用本机 D 盘 Node，不依赖 PowerShell 脚本执行策略或全局 Node PATH，不修改系统策略：
+
+```powershell
+& 'D:\ChatGPT\Codex\Projects\GPTibo\local-login.cmd'
+```
+
+邮箱验证码 10 分钟内有效且只能使用一次；若刷新了登录页或已用过该验证码，需要在页面重新获取。2FA 动态码每 30 秒变化；使用助手当前显示的号码。助手仅显示本地信息，不会自动申请验证码或登录。
+
+已加载 `env.ps1` 的开发终端也可使用原命令查看一次：
 
 ```powershell
 node scripts/local/auth.mjs admin
 ```
 
-命令读取本机邮件并显示邮箱验证码和当前 TOTP；TOTP 每 30 秒变化。填入原后台表单即可登录，不设置通用密码或固定验证码。
+命令读取本机邮件并显示邮箱验证码和当前 TOTP，填入原后台表单即可登录，不设置通用密码或固定验证码。上述 `.cmd` 助手可避免 Windows 默认禁用 `.ps1` 及未安装全局 `node` 导致的登录准备错误。
 
 演示代理邮箱为 `partner@example.invalid`。在代理后台获取验证码后运行：
 
 ```powershell
-node scripts/local/auth.mjs partner
+./local-login.cmd partner
 # 客户找回订单验证码同理，使用下单时的合成邮箱：
-node scripts/local/auth.mjs '你下单时填写的合成邮箱'
+./local-login.cmd '你下单时填写的合成邮箱'
 ```
 
 新增 `LOCAL_MAIL_DIR` 仅将原模板渲染的邮件保存到本机，无网络发送。只有公开来源与 API 监听地址均为回环地址且真实邮件关闭时，后端才允许启用；验证码过期、一次性使用、限流、管理员 TOTP 与 HttpOnly 会话校验保持原实现。迁移只读验收模式仍关闭此功能。
