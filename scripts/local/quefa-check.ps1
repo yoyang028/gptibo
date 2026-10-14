@@ -13,7 +13,7 @@ if ($Mode -eq 'stop') {
     exit 0
 }
 if ($Mode -eq 'status') {
-    [pscustomobject]@{ Running = [bool]$process; Address = 'http://127.0.0.1:8767'; EncryptedCredentialsSaved = Test-Path -LiteralPath (Join-Path $checkDirectory 'credentials.dpapi'); ResultSaved = Test-Path -LiteralPath (Join-Path $checkDirectory 'result.json') } | Format-List
+    [pscustomobject]@{ Running = [bool]$process; Address = 'http://127.0.0.1:8767'; TestReceiver = 'http://127.0.0.1:8768/api/recharge/webhook'; EncryptedCredentialsSaved = Test-Path -LiteralPath (Join-Path $checkDirectory 'credentials.dpapi'); EncryptedWebhookSecretSaved = Test-Path -LiteralPath (Join-Path $checkDirectory 'webhook-secret.dpapi'); ResultSaved = Test-Path -LiteralPath (Join-Path $checkDirectory 'result.json') } | Format-List
     exit 0
 }
 if ($Mode -eq 'build' -and $process) { throw 'Stop the read-only checker before rebuilding.' }

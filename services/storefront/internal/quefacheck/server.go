@@ -26,6 +26,9 @@ type Server struct {
 	base, directory, origin, token string
 	probe                          func(context.Context, string, Credentials) Result
 	mu                             sync.Mutex
+	hookMu                         sync.Mutex
+	hookWindow                     time.Time
+	hookCount                      int
 }
 
 func NewServer(base, directory, origin string) (*Server, error) {
@@ -129,6 +132,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Header.Get("X-Check-Token") != s.token {
 		http.Error(w, "local check token required", 403)
+		return
+	}
+	if r.URL.Path == "/webhook-secret" || r.URL.Path == "/webhook-status" {
+		s.serveWebhookControl(w, r)
 		return
 	}
 	if r.URL.Path == "/status" && r.Method == "GET" {

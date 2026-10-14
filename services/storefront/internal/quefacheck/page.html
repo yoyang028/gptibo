@@ -18,6 +18,12 @@ body{font:16px/1.65 system-ui,sans-serif;background:#f6f7f9;color:#20242c;max-wi
 </form>
 <p id="error" role="alert"></p><section aria-live="polite"><p id="summary"></p><p id="metadata" class="muted"></p><ul id="checks"></ul></section>
 <p class="muted">本页只验证查询能力。正式付款、充值、回调和退款仍未在供货方验证；API 查询可用也不能证明不存在拿货资格费。</p>
+<hr><h2>测试通知验签</h2>
+<p class="muted">仅用于验证 Quefa 发出的 webhook.test 通知。回调地址由测试方案确定后再登记；当前本机入口为 127.0.0.1:8768，不可直接填到供应商生产回调地址。此入口不接收付款、充值或退款等业务事件。</p>
+<form id="webhook-form" autocomplete="off">
+<label for="webhook-secret">Webhook Secret（独立的回调验签密钥）</label><input id="webhook-secret" type="password" required maxlength="4096" autocomplete="new-password" spellcheck="false">
+<button id="webhook-save" type="submit">加密保存回调密钥</button>
+</form><p id="webhook-state" aria-live="polite" class="muted">尚未检查回调密钥。</p><p id="webhook-receipt" aria-live="polite"></p>
 </main>
 <script nonce="{{.Token}}">
 const token = {{.Token}};
@@ -61,4 +67,23 @@ async function run(useSaved) {
 form.addEventListener('submit', event => {event.preventDefault(); run(false)});
 saved.addEventListener('click', () => run(true));
 fetch('/status',{headers:{'X-Check-Token':token},cache:'no-store'}).then(response => response.json()).then(show).catch(() => {});
+async function webhookStatus() {
+  const response = await fetch('/webhook-status',{headers:{'X-Check-Token':token},cache:'no-store'});
+  if (!response.ok) return;
+  const result = await response.json();
+  document.querySelector('#webhook-state').textContent = result.secret_saved ? '回调密钥已加密保存，等待供应商测试通知。' : '尚未保存独立的回调密钥。';
+  document.querySelector('#webhook-receipt').textContent = result.receipt ? '测试通知验签通过：' + new Date(result.receipt.received_at).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'}) + (result.receipt.duplicate ? '（重复通知已识别）' : '') : '尚未收到验签通过的测试通知。';
+}
+document.querySelector('#webhook-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = document.querySelector('#webhook-save'); button.disabled = true;
+  try {
+    const response = await fetch('/webhook-secret',{method:'POST',headers:{'Content-Type':'application/json','X-Check-Token':token},body:JSON.stringify({webhook_secret:document.querySelector('#webhook-secret').value}),cache:'no-store'});
+    if (!response.ok) throw new Error('保存失败，HTTP ' + response.status + '。请核对这是独立的 Webhook Secret。');
+    document.querySelector('#webhook-form').reset(); await webhookStatus();
+  } catch(error) { document.querySelector('#webhook-state').textContent = error.message; }
+  finally { button.disabled = false; }
+});
+webhookStatus().catch(() => {});
+setInterval(() => webhookStatus().catch(() => {}), 5000);
 </script></html>
