@@ -94,3 +94,20 @@
 本轮不调用真实 Quefa API，不创建真实订单，不充值余额、不支付 1 元联调订单、不提交真实 ChatGPT 凭据。现有成果是依据接入包完成的代码适配与本地模拟验收，不能作为平台实际可售、充值成功率、真实退款或结算到账的证明。
 
 后续需要 Quefa 单独提供沙箱域名、独立代理身份及密钥、Webhook 密钥、Plus 授权、模拟支付/充值结果的触发方法和可连通的回调方式。接入包引用的完整商城沙箱示例及第 10 份沙箱指南未附带，应另行取得。生产环境的固定 1 元支付测试会发生真实收款，且不验证 Plus 充值交付，不能替代隔离沙箱。
+
+## 正式账号的只读接入检查
+
+用户另行授权后，可以使用正式服务端应用密钥检查当前账号权限与 Plus 供货价；这不需要先创建支付单或提交充值。此检查与模拟商城独立运行，不修改其配置，也不连接业务数据库。
+
+1. 在 `artifacts/local/.secrets/quefa-readonly/endpoint.json` 写入供应商确认的 API 地址：`{"api_base":"https://supplier.example.invalid/v1"}`，将示例替换为实际地址。目标地址从本机文件读取，网页不能修改。
+2. 双击根目录 `local-quefa-check.cmd`，或在 PowerShell 执行 `& 'D:\ChatGPT\Codex\Projects\GPTibo\local-quefa-check.cmd' start`。
+3. 打开 http://127.0.0.1:8767 。在 Quefa 开放接口页创建一次性显示的凭据，把同一应用的 `partner_id`、`key_id`、`client_secret` 填入本机页面，点击“加密保存并检查”。完整密钥不要提交到聊天、源码或商城前端。
+4. 页面展示实时查询结果，脱敏结果另存为 `artifacts/local/.secrets/quefa-readonly/result.json`。失败不会自动重试。再次检查可使用已保存凭据。
+
+检查器复用 Go 后端的 HMAC 签名客户端。网络层仅允许对配置的 HTTPS 来源执行 `GET /v1/agent-profile`、`GET /v1/products` 两种请求；禁止其他方法、路径、查询参数、重定向和环境代理。它核对账号身份、active 状态、自有商城自动充值和付款码权限、平台代收、Plus 授权、可售状态、交付方式及价格一致性，不将“查询可用”当作真实交易已完成，也不能据此断定拿货资格不收费。
+
+输入凭据使用当前 Windows 用户的 DPAPI 加密保存为 `credentials.dpapi`，绑定配置的 API 地址，未保存明文凭据或原始账户响应；不向系统证书库或全局环境写入配置。运行文件、密文和查询结果均位于被 Git 忽略的 D 盘 `artifacts/local/`。更换 Windows 用户或系统前须在自己控制的位置妥善保留原始凭据，否则密文可能无法解密。
+
+检查器仅监听 `127.0.0.1:8767`，校验 Host、Origin 和每次启动生成的本机令牌，禁止跨站提交及嵌入。使用 `local-quefa-check.cmd stop` 停止，`status` 查看运行状态，`build` 重建已停止的检查器；停止保留加密凭据，不影响现有商城和模拟器。
+
+此入口新增的 17 项 Go 测试及子用例、现有充值客户端的 64 项测试及子用例全部通过，失败和跳过测试均为 0；命令入口编译和 Go vet 通过。覆盖签名、两种查询的限定、权限和价格异常、跨站拒绝、DPAPI 保存与恢复、环境切换隔离及私密字段不进入结果。现有 Chromium 实测输入表单、密码遮挡与清空、保存凭据按钮、结果展示和文本转义通过，页面错误与浏览器外部请求均为 0；浏览器提交使用合成响应，不能作为真实供应商验证。受限执行策略且 PATH 无 Node/pwsh 的 Windows PowerShell x86 状态检查与重复启动通过。证据保存在 `artifacts/local/evidence/quefa-readonly/`。

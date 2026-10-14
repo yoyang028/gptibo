@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quefa 账户与商品检查</title>
+<style>
+body{font:16px/1.65 system-ui,sans-serif;background:#f6f7f9;color:#20242c;max-width:780px;margin:32px auto;padding:0 20px}main{background:white;border:1px solid #e2e5eb;border-radius:16px;padding:28px}h1{font-size:24px;margin-top:0}label{display:block;margin-top:16px}input{box-sizing:border-box;width:100%;font:inherit;border:1px solid #bbc3d0;border-radius:8px;padding:10px}button{font:inherit;border:0;border-radius:8px;padding:10px 18px;margin:20px 8px 0 0;background:#1665d8;color:white;cursor:pointer}button:disabled{opacity:.5;cursor:wait}p{margin:10px 0}.muted{color:#596577;font-size:14px}.pass{color:#167143}.fail{color:#b72929}.unknown{color:#8c6200}li{margin:12px 0}code{overflow-wrap:anywhere}#summary{font-weight:600}#error{white-space:pre-wrap;color:#b72929}
+</style>
+<main>
+<h1>Quefa 账户与商品检查</h1>
+<p>查询当前账号的接口权限、ChatGPT Plus 授权和供货价。</p>
+<p class="muted">目标 API：<code>{{.Base}}</code><br>仅发送账户和商品的两个 GET 查询。不会创建订单、付款、采购、充值或退款，也不会修改现有商城配置。</p>
+<p class="muted">凭据仅提交到本机，并由当前 Windows 用户加密保存在 D 盘。请使用 Quefa 服务端应用凭据。</p>
+<form id="credentials" autocomplete="off">
+<label for="partner">partner_id（代理标识）</label><input id="partner" name="partner_id" required spellcheck="false" maxlength="128" autocomplete="off">
+<label for="key">key_id（应用密钥标识）</label><input id="key" name="key_id" required spellcheck="false" maxlength="128" autocomplete="off">
+<label for="secret">client_secret（一次性显示的密钥）</label><input id="secret" name="client_secret" type="password" required spellcheck="false" maxlength="4096" autocomplete="new-password">
+<button id="submit" type="submit">加密保存并检查</button>
+<button id="saved" type="button" {{if not .Saved}}hidden{{end}}>使用已保存凭据重新检查</button>
+</form>
+<p id="error" role="alert"></p><section aria-live="polite"><p id="summary"></p><p id="metadata" class="muted"></p><ul id="checks"></ul></section>
+<p class="muted">本页只验证查询能力。正式付款、充值、回调和退款仍未在供货方验证；API 查询可用也不能证明不存在拿货资格费。</p>
+</main>
+<script nonce="{{.Token}}">
+const token = {{.Token}};
+const form = document.querySelector('#credentials');
+const saved = document.querySelector('#saved');
+function show(result) {
+  if (!result) return;
+  document.querySelector('#summary').textContent = result.passed ? '只读检查通过' : '检查尚未全部通过';
+  const parts = [new Date(result.checked_at).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai'})];
+  if (result.tier) parts.push('账户等级：' + result.tier);
+  if (result.plus_supply_price) parts.push('Plus 供货价：' + result.plus_supply_price);
+  if (result.error_code) parts.push('错误码：' + result.error_code);
+  if (result.http_status) parts.push('HTTP ' + result.http_status);
+  if (result.request_id) parts.push('请求编号：' + result.request_id);
+  document.querySelector('#metadata').textContent = parts.join(' · ');
+  const list = document.querySelector('#checks'); list.replaceChildren();
+  for (const check of result.checks) {
+    const item = document.createElement('li'); item.className = check.state;
+    item.textContent = ({pass:'通过',fail:'未通过',unknown:'待确认'}[check.state] || '待确认') + '｜' + check.name + '：' + check.detail;
+    list.append(item);
+  }
+}
+async function run(useSaved) {
+  document.querySelector('#error').textContent = '';
+  document.querySelector('#summary').textContent = '正在查询，请稍候……';
+  for (const button of document.querySelectorAll('button')) button.disabled = true;
+  const values = useSaved ? {use_saved:true} : Object.fromEntries(new FormData(form));
+  try {
+    const response = await fetch('/check', {method:'POST',headers:{'Content-Type':'application/json','X-Check-Token':token},body:JSON.stringify(values),cache:'no-store'});
+    if (!response.ok) throw new Error('检查入口返回 HTTP ' + response.status + '：' + await response.text());
+    show(await response.json());
+    form.reset(); saved.hidden = false;
+  } catch (error) {
+    document.querySelector('#summary').textContent = '检查未完成';
+    document.querySelector('#error').textContent = error.message;
+  } finally {
+    for (const button of document.querySelectorAll('button')) button.disabled = false;
+  }
+}
+form.addEventListener('submit', event => {event.preventDefault(); run(false)});
+saved.addEventListener('click', () => run(true));
+fetch('/status',{headers:{'X-Check-Token':token},cache:'no-store'}).then(response => response.json()).then(show).catch(() => {});
+</script></html>
