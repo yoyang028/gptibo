@@ -4,7 +4,7 @@ import { api, errorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import '@/components/ticket-workspace.css'
 
-type Summary = { version: number; pending: number }
+type Summary = { version: number; pending: number; enabled?: boolean }
 
 export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefunds: () => void }) {
   const [summary, setSummary] = useState<Summary>()
@@ -69,6 +69,7 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
   useEffect(() => {
     mounted.current = true
     let stopped = false
+    let ticketsDisabled = false
     const controller = new AbortController()
     const timers: ReturnType<typeof setTimeout>[] = []
     async function poll(kind: 'tickets' | 'refunds') {
@@ -78,7 +79,7 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
         const previous = versions.current[kind]
         const changed = previous !== undefined && next.version > previous
         versions.current[kind] = next.version
-        if (kind === 'tickets') setSummary(next)
+        if (kind === 'tickets') { setSummary(next); ticketsDisabled = next.enabled === false }
         else setRefunds(next)
         setErrors(current => ({ ...current, [kind]: '' }))
         if (changed) {
@@ -92,7 +93,7 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
           }
         }
       } catch (e) { if (!stopped) setErrors(current => ({ ...current, [kind]: errorMessage(e) })) }
-      finally { if (!stopped) timers[kind === 'tickets' ? 0 : 1] = setTimeout(() => { void poll(kind) }, 15000) }
+      finally { if (!stopped && !(kind === 'tickets' && ticketsDisabled)) timers[kind === 'tickets' ? 0 : 1] = setTimeout(() => { void poll(kind) }, 15000) }
     }
     void poll('tickets')
     void poll('refunds')
@@ -111,6 +112,7 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
       void chime().catch(() => audioFailed('无法播放提示音，请检查浏览器声音权限后重试。'))
     } catch { audioFailed('无法播放声音，请检查浏览器是否支持中文语音并允许声音后重试。') }
   }
-  const connectionError = [errors.tickets && `工单提醒连接中断：${errors.tickets}`, errors.refunds && `退款提醒连接中断：${errors.refunds}`].filter(Boolean).join('；')
-  return <section className="ticket-alert" aria-label="工单与退款提醒"><div><strong><Bell size={15} className="inline" /> {unseen ? '收到新的代理工单消息' : summary ? `待处理工单 ${summary.pending} 条` : '工单提醒'} · {unseenRefund ? '收到新的退款申请' : refunds ? `待处理退款 ${refunds.pending} 单` : '退款提醒'}</strong><p role="status">{connectionError || audioError || (enabled ? '声音已开启 · 工单响铃、退款语音播报；保持后台打开，约 15 秒检查一次。' : '点击开启并试听：工单响铃，退款播报「您有一单退款待处理」。')}</p></div><div className="ticket-alert-actions"><Button variant="outline" size="sm" onClick={toggle}>{enabled ? <VolumeX size={14} /> : <Volume2 size={14} />}{enabled ? '关闭声音' : '开启声音提醒'}</Button><Button size="sm" onClick={() => { setUnseen(false); onOpen() }}>查看工单{summary ? ` (${summary.pending})` : ''}</Button><Button variant="outline" size="sm" onClick={() => { setUnseenRefund(false); onRefunds() }}>查看退款{refunds ? ` (${refunds.pending})` : ''}</Button></div></section>
+  const ticketsSupported = summary?.enabled !== false
+  const connectionError = [ticketsSupported && errors.tickets && `工单提醒连接中断：${errors.tickets}`, errors.refunds && `退款提醒连接中断：${errors.refunds}`].filter(Boolean).join('；')
+  return <section className="ticket-alert" aria-label="工单与退款提醒"><div><strong><Bell size={15} className="inline" /> {ticketsSupported && <>{unseen ? '收到新的代理工单消息' : summary ? `待处理工单 ${summary.pending} 条` : '工单提醒'} · </>}{unseenRefund ? '收到新的退款申请' : refunds ? `待处理退款 ${refunds.pending} 单` : '退款提醒'}</strong><p role="status">{connectionError || audioError || (enabled ? `${ticketsSupported ? '声音已开启 · 工单响铃、' : '声音已开启 · '}退款语音播报；保持后台打开，约 15 秒检查一次。` : `${ticketsSupported ? '点击开启并试听：工单响铃，' : '点击开启并试听：'}退款播报「您有一单退款待处理」。`)}</p></div><div className="ticket-alert-actions"><Button variant="outline" size="sm" onClick={toggle}>{enabled ? <VolumeX size={14} /> : <Volume2 size={14} />}{enabled ? '关闭声音' : '开启声音提醒'}</Button>{ticketsSupported && <Button size="sm" onClick={() => { setUnseen(false); onOpen() }}>查看工单{summary ? ` (${summary.pending})` : ''}</Button>}<Button variant="outline" size="sm" onClick={() => { setUnseenRefund(false); onRefunds() }}>查看退款{refunds ? ` (${refunds.pending})` : ''}</Button></div></section>
 }

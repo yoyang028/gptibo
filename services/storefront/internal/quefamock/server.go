@@ -3,6 +3,8 @@ package quefamock
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
@@ -50,17 +52,47 @@ type state struct {
 	CallbackStatus int                              `json:"callbackStatus"`
 }
 type server struct {
-	mu        sync.Mutex
-	directory string
-	data      state
-	nonces    map[string]int64
+	mu         sync.Mutex
+	directory  string
+	data       state
+	nonces     map[string]int64
+	cloudflare bool
 }
 
 func Serve(directory string) error {
+	return serve(directory, false)
+}
+
+// An independent fixed loopback profile for Workers/D1 acceptance. It has its
+// own private state and certificate, and cannot send notifications off-machine.
+func ServeCloudflare(directory string) error {
+	return serve(directory, true)
+}
+
+func (s *server) apiOrigin() string {
+	if s.cloudflare {
+		return "https://127.0.0.1:8773"
+	}
+	return "https://127.0.0.1:8766"
+}
+func (s *server) controlOrigin() string {
+	if s.cloudflare {
+		return "http://127.0.0.1:8772"
+	}
+	return ControlOrigin
+}
+func (s *server) callbackURL() string {
+	if s.cloudflare {
+		return "https://127.0.0.1:8771/api/recharge/webhook"
+	}
+	return Callback
+}
+
+func serve(directory string, cloudflare bool) error {
 	if err := Init(directory); err != nil {
 		return err
 	}
-	s := &server{directory: directory, nonces: map[string]int64{}, data: state{Orders: map[string]*record{}, Refunds: map[string]recharge.RemoteRefund{}, Replays: map[string]replay{}, Active: true}}
+	s := &server{directory: directory, cloudflare: cloudflare, nonces: map[string]int64{}, data: state{Orders: map[string]*record{}, Refunds: map[string]recharge.RemoteRefund{}, Replays: map[string]replay{}, Active: true}}
 	if raw, err := os.ReadFile(filepath.Join(directory, "state.json")); err == nil {
 		if err = json.Unmarshal(raw, &s.data); err != nil {
 			return err
@@ -68,8 +100,8 @@ func Serve(directory string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	api := &http.Server{Addr: "127.0.0.1:8766", Handler: http.HandlerFunc(s.api), ReadHeaderTimeout: 5 * time.Second}
-	control := &http.Server{Addr: "127.0.0.1:8765", Handler: http.HandlerFunc(s.control), ReadHeaderTimeout: 5 * time.Second}
+	api := &http.Server{Addr: strings.TrimPrefix(s.apiOrigin(), "https://"), Handler: http.HandlerFunc(s.api), ReadHeaderTimeout: 5 * time.Second}
+	control := &http.Server{Addr: strings.TrimPrefix(s.controlOrigin(), "http://"), Handler: http.HandlerFunc(s.control), ReadHeaderTimeout: 5 * time.Second}
 	results := make(chan error, 2)
 	go func() {
 		results <- api.ListenAndServeTLS(filepath.Join(directory, "cert.pem"), filepath.Join(directory, "key.pem"))
@@ -175,7 +207,7 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 			Channel    string `json:"payment_channel"`
 			Notify     string `json:"notify_url"`
 		}
-		if json.Unmarshal(raw, &in) != nil || in.Merchant == "" || in.Product != Product || in.Quantity != 1 || in.Collection != "platform_collect" || in.Delivery != "auto_recharge" || in.Channel != "alipay" || in.Notify != Callback {
+		if json.Unmarshal(raw, &in) != nil || in.Merchant == "" || in.Product != Product || in.Quantity != 1 || in.Collection != "platform_collect" || in.Delivery != "auto_recharge" || in.Channel != "alipay" || in.Notify != s.callbackURL() {
 			reject(w, 400, "invalid_request")
 			return
 		}
@@ -192,7 +224,7 @@ func (s *server) api(w http.ResponseWriter, r *http.Request) {
 		}
 		id := "QFMOCK" + strings.ReplaceAll(security.ID(), "-", "")
 		expires := time.Now().Add(15 * time.Minute).UTC().Format(time.RFC3339Nano)
-		link := "https://127.0.0.1:8766/payments/" + id + "?token=localmockonlynotarealpayment"
+		link := s.apiOrigin() + "/payments/" + id + "?token=localmockonlynotarealpayment"
 		order := recharge.RemoteOrder{ID: id, Merchant: in.Merchant, Product: Product, Quantity: 1, Currency: "CNY", Collection: "platform_collect", Scope: "retail", Delivery: "auto_recharge", Channel: "alipay", Sale: in.Sale, Supply: "110.00", Margin: recharge.Amount(amount - 11000), Refunded: "0.00", Payment: "pending", URL: &link, Expires: expires}
 		s.data.Orders[id] = &record{Order: order, Tasks: []recharge.Redemption{}}
 		data = order
@@ -353,7 +385,11 @@ func abs(v int64) int64 {
 func (s *server) control(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" && r.URL.Path == "/" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.WriteString(w, dashboard)
+		page := dashboard
+		if s.cloudflare {
+			page = strings.ReplaceAll(page, "http://127.0.0.1:5176", "https://127.0.0.1:8771")
+		}
+		_, _ = io.WriteString(w, page)
 		return
 	}
 	if r.Method == "GET" && r.URL.Path == "/state" {
@@ -367,7 +403,7 @@ func (s *server) control(w http.ResponseWriter, r *http.Request) {
 		reply(w, 200, map[string]any{"localMock": true, "orders": list, "callbackStatus": s.data.CallbackStatus})
 		return
 	}
-	if r.Method != "POST" || r.URL.Path != "/control" || r.Header.Get("Origin") != ControlOrigin {
+	if r.Method != "POST" || r.URL.Path != "/control" || r.Header.Get("Origin") != s.controlOrigin() {
 		reject(w, 403, "invalid_request")
 		return
 	}
@@ -505,7 +541,7 @@ func (s *server) control(w http.ResponseWriter, r *http.Request) {
 }
 func (s *server) notify(e event) {
 	stamp := strconv.FormatInt(time.Now().Unix(), 10)
-	req, _ := http.NewRequest("POST", Callback, strings.NewReader(string(e.Body)))
+	req, _ := http.NewRequest("POST", s.callbackURL(), strings.NewReader(string(e.Body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Quefa-Event", e.Kind)
 	req.Header.Set("X-Quefa-Event-Id", e.ID)
@@ -513,8 +549,19 @@ func (s *server) notify(e event) {
 	req.Header.Set("X-Quefa-Timestamp", stamp)
 	req.Header.Set("X-Quefa-Signature", "t="+stamp+",v1="+recharge.HMAC(WebhookSecret, stamp+"."+string(e.Body)))
 	dialer := net.Dialer{Timeout: 3 * time.Second}
-	client := http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-		if address != "127.0.0.1:8094" {
+	callbackAddress := "127.0.0.1:8094"
+	var tlsConfig *tls.Config
+	if s.cloudflare {
+		callbackAddress = "127.0.0.1:8771"
+		roots := x509.NewCertPool()
+		pem, err := os.ReadFile(filepath.Join(s.directory, "cert.pem"))
+		if err != nil || !roots.AppendCertsFromPEM(pem) {
+			return
+		}
+		tlsConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	}
+	client := http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{TLSClientConfig: tlsConfig, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address != callbackAddress {
 			return nil, errors.New("callback destination rejected")
 		}
 		return dialer.DialContext(ctx, network, address)

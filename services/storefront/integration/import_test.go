@@ -26,9 +26,11 @@ func testD1ImportRecovery(t *testing.T, reason, stage string) {
 	}
 	dir := t.TempDir()
 	snapshot := filepath.Join(dir, "snapshot.json")
+	// This importer accepts the legacy D1 contract through 0043. Its fixture must
+	// not silently include newer source columns that require a separate mapping.
 	script := `
  import {DatabaseSync} from 'node:sqlite';import{readFileSync,readdirSync}from'node:fs';import{pathToFileURL}from'node:url';
- const root=process.argv[1],dir=process.argv[2];const db=new DatabaseSync(dir+'/source.sqlite');for(const f of readdirSync(root+'/migrations').sort())if(f.endsWith('.sql'))db.exec(readFileSync(root+'/migrations/'+f,'utf8'));
+ const root=process.argv[1],dir=process.argv[2];const db=new DatabaseSync(dir+'/source.sqlite');for(const f of readdirSync(root+'/migrations').sort())if(f.endsWith('.sql')&&f<='0043_partner_product_visibility.sql')db.exec(readFileSync(root+'/migrations/'+f,'utf8'));
  db.exec("INSERT INTO partners(id,slug,name,email,active,created_at,updated_at) VALUES('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','ABCDEF12','Fixture','agent@example.test',1,1700000000000,1700000000000)");
  db.exec("INSERT INTO partner_prices(partner_id,plan,cost_cents,price_cents) VALUES('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','plus',10000,16900)");
  db.exec("INSERT INTO support_contacts(owner,partner_id,wechat,qq,email,updated_at) VALUES('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','wechat_fixture','123456','','1700000000000')");

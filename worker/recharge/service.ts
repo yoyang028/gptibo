@@ -32,7 +32,9 @@ export async function supplierProducts(env: Env) {
   return data
 }
 function eligible(product: Product | undefined, price: number): product is Product {
-  return !!product && product.available === true && product.currency === 'CNY' && product.max_quantity >= 1 && Array.isArray(product.delivery_modes) && product.delivery_modes.includes('auto_recharge') && price >= amountCents(product.supply_price) && price <= amountCents(product.max_sale_price)
+  // max_sale_price is a historical compatibility field in Partner API 1.4.1,
+  // not a sale ceiling. The current supply floor remains authoritative.
+  return !!product && product.available === true && product.currency === 'CNY' && product.max_quantity >= 1 && Array.isArray(product.delivery_modes) && product.delivery_modes.includes('auto_recharge') && price >= amountCents(product.supply_price)
 }
 export async function supplierCatalog<T extends { id: string; price_cents: number; enabled: number }>(env: Env, plans: T[], partnerId?: string) {
   const products = await supplierProducts(env); const map = productMap(env)
@@ -140,6 +142,7 @@ function failureMessage(failure: string | null, category: string | null) {
 }
 async function applyRedemption(env: Env, row: SupplierOrder, attempt: Attempt, remote: Redemption) {
   if (!remote || !/^[A-Za-z0-9_-]{1,128}$/.test(remote.redemption_id) || remote.order_id !== row.remote_id || (attempt.remote_id && attempt.remote_id !== remote.redemption_id) || !['queued', 'running', 'succeeded', 'failed', 'cancelled'].includes(remote.status) || typeof remote.fallback_recharge_available !== 'boolean') throw new Error('Redemption mismatch')
+  if (remote.paused !== undefined && typeof remote.paused !== 'boolean') throw new Error('Invalid paused state')
   if (remote.attempt_no !== undefined && (!Number.isSafeInteger(remote.attempt_no) || remote.attempt_no < 1 || (attempt.remote_attempt_no !== null && remote.attempt_no !== attempt.remote_attempt_no))) throw new Error('Redemption attempt mismatch')
   const version = remote.progress_version ?? 0
   if (!Number.isSafeInteger(version) || version < 0) throw new Error('Invalid progress version')
@@ -213,7 +216,8 @@ async function syncUnlocked(env: Env, row: SupplierOrder) {
   const ready = await ensureRemote(env, row)
   const remoteOrder = row.remote_id ? await request<RemoteOrder>(env, '/orders/' + ready.remote_id) : null
   if (remoteOrder) await applyRemoteOrder(env, ready, remoteOrder)
-  if (remoteOrder?.fulfillment_status !== 'succeeded') await syncLatest(env, ready, !!remoteOrder?.fulfillment_status)
+  const attempt = await latestAttempt(env, row.order_id)
+  if (remoteOrder?.fulfillment_status !== 'succeeded' || (attempt && !terminal(attempt.status))) await syncLatest(env, ready, !!remoteOrder?.fulfillment_status)
   await env.INTEREST_DB.prepare('UPDATE recharge_orders SET checked_notify_version=MAX(checked_notify_version,?) WHERE order_id=? AND lease_token=?').bind(row.notify_version, row.order_id, row.lease_token).run()
   return expireRechargeOrder(env, await getOrder(env, row.order_id))
 }
@@ -239,7 +243,7 @@ export async function queryPlatformOrder(env: Env, order: Order) {
     const remote = await request<RemoteOrder>(env, '/orders/' + fresh.remote_id)
     await applyRemoteOrder(env, fresh, remote, false)
     const attempt = await latestAttempt(env, order.id)
-    if (remote.fulfillment_status !== 'succeeded' && (attempt || remote.fulfillment_status)) await syncLatest(env, fresh, !!remote.fulfillment_status)
+    if ((remote.fulfillment_status !== 'succeeded' || (attempt && !terminal(attempt.status))) && (attempt || remote.fulfillment_status)) await syncLatest(env, fresh, !!remote.fulfillment_status)
     // Leave notifications due: they may also require a recharge-task query.
   })
   return getOrder(env, order.id)
@@ -273,7 +277,7 @@ export async function rechargeAction(requestMessage: Request, env: Env, order: O
   const row = await findRechargeOrder(env, order.id)
   if (order.mode !== 'live' || !row) throw new ApiError('此订单没有充值通道。', 409)
   if (!(await env.INTEREST_LIMITER.limit({ key: 'recharge:' + order.owner_hash })).success) throw new ApiError('操作较频繁，请稍后重试。', 429)
-  if (data.action === 'query') { await locked(env, row, fresh => syncUnlocked(env, fresh)); return }
+  if (data.action === 'query' || data.action === 'poll') { await locked(env, row, fresh => syncUnlocked(env, fresh)); return }
   if (data.action !== 'submit' || typeof data.key !== 'string' || !/^[a-f0-9-]{36}$/.test(data.key) || data.customerConfirmedEmail !== true) throw new ApiError('请确认账号并重新提交。')
   const credential = data.credential as Record<string, unknown> | undefined
   let normalized: { mode: string; session?: string; access_token?: string }
@@ -288,8 +292,10 @@ export async function rechargeAction(requestMessage: Request, env: Env, order: O
     const current = await getOrder(env, order.id); const ready = await findRechargeOrder(env, order.id)
     if (current.redemption_blocked) throw new ApiError('本订单已禁止再次兑换，请联系支持。', 409)
     if (!ready?.remote_id || ready.financial_hold || ready.payment_status !== 'paid' || current.payment_status !== 'paid' || current.refund_hold || current.refunded_cents || current.status === 'success') throw new ApiError('当前订单不能提交充值，请先刷新付款和售后状态。', 409)
-    const raw = JSON.stringify({ mode: 'auto_recharge', order_id: ready.remote_id, credential: normalized, customer_confirmed_email: true })
-    const digest = await hash(raw); let attempt = await latestAttempt(env, order.id)
+    let attempt = await latestAttempt(env, order.id)
+    const number = attempt ? attempt.attempt_no + Number(attempt.id !== data.key) : 1
+    const raw = JSON.stringify({ mode: 'auto_recharge', order_id: ready.remote_id, credential: normalized, customer_confirmed_email: true, ...(number > 1 ? { retry_confirmation: true } : {}) })
+    const digest = await hash(raw)
     if (attempt && attempt.id === data.key) {
       if (unknownExpired(attempt)) throw new ApiError('原提交已超过幂等保护期，请联系客服核对，不能再次提交。', 409)
       if (attempt.request_hash !== digest) throw new ApiError('该提交编号已用于其他资料。结果未知时请重交原资料。', 409)
@@ -355,7 +361,7 @@ export async function rechargeWebhook(message: Request, env: Env) {
     // can never directly mark payment, recharge, or refund as successful.
     if (!previous) await env.INTEREST_DB.batch([
       env.INTEREST_DB.prepare('INSERT INTO recharge_webhooks(account,event_id,event_type,body_hash,received_at,delivery_claim) VALUES (?,?,?,?,?,?) ON CONFLICT(account,event_id) DO NOTHING').bind(account, event, type, digest, Date.now(), claim),
-      env.INTEREST_DB.prepare('UPDATE recharge_orders SET updated_at=0,notify_version=notify_version+1 WHERE account=? AND (remote_id=? OR (remote_id IS NULL AND order_id=?)) AND EXISTS(SELECT 1 FROM recharge_webhooks WHERE account=? AND event_id=? AND delivery_claim=?)').bind(account, order, merchant, account, event, claim),
+      ...(type === 'webhook.test' ? [] : [env.INTEREST_DB.prepare('UPDATE recharge_orders SET updated_at=0,notify_version=notify_version+1 WHERE account=? AND (remote_id=? OR (remote_id IS NULL AND order_id=?)) AND EXISTS(SELECT 1 FROM recharge_webhooks WHERE account=? AND event_id=? AND delivery_claim=?)').bind(account, order, merchant, account, event, claim)]),
     ])
     const stored = await env.INTEREST_DB.prepare('SELECT body_hash FROM recharge_webhooks WHERE account=? AND event_id=?').bind(account, event).first<{ body_hash: string }>()
     if (stored?.body_hash !== digest) throw new Error()

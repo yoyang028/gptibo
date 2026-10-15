@@ -52,6 +52,20 @@ async function route(request: Request, env: Env): Promise<Response> {
       return error('请求保护服务暂时不可用，请稍后重试。', 503)
     }
     if (url.pathname === '/api/telegram/webhook') return telegramWebhook(request, env)
+    // This backend uses the edge request limits above. Advertise its actual
+    // verification capability to the shared checkout and login forms.
+    if (url.pathname === '/api/orders/verification') {
+      if (request.method !== 'GET') return error('请求方式不支持。', 405)
+      return json({ enabled: false, ...(url.searchParams.get('purpose') === 'auth' ? { purpose: 'auth' } : {}) })
+    }
+    if (url.pathname === '/api/health') {
+      if (request.method !== 'GET') return error('请求方式不支持。', 405)
+      try {
+        // Verify the active commerce schema as well as the D1 binding.
+        await env.INTEREST_DB.prepare('SELECT paused,remote_attempt_no FROM recharge_redemptions LIMIT 1').all()
+        return json({ ok: true, backend: 'cloudflare-d1' })
+      } catch { return error('数据库尚未就绪。', 503) }
+    }
     if (url.pathname === '/api/recharge/webhook') return rechargeWebhook(request, env)
     if (url.pathname === '/api/invoices/notify/alipay') return invoiceNotification(request, env)
     const notification = url.pathname.match(/^\/api\/payments\/notify\/([a-z0-9-]+)$/)

@@ -62,6 +62,8 @@ npm run preview:worker
 
 仓库没有一键生产部署命令。`wrangler.jsonc` 不绑定任何生产账号/域名，数据库 ID 是全零占位值。若自行部署，先创建自己的资源、注入独立秘密、完成迁移并验证隔离和交易流程。
 
+ChatGPT Plus 单店的 Workers + D1 部署准备、本机完整验收、发布前配置项与回滚步骤见 [Cloudflare 部署准备说明](docs/CLOUDFLARE_DEPLOYMENT.md)。`local-cloudflare.cmd` 提供独立本机模拟环境；`cloudflare:prepare`、`cloudflare:check` 和 `cloudflare:dry-run` 只生成与验证本地发布产物，不发布网站。真实 Plus 交付、退款与利润提现仍需分别记录证据。
+
 ## 接入与安全
 
 - `recharge`：匿名充值适配器。

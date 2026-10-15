@@ -13,7 +13,11 @@
     "emails:build": "tsc -p tsconfig.emails.json && tsx --tsconfig tsconfig.emails.json scripts/build-emails.tsx",
     "emails:preview": "npm run emails:build -- --preview",
     "emails:dev": "email dev --dir emails --port 3002",
-    "security:scan": "python3 scripts/scan-public-source.py"
+    "security:scan": "python3 scripts/scan-public-source.py",
+    "cloudflare:prepare": "node scripts/cloudflare/prepare.mjs",
+    "cloudflare:check": "node scripts/cloudflare/readiness.mjs",
+    "cloudflare:dry-run": "node scripts/cloudflare/dry-run.mjs",
+    "test:cloudflare": "node scripts/cloudflare/acceptance.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -46,6 +50,8 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261006.2-beta",
     "oxlint": "^1.81.0",
     "react-email": "^6.11.0",
     "tsx": "^4.23.15",

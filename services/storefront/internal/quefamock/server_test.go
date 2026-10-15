@@ -1,6 +1,7 @@
 package quefamock
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -12,6 +13,29 @@ import (
 	"gptibo/storefront/internal/recharge"
 	"gptibo/storefront/internal/security"
 )
+
+func TestCloudflareProfileKeepsOrderCallbacksAndControlsSeparate(t *testing.T) {
+	s := fixture(t)
+	s.cloudflare = true
+	input := map[string]any{"merchant_order_no": "CF-LOCAL-001", "product_code": Product, "quantity": 1, "sale_amount": "139.00", "collection_mode": "platform_collect", "delivery_mode": "auto_recharge", "payment_channel": "alipay", "notify_url": Callback}
+	wrong, _ := json.Marshal(input)
+	if w := call(s, "POST", "/v1/orders", string(wrong), "order:cf-rejected"); w.Code != 400 {
+		t.Fatal("Cloudflare fixture accepted another runtime callback", w.Code)
+	}
+	input["notify_url"] = "https://127.0.0.1:8771/api/recharge/webhook"
+	raw, _ := json.Marshal(input)
+	w := call(s, "POST", "/v1/orders", string(raw), "order:cf-accepted")
+	if w.Code != 201 || !strings.Contains(w.Body.String(), "https://127.0.0.1:8773/payments/") {
+		t.Fatal("isolated Cloudflare order rejected", w.Code)
+	}
+	r := httptest.NewRequest("POST", "http://127.0.0.1:8772/control", strings.NewReader(`{"action":"activate"}`))
+	r.Header.Set("Origin", ControlOrigin)
+	w = httptest.NewRecorder()
+	s.control(w, r)
+	if w.Code != 403 {
+		t.Fatal("original simulator can mutate Cloudflare fixture")
+	}
+}
 
 func fixture(t *testing.T) *server {
 	t.Helper()

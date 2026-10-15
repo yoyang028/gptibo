@@ -55,6 +55,10 @@ export async function customerRefunds(request: Request, env: Env, order: Order) 
 
 export async function adminRefunds(request: Request, env: Env, url: URL) {
   const db = env.INTEREST_DB; const path = url.pathname
+  if (path === '/api/admin/refunds/notifications' && request.method === 'GET') {
+    const summary = await db.prepare("SELECT COUNT(*) version,COALESCE(SUM(CASE WHEN status IN ('pending','approved') THEN 1 ELSE 0 END),0) pending FROM refund_cases").first<{version: number; pending: number}>()
+    return json(summary)
+  }
   if (path === '/api/admin/refunds' && request.method === 'GET') {
     const page = Number(url.searchParams.get('page') ?? 1); const status = url.searchParams.get('status') ?? ''
     if (!Number.isInteger(page) || page < 1 || page > 10000 || (status && !['pending', 'approved', 'refunded', 'rejected', 'cancelled'].includes(status))) throw new ApiError('筛选条件无效。')
@@ -73,7 +77,8 @@ export async function adminRefunds(request: Request, env: Env, url: URL) {
     const events = (await db.prepare('SELECT * FROM refund_events WHERE case_id=? ORDER BY created_at,id').bind(row.id).all()).results
     const partnerDebit = await db.prepare('SELECT d.amount_cents,d.payout_id,p.status payout_status FROM partner_debits d LEFT JOIN partner_payouts p ON p.id=d.payout_id WHERE d.refund_id=?').bind(row.id).first()
     const channel = order.mode === 'live' ? (await findRechargeOrder(env, order.id) ? 'recharge' : (await findPayment(env, order.id))?.provider ?? null) : null
-    return json({ refund: row, hasPartner: order.partner_id !== null, partnerDebit, paymentProvider: channel, platformStatus: channel === 'recharge' ? await platformOrderStatus(env, order) : null, order: { id: order.id, plan: order.plan_name, plan_id: order.plan, price_cents: order.price_cents, refunded_cents: order.refunded_cents, customer_email: order.customer_email, mode: order.mode, status: order.status, partner_name: order.partner_name }, payout, events })
+    const paymentStatus = order.refunded_cents >= order.price_cents ? 'refunded' : order.refunded_cents > 0 ? 'partially_refunded' : order.payment_status
+    return json({ approvalSubmitsRefund: false, refund: row, hasPartner: order.partner_id !== null, partnerDebit, paymentProvider: channel, platformStatus: channel === 'recharge' ? await platformOrderStatus(env, order) : null, order: { id: order.id, plan: order.plan_name, plan_id: order.plan, price_cents: order.price_cents, refunded_cents: order.refunded_cents, customer_email: order.customer_email, mode: order.mode, status: order.status, payment_status: paymentStatus, created_at: order.created_at, updated_at: order.updated_at, purchase_note: order.purchase_note, refund_hold: order.refund_hold, partner_name: order.partner_name }, payout, events })
   }
   const data = await body(request); const note = text(data.note, '处理说明'); const now = Date.now(); const eventId = crypto.randomUUID()
   if (row.version !== data.version) throw new ApiError('售后已更新，请刷新。', 409)

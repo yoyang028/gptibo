@@ -73,6 +73,9 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     if (path.startsWith('/api/partner/')) return await partnerRoutes(request, env, url)
     if (path.startsWith('/api/admin/')) {
       await requireAdmin(request, env)
+      if (path === '/api/admin/tickets/notifications' && method === 'GET') return json({enabled: false, version: 0, pending: 0})
+      if (path.startsWith('/api/admin/tickets')) throw new ApiError('Cloudflare 后端尚未启用代理工单。', 503)
+      if (path === '/api/admin/security' && method === 'GET') return json({enabled: false, events: []})
       if (path.startsWith('/api/admin/xgift/')) return await xgiftAdmin(request, env, url)
       if (path === '/api/admin/account_supplier' || path.startsWith('/api/admin/account_supplier/')) return await gmailProductsRoute(request, env, url)
       if (path === '/api/admin/recharge-reminders/preview') return await rechargeReminderPreview(request, env)

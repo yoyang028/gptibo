@@ -1,4 +1,4 @@
-// Exercises the original checkout through the Go API, PostgreSQL and loopback supplier.
+// Exercises the original checkout with either local backend and a loopback supplier.
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -8,14 +8,26 @@ import {fileURLToPath} from 'node:url'
 import {latestCode, totp} from './auth.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const origin = 'http://127.0.0.1:5176'
-const control = 'http://127.0.0.1:8765'
-const evidence = path.join(root, 'artifacts/local/evidence/quefa-round1')
+const cloudflare = process.argv.includes('--cloudflare')
+const origin = cloudflare ? 'https://127.0.0.1:8771' : 'http://127.0.0.1:5176'
+const control = cloudflare ? 'http://127.0.0.1:8772' : 'http://127.0.0.1:8765'
+const evidence = path.join(root, 'artifacts/local/evidence', cloudflare ? 'cloudflare-round1' : 'quefa-round1')
+function verificationCode(email) {
+  if (!cloudflare) return latestCode(email).code
+  const directory = path.join(root, 'artifacts/local/cloudflare/mailbox')
+  const messages = fs.readdirSync(directory).filter(n => n.endsWith('.json')).map(name => ({name, time: fs.statSync(path.join(directory, name)).mtimeMs})).sort((a,b) => b.time-a.time)
+  for (const {name} of messages) {
+    const mail = JSON.parse(fs.readFileSync(path.join(directory, name), 'utf8'))
+    const code = mail.to.includes(email) && mail.text?.match(/\b\d{6}\b/)
+    if (code) return code[0]
+  }
+  throw new Error('No matching local Cloudflare email')
+}
 fs.mkdirSync(evidence, {recursive: true})
 const require = createRequire(import.meta.url)
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE_PATH || 'D:/ChatGPT/CodexCache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || 'D:/ChatGPT/Caches/playwright/chromium-1234/chrome-win64/chrome.exe'
-const results = {checkedAt: new Date().toISOString(), checks: [], pageErrors: [], externalRequests: []}
+const results = {checkedAt: new Date().toISOString(), backend: cloudflare ? 'workerd-d1' : 'go-postgresql', simulatedSupplier: true, checks: [], pageErrors: [], externalRequests: []}
 const record = (name, details = {}) => {results.checks.push({name, passed: true, ...details}); console.log(JSON.stringify(results.checks.at(-1)))}
 const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 async function waitFor(read, predicate, description, timeout = 30000) {
@@ -27,9 +39,17 @@ async function waitFor(read, predicate, description, timeout = 30000) {
   } while (Date.now() < deadline)
   throw new Error('Timed out: ' + description)
 }
-async function api(context, route, data, expected = 200) {
-  const response = await context.request.fetch(route, {method: data === undefined ? 'GET' : 'POST', ...(data === undefined ? {} : {data}), headers: {Origin: origin}})
+async function api(context, route, data, expected = 200, retries = 0) {
+  const response = await context.request.fetch(route, {method: data === undefined ? 'GET' : 'POST', ...(data === undefined ? {} : {data}), headers: {Origin: origin, ...(cloudflare ? {Connection: 'close'} : {})}}).catch(error => {
+    throw new Error(`${data === undefined ? 'GET' : 'POST'} ${route}: ${String(error).split('\nCall log:')[0]}`)
+  })
   const body = await response.json()
+  // Duplicate-key recovery may meet the page's automatic reconciliation lease.
+  // Retry only that explicit busy response, with the identical authorized body.
+  if (cloudflare && response.status() === 409 && expected === 200 && data?.action === 'submit' && body.error === '订单正在同步，请稍后刷新。' && retries < 5) {
+    await pause(450)
+    return api(context, route, data, expected, retries + 1)
+  }
   // The worker and visible checkout share a lease. A poll may legitimately
   // lose that race; read the saved order while the owning worker finishes.
   if (response.status() === 409 && expected === 200 && ['poll', 'query'].includes(data?.action) && route.endsWith('/fulfillment')) {
@@ -53,7 +73,7 @@ function session() {
   return JSON.stringify({user: {email: 'demo@example.invalid'}, accessToken: token, expires: new Date(exp*1000).toISOString()})
 }
 const browser = await chromium.launch({headless: true, executablePath, env: {...process.env, TEMP: path.join(root, 'artifacts/local/tmp'), TMP: path.join(root, 'artifacts/local/tmp')}})
-const customer = await browser.newContext({baseURL: origin, locale: 'zh-CN', viewport: {width: 1440, height: 1000}})
+const customer = await browser.newContext({baseURL: origin, ignoreHTTPSErrors: cloudflare, locale: 'zh-CN', viewport: {width: 1440, height: 1000}})
 const page = await customer.newPage()
 page.on('pageerror', error => results.pageErrors.push(error.message))
 page.on('request', request => {if (/^https?:/.test(request.url()) && ![origin, control].includes(new URL(request.url()).origin)) results.externalRequests.push(new URL(request.url()).origin)})
@@ -61,14 +81,24 @@ let admin
 try {
   await mockState()
   await act('', 'activate')
+  if (cloudflare) {
+    assert.equal((await api(customer, '/api/health')).backend, 'cloudflare-d1')
+    const missing = await customer.request.get('/api/missing')
+    assert.equal(missing.status(), 404); assert.match(missing.headers()['content-type'], /application\/json/)
+    assert.equal(missing.headers()['cache-control'], 'no-store')
+    const catalog = await api(customer, '/api/catalog')
+    assert.deepEqual(catalog.plans.filter(p => p.enabled).map(p => p.id), ['plus'])
+    record('D1 health, API versus SPA routing, response security and Plus-only catalogue verified')
+  }
   await page.goto('/product/chatgpt')
   await page.getByRole('button', {name: '立即购买', exact: true}).click()
   await page.getByRole('button', {name: '继续下单', exact: true}).click()
   const email = 'quefa-local-' + crypto.randomUUID().slice(0, 8) + '@gmail.com'
   await page.locator('#purchase-email').fill(email)
-  const creating = page.waitForResponse(response => new URL(response.url()).pathname === '/api/orders' && response.request().method() === 'POST')
-  await page.getByRole('button', {name: '继续付款', exact: true}).click()
-  const created = await creating
+  const [created] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === '/api/orders' && response.request().method() === 'POST'),
+    page.getByRole('button', {name: '继续付款', exact: true}).click(),
+  ])
   assert.equal(created.status(), 201, await created.text())
   const initial = (await created.json()).order
   assert.equal(initial.mode, 'live', 'exercise the supplier adapter, not the demo state machine')
@@ -130,16 +160,16 @@ try {
   await page.goto('/orders')
   await page.locator('.order-row').filter({hasText: initial.id}).waitFor()
   record('Final success renders and the order remains visible after navigating to order history')
-  const outsider = await browser.newContext({baseURL: origin})
+  const outsider = await browser.newContext({baseURL: origin, ignoreHTTPSErrors: cloudflare})
   await api(outsider, '/api/orders/client', {})
   await api(outsider, route, undefined, 404)
   await api(outsider, '/api/admin/plans', undefined, 401)
   const recovery = await api(outsider, '/api/orders/recovery/send', {email})
-  await api(outsider, '/api/orders/recovery/verify', {email, challenge: recovery.challenge, code: latestCode(email).code})
+  await api(outsider, '/api/orders/recovery/verify', {email, challenge: recovery.challenge, code: verificationCode(email)})
   assert.equal((await api(outsider, route)).order.id, initial.id)
   await outsider.close()
   record('Buyer isolation and local email recovery work for supplier-backed orders')
-  admin = await browser.newContext({baseURL: origin, locale: 'zh-CN', viewport: {width: 1440, height: 1000}})
+  admin = await browser.newContext({baseURL: origin, ignoreHTTPSErrors: cloudflare, locale: 'zh-CN', viewport: {width: 1440, height: 1000}})
   const adminPage = await admin.newPage()
   adminPage.on('pageerror', error => results.pageErrors.push(error.message))
   await adminPage.goto('/admin')
@@ -147,14 +177,21 @@ try {
   const sending = adminPage.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/login/email-code')
   await adminPage.getByRole('button', {name: '获取验证码', exact: true}).click()
   assert.equal((await sending).status(), 200)
-  await adminPage.locator('#admin-email-code').fill(latestCode('admin@example.invalid').code)
-  await adminPage.locator('#admin-code').fill(totp(fs.readFileSync(path.join(root, 'artifacts/local/.secrets/admin-totp'), 'utf8')))
+  await adminPage.locator('#admin-email-code').fill(verificationCode('admin@example.invalid'))
+  await adminPage.locator('#admin-code').fill(totp(fs.readFileSync(path.join(root, 'artifacts/local/.secrets', cloudflare ? 'quefa-cloudflare-mock/admin-totp' : 'admin-totp'), 'utf8')))
   await adminPage.getByRole('button', {name: '登录后台', exact: true}).click()
   await adminPage.getByRole('navigation', {name: '后台导航'}).waitFor()
   const detail = await api(admin, '/api/admin/orders/' + initial.id)
   assert.equal(detail.order.status, 'success')
   await adminPage.getByRole('navigation', {name: '后台导航'}).getByRole('button', {name: '订单管理', exact: true}).click()
   await adminPage.getByText(initial.id, {exact: true}).first().waitFor()
+  if (cloudflare) {
+    await waitFor(async () => (await api(admin, '/api/admin/refunds/notifications')).pending, Number.isInteger, 'admin refund notification capability')
+    const alerts = adminPage.getByRole('region', {name: '工单与退款提醒'})
+    await alerts.getByText(/待处理退款/).waitFor()
+    assert.equal(await alerts.getByRole('button', {name: /查看工单/}).count(), 0)
+    assert.doesNotMatch(await alerts.innerText(), /连接中断/)
+  }
   await adminPage.screenshot({path: path.join(evidence, 'admin-orders.png'), fullPage: true})
   record('Admin email and TOTP login can inspect the completed original order')
   const refundOrder = (await api(customer, '/api/orders', {plan: 'plus', email, key: crypto.randomUUID(), expectedPrice: 13900}, 201)).order
@@ -164,17 +201,52 @@ try {
   await act(refundable.order.order_id, 'pay')
   const paid = await waitFor(async () => (await api(customer, refundRoute + '/fulfillment', {action: 'poll'})).order, order => order.paymentStatus === 'paid', 'second order paid')
   await api(customer, refundRoute + '/refunds', {action: 'request', key: crypto.randomUUID(), reason: '本地模拟验收：未提交充值，申请全额退款', version: paid.version}, 201)
+  if (cloudflare) {
+    const requests = await api(customer, refundRoute + '/refunds')
+    const refund = requests.cases[0]
+    await adminPage.getByRole('navigation', {name: '后台导航'}).getByRole('button', {name: '退款与售后', exact: true}).click()
+    await adminPage.getByRole('row').filter({hasText: refundOrder.id}).getByRole('button', {name: '处理申请', exact: true}).click()
+    const dialog = adminPage.getByRole('dialog', {name: '处理售后'})
+    const refundPath = '/api/admin/refunds/' + refund.id
+    async function refundAction(action, label, note) {
+      await dialog.locator('#refund-note').fill(note)
+      const [response] = await Promise.all([
+        adminPage.waitForResponse(response => new URL(response.url()).pathname === refundPath && response.request().method() === 'POST' && response.request().postDataJSON()?.action === action),
+        dialog.getByRole('button', {name: label, exact: true}).click(),
+      ])
+      assert.equal(response.status(), 200, await response.text())
+    }
+    await refundAction('approve', '审核通过，进入退款', '本地 Cloudflare 模拟审核')
+    await dialog.getByRole('button', {name: '提交 / 核对平台退款', exact: true}).waitFor()
+    await refundAction('execute-refund', '提交 / 核对平台退款', '本地模拟原路退款')
+    await dialog.getByRole('heading', {name: '售后记录', exact: true}).waitFor()
+    await waitFor(async () => (await api(admin, refundPath)).refund.status, status => status === 'refunded', 'admin refund UI final result')
+    await dialog.locator('.refund-record').getByText('退款完成', {exact: true}).waitFor()
+    assert.match(await dialog.locator('.refund-record').innerText(), /支付状态：已全额退款/)
+    await adminPage.screenshot({path: path.join(evidence, 'admin-refunds.png'), fullPage: true})
+    await dialog.getByRole('button', {name: '关闭弹窗', exact: true}).click()
+    record('Cloudflare admin UI reviews the request, submits the simulated supplier refund, and displays its final result')
+  }
   const refunded = await waitFor(async () => (await api(customer, refundRoute)).order, order => order.refundedCents === 13900, 'verified refund', 45000)
   assert.equal(refunded.fulfillment.canSubmit, false)
   await api(customer, refundRoute + '/fulfillment', {action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: {mode: 'session', session: session()}}, 409)
   record('Customer refund reaches simulated supplier, final refund is reconciled, and recharge remains closed', {orderId: refundOrder.id})
+  if (cloudflare) {
+    const token = fs.readFileSync(path.join(root, 'artifacts/local/.secrets/quefa-cloudflare-mock/control-token'), 'utf8').trim()
+    const response = await fetch('http://127.0.0.1:8774/audit', {method: 'POST', headers: {Origin: 'http://127.0.0.1:8774', 'X-Local-Control': token}, body: JSON.stringify({needle: 'MOCKONLY'})})
+    assert.equal(response.status, 200); const audit = await response.json()
+    assert.equal(audit.credentialStored, false); assert(audit.counts.recharge_webhooks >= 3)
+    results.d1Audit = audit
+    record('Actual D1 stores callback digests and order history without the submitted Session or Access Token')
+    await customer.storageState({path: path.join(evidence, 'synthetic-buyer-storage.json')})
+  }
   await api(admin, '/api/admin/logout', {})
   assert.equal((await api(admin, '/api/admin/session')).authenticated, false)
   assert.deepEqual(results.pageErrors, [])
   assert.deepEqual(results.externalRequests, [])
   record('Browser completes with zero page errors and zero external browser requests')
 } catch (error) {
-  results.failure = String(error)
+  results.failure = String(error).split('\nCall log:')[0]
   process.exitCode = 1
   await page.screenshot({path: path.join(evidence, 'failure.png'), fullPage: true}).catch(() => {})
 } finally {

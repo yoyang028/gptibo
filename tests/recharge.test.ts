@@ -377,13 +377,13 @@ test('25x automatic purchases require an authorized available product and safe s
   s.products[0].delivery_modes = ['auto_recharge']; s.products[0].supply_price = '4501.00'
   assert.equal((await s.call('/api/orders', payload(), buyer)).status, 409)
   s.products[0].supply_price = '3250.00'; s.products[0].max_sale_price = '4499.00'
-  assert.equal((await s.call('/api/orders', payload(), buyer)).status, 409)
+  assert.equal((await s.call('/api/orders', payload(), buyer)).status, 201, 'historical max_sale_price is not a sale ceiling')
   s.products[0].max_sale_price = '5000.00'; s.partner()
   s.db.prepare('INSERT INTO partner_prices(partner_id,plan,cost_cents,price_cents) VALUES (?,?,?,?)').run('partner-test', 'pro-25x', 324999, 450000)
   assert.equal((await s.call('/api/orders', { ...payload(), partner: 'partner-test' }, buyer)).status, 409)
   s.db.prepare('UPDATE partner_prices SET cost_cents=330000 WHERE partner_id=? AND plan=?').run('partner-test', 'pro-25x')
   assert.equal((await s.call('/api/orders', { ...payload(), partner: 'partner-test' }, buyer)).status, 201)
-  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 1)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 2)
   assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 0)
 })
 
@@ -1413,6 +1413,20 @@ test('paused tasks never grant retry permission and terminal statuses override a
   assert.equal(current.fulfillment.canSubmit, true)
 })
 
+test('an automatic completion also persists its current terminal task and completion time before and after later queries', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer); await s.submit(order.id, buyer)
+  s.setTask('succeeded')
+  s.override(path => path === '/v1/orders/ord_test' ? Response.json({data: {...s.remoteOrder(), fulfillment_status: 'succeeded'}}) : undefined)
+  for (let i = 0; i < 2; i++) {
+    const response = await s.query(order.id, buyer); assert.equal(response.status, 200)
+    const current = (await response.json()).order
+    assert.equal(current.status, 'success'); assert.equal(current.fulfillment.rechargeStatus, 'succeeded')
+    assert.equal(current.fulfillment.attemptNo, 1); assert(current.fulfillment.finishedAt > 0)
+    assert.equal(s.db.prepare('SELECT status FROM recharge_redemptions').get()!.status, 'succeeded')
+  }
+})
+
 test('concurrent duplicate callbacks wake only their matching order once, and test notifications never wake business orders', async t => {
   const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer); await s.query(order.id, buyer)
   const other = await s.create(buyer)
@@ -1420,8 +1434,38 @@ test('concurrent duplicate callbacks wake only their matching order once, and te
   assert.deepEqual(responses.map(r => r.status), [200, 200])
   assert.equal(s.db.prepare('SELECT notify_version FROM recharge_orders WHERE order_id=?').get(order.id)!.notify_version, 1)
   assert.equal(s.db.prepare('SELECT notify_version FROM recharge_orders WHERE order_id=?').get(other.id)!.notify_version, 0)
-  const stamp = String(Math.floor(Date.now() / 1000)); const raw = JSON.stringify({ event_id: 'evt_probe', type: 'webhook.test' })
+  const stamp = String(Math.floor(Date.now() / 1000)); const raw = JSON.stringify({ event_id: 'evt_probe', type: 'webhook.test', data: {order_id: 'ord_test', merchant_order_no: order.id} })
   const response = await worker.fetch(new Request('https://shop.example.invalid/api/recharge/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Quefa-Event': 'webhook.test', 'X-Quefa-Event-Id': 'evt_probe', 'X-Quefa-Delivery': 'dlv_probe', 'X-Quefa-Timestamp': stamp, 'X-Quefa-Signature': `t=${stamp},v1=${mac(stamp + '.' + raw, webhookSecret)}` }, body: raw }), s.env)
   assert.equal(response.status, 200)
   assert.equal(s.db.prepare('SELECT SUM(notify_version) n FROM recharge_orders').get()!.n, 1)
+})
+
+test('admin refund alerts use real pending cases and disabled capabilities never masquerade as connected services', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  for (const path of ['/api/admin/refunds/notifications', '/api/admin/tickets/notifications', '/api/admin/security']) assert.equal((await s.call(path)).status, 401)
+  const admin = await s.login()
+  assert.deepEqual(await (await s.call('/api/admin/tickets/notifications', undefined, admin)).json(), {enabled: false, version: 0, pending: 0})
+  assert.deepEqual(await (await s.call('/api/admin/security', undefined, admin)).json(), {enabled: false, events: []})
+  assert.deepEqual(await (await s.call('/api/admin/refunds/notifications', undefined, admin)).json(), {version: 0, pending: 0})
+  assert.equal((await s.call('/api/orders/verification')).status, 200)
+  const current = await getOrder(s.env, order.id)
+  assert.equal((await s.call(`/api/orders/${order.id}/refunds`, {key: crypto.randomUUID(), reason: 'fixture refund alert', version: current.version}, buyer)).status, 201)
+  assert.deepEqual(await (await s.call('/api/admin/refunds/notifications', undefined, admin)).json(), {version: 1, pending: 1})
+  const row = s.db.prepare('SELECT * FROM refund_cases').get()!
+  const detail = await (await s.call('/api/admin/refunds/' + row.id, undefined, admin)).json()
+  assert.equal(detail.approvalSubmitsRefund, false)
+  assert.equal(detail.order.payment_status, 'paid')
+  assert.equal(detail.order.refund_hold, 1)
+  assert(Number.isSafeInteger(detail.order.created_at))
+  assert.equal((await s.call('/api/admin/refunds/' + row.id, {action: 'approve', amountCents: 13900, note: 'approve fixture', version: row.version}, admin)).status, 200)
+  assert.equal(s.calls.filter(c => c.path.endsWith('/refunds')).length, 0, 'approval has not yet submitted the refund')
+  assert.equal((await s.call('/api/admin/refunds/' + row.id, {action: 'execute-refund', note: 'execute fixture', version: 1}, admin)).status, 409)
+  assert.deepEqual(await (await s.call('/api/admin/refunds/notifications', undefined, admin)).json(), {version: 1, pending: 1})
+  s.setRefund('succeeded'); s.setPayment('refunded')
+  assert.deepEqual(await reconcileRechargeRefunds(s.env), {checked: 1, completed: 1, pending: 0})
+  assert.deepEqual(await (await s.call('/api/admin/refunds/notifications', undefined, admin)).json(), {version: 1, pending: 0})
+  const finalDetail = await (await s.call('/api/admin/refunds/' + row.id, undefined, admin)).json()
+  assert.equal(finalDetail.order.payment_status, 'refunded')
+  assert.equal(finalDetail.order.refund_hold, 0)
 })
