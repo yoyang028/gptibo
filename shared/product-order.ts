@@ -9,7 +9,7 @@ export const STOREFRONT_PRODUCTS = [
   { id: 'codex-sms', name: 'Codex 接码' },
 ] as const
 
-export type StorefrontProductId = typeof STOREFRONT_PRODUCTS[number]['id']
+export type StorefrontProductId = typeof STOREFRONT_PRODUCTS[number]['id'] | `custom-${string}`
 export type ProductOrderSettings = { productIds: StorefrontProductId[]; version: number; hiddenProductIds?: StorefrontProductId[] }
 export const DEFAULT_PRODUCT_ORDER = STOREFRONT_PRODUCTS.map(product => product.id)
 

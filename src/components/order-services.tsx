@@ -27,7 +27,7 @@ export function PurchaseEmail({ couponAvailable = false, shopSlug, purchasePlan,
   const [verification, setVerification] = useState({ ready: false, token: '' })
   const [verificationRevision, setVerificationRevision] = useState(0)
   const [email, setEmail] = useState(initialEmail ?? '')
-  const showCoupon = Boolean(shopSlug && couponAvailable)
+  const showCoupon = couponAvailable
   const [couponCode, setCouponCode] = useState(() => showCoupon ? new URLSearchParams(location.search).get('coupon')?.slice(0,32) ?? '' : '')
   const [coupon, setCoupon] = useState<{ code: string; priceCents: number; discountCents: number; email: string; listPriceCents: number } | null>(null)
   const [couponBusy, setCouponBusy] = useState(false)

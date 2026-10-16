@@ -18,7 +18,8 @@
     "cloudflare:check": "node scripts/cloudflare/readiness.mjs",
     "cloudflare:account": "node scripts/cloudflare/account.mjs",
     "cloudflare:dry-run": "node scripts/cloudflare/dry-run.mjs",
-    "test:cloudflare": "node scripts/cloudflare/acceptance.mjs"
+    "test:cloudflare": "node scripts/cloudflare/acceptance.mjs",
+    "test:cloudflare:owner-shop": "node scripts/cloudflare/owner-shop-browser.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

@@ -300,3 +300,7 @@
   .payment-details summary>svg,.payment-select-wrap select,.integration-console-link { transition:none; }
   .integration-spinning { animation:none; }
 }
+
+/* ShopBrand uses a text span, distinct from the old login status badge. */
+.admin-brand > .shop-brand-name{margin-left:0;font-size:18px;font-weight:650;color:inherit;letter-spacing:-.4px;padding:0;background:none}
+.admin-brand > .shop-brand-avatar{margin-left:0;padding:0;background:none}

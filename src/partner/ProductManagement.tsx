@@ -10,13 +10,12 @@ import { ProductMark } from '@/components/brand'
 import { Feedback } from '@/components/workspace-loading'
 import { api, errorMessage } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
-import { DEFAULT_PRODUCT_ORDER, STOREFRONT_PRODUCTS, type ProductOrderSettings, type StorefrontProductId } from '../../shared/product-order'
+import { STOREFRONT_PRODUCTS, type ProductOrderSettings, type StorefrontProductId } from '../../shared/product-order'
 import { money, type Offer } from './model'
 import { Pricing } from './shared'
 import './product-management.css'
 
-type Product = typeof STOREFRONT_PRODUCTS[number]
-const productFor = (id: string) => STOREFRONT_PRODUCTS.find(product => product.id === id)!
+type Product = {id:StorefrontProductId;name:string;upcoming?:boolean}
 
 function ProductSummary({ product, plans, hidden = false }: { product: Product; plans: Offer[]; hidden?: boolean }) {
   const available = plans.filter(plan => plan.enabled)
@@ -28,8 +27,7 @@ function ProductSummary({ product, plans, hidden = false }: { product: Product; 
   </>
 }
 
-function SortableProduct({ id, index, plans, locked, readOnly, hidden, onToggle, onSaved }: { hidden: boolean; onToggle: () => void; id: StorefrontProductId; index: number; plans: Offer[]; locked: boolean; readOnly: boolean; onSaved: () => void }) {
-  const product = productFor(id)
+function SortableProduct({ pricePrefix, product, id, index, plans, locked, readOnly, hidden, onToggle, onSaved }: { product: Product; pricePrefix: string; hidden: boolean; onToggle: () => void; id: StorefrontProductId; index: number; plans: Offer[]; locked: boolean; readOnly: boolean; onSaved: () => void }) {
   const [open, setOpen] = useState(id === 'chatgpt')
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: locked })
   return <li ref={setNodeRef} className="partner-product-item" data-dragging={isDragging || undefined} style={{ transform: CSS.Transform.toString(transform), transition }}>
@@ -44,13 +42,16 @@ function SortableProduct({ id, index, plans, locked, readOnly, hidden, onToggle,
         {!readOnly && <Button type="button" variant="outline" size="sm" className="partner-product-visibility" disabled={locked} aria-label={`${hidden ? '上架' : '下架'} ${product.name}`} onClick={onToggle}>{hidden ? <Eye size={15} /> : <EyeOff size={15} />}{hidden ? '上架' : '下架'}</Button>}
       </div>
       <CollapsibleContent className="partner-product-details" keepMounted>
-        <Pricing plans={plans} readOnly={readOnly || locked} endpoint={plan => '/api/partner/prices/' + plan.id} onSaved={onSaved} />
+        <Pricing plans={plans} readOnly={readOnly || locked} endpoint={plan => pricePrefix + plan.id} onSaved={onSaved} />
       </CollapsibleContent>
     </Collapsible>
   </li>
 }
 
-function ProductManagementForm({ settings, plans, endpoint, disabled, readOnly, onSaved, onReload, loading }: { settings: ProductOrderSettings; plans: Offer[]; endpoint: string; disabled: boolean; readOnly: boolean; onSaved: () => void; onReload: () => void; loading: boolean }) {
+function ProductManagementForm({ customProducts, settings, plans, endpoint, disabled, readOnly, onSaved, onReload, loading }: { customProducts: Product[]; settings: ProductOrderSettings; plans: Offer[]; endpoint: string; disabled: boolean; readOnly: boolean; onSaved: () => void; onReload: () => void; loading: boolean }) {
+  const allProducts:Product[]=[...STOREFRONT_PRODUCTS,...customProducts]
+  const defaultIds=allProducts.map(p=>p.id)
+  const productFor=(id:string)=>allProducts.find(p=>p.id===id)??{id:id as StorefrontProductId,name:'商品已移除'}
   const [saved, setSaved] = useState(settings)
   const [ids, setIds] = useState(settings.productIds)
   const [hiddenIds, setHiddenIds] = useState(settings.hiddenProductIds ?? [])
@@ -93,7 +94,7 @@ function ProductManagementForm({ settings, plans, endpoint, disabled, readOnly, 
       <div><strong>商店商品设置</strong><span>{ids.length} 件商品</span><span className="partner-products-dirty">{changed ? '设置未保存' : '已同步'}</span></div>
       <div>
         <Button type="button" variant="ghost" size="sm" disabled={loading || busy || changed || Boolean(activeId)} aria-label="重新读取已保存的商品设置" onClick={onReload}><RefreshCw size={14} />重新读取</Button>
-        {!readOnly && <Button type="button" variant="ghost" size="sm" disabled={locked || Boolean(activeId) || ids.join(',') === DEFAULT_PRODUCT_ORDER.join(',')} onClick={() => { setIds([...DEFAULT_PRODUCT_ORDER]); setError(''); setMessage('已恢复默认顺序，保存后生效。') }}><RotateCcw size={14} />恢复默认</Button>}
+        {!readOnly && <Button type="button" variant="ghost" size="sm" disabled={locked || Boolean(activeId) || ids.join(',') === defaultIds.join(',')} onClick={() => { setIds([...defaultIds]); setError(''); setMessage('已恢复默认顺序，保存后生效。') }}><RotateCcw size={14} />恢复默认</Button>}
       </div>
     </div>
     <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis]} onDragStart={({ active }) => { setActiveId(active.id as StorefrontProductId); setMessage('') }} onDragEnd={move} onDragCancel={() => { setActiveId(null); setMessage('已取消拖动，顺序未改变。') }} accessibility={{
@@ -107,7 +108,7 @@ function ProductManagementForm({ settings, plans, endpoint, disabled, readOnly, 
     }}>
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <ol className="partner-products-list" aria-label="商店商品展示顺序">
-          {ids.map((id, index) => <SortableProduct key={id} id={id} index={index} plans={plans.filter(plan => plan.product_id === id)} locked={locked} readOnly={readOnly} hidden={hiddenIds.includes(id)} onToggle={() => { setHiddenIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]); setError(''); setMessage(`${productFor(id).name} 已选择${hiddenIds.includes(id) ? '上架' : '下架'}，保存设置后生效。`) }} onSaved={onSaved} />)}
+          {ids.map((id, index) => <SortableProduct product={productFor(id)} pricePrefix={endpoint.replace(/\/product-order$/, '/prices/')} key={id} id={id} index={index} plans={plans.filter(plan => plan.product_id === id)} locked={locked} readOnly={readOnly} hidden={hiddenIds.includes(id)} onToggle={() => { setHiddenIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]); setError(''); setMessage(`${productFor(id).name} 已选择${hiddenIds.includes(id) ? '上架' : '下架'}，保存设置后生效。`) }} onSaved={onSaved} />)}
         </ol>
       </SortableContext>
       <DragOverlay dropAnimation={{ duration: 180, easing: 'ease-out' }}>{activeId && <div className="partner-product-overlay"><GripVertical size={18} /><ProductSummary product={productFor(activeId)} plans={plans.filter(plan => plan.product_id === activeId)} /></div>}</DragOverlay>
@@ -122,13 +123,13 @@ function ProductManagementForm({ settings, plans, endpoint, disabled, readOnly, 
   </section>
 }
 
-export function ProductManagement({ endpoint, plans, readOnly = false, disabled = false, onSaved, storeUrl }: { endpoint: string; plans: Offer[]; readOnly?: boolean; disabled?: boolean; onSaved: () => void; storeUrl: string }) {
+export function ProductManagement({ customProducts = [], endpoint, plans, readOnly = false, disabled = false, onSaved, storeUrl }: { customProducts?: Product[]; endpoint: string; plans: Offer[]; readOnly?: boolean; disabled?: boolean; onSaved: () => void; storeUrl: string }) {
   const [revision, setRevision] = useState(0)
   const { data, error, loading } = useResource<ProductOrderSettings>(endpoint, revision)
   return <>
     <div className="partner-section-heading partner-products-heading"><div><h2>商品管理</h2><p>下架不卖的商品，调整展示顺序与售价。上架仍以平台开放和库存为准。</p></div><a href={storeUrl} target="_blank" rel="noreferrer">预览商店 <ArrowUpRight size={14} /></a></div>
     <Feedback error={error} loading={loading} data={data} shape="compact" />
     {error && <Button variant="outline" onClick={() => setRevision(value => value + 1)}>重新加载商品</Button>}
-    {data && <ProductManagementForm key={endpoint + ':' + revision + ':' + data.version} settings={data} plans={plans} endpoint={endpoint} disabled={disabled || loading || Boolean(error)} loading={loading} readOnly={readOnly} onSaved={onSaved} onReload={() => setRevision(value => value + 1)} />}
+    {data && <ProductManagementForm customProducts={customProducts} key={endpoint + ':' + revision + ':' + data.version} settings={data} plans={plans} endpoint={endpoint} disabled={disabled || loading || Boolean(error)} loading={loading} readOnly={readOnly} onSaved={onSaved} onReload={() => setRevision(value => value + 1)} />}
   </>
 }

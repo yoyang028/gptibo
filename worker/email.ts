@@ -65,11 +65,24 @@ export async function sendPartnerInvitationEmail(env: Env, to: string, invitatio
 }
 
 async function sendEmail(env: Env, to: string, message: { subject: string; html: string; text: string }, idempotencyKey: string) {
+  const {ownerShop}=await import('./owner-shop.ts')
+  const shop=env.INTEREST_DB?await ownerShop(env):{brandName:'',name:'GPTibo',version:0},name=(shop.brandName||shop.name).replace(/[\r\n]/g,' ')
+  const address=(env.RESEND_FROM??'').match(/<([^<>]+)>$/)?.[1]??env.RESEND_FROM
+  const from=name!=='GPTibo'&&address&&/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(address)?`"${name.replace(/(["\\])/g,'\\$1')}" <${address}>`:env.RESEND_FROM
+  const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!))
+  // Only the first static brand header is changed, preserving customer delivery text.
+  message={subject:message.subject.replace(/^GPTibo(?=\s*[·・])/,()=>name),html:message.html.replace('>GPTibo<','>'+escape(name)+'<').replace('alt="GPTibo"','alt="'+escape(name)+'"'),text:message.text.replace('GPTibo',()=>name)}
+  if(env.RECHARGE_NOTIFY_URL) {
+    const base=new URL(env.RECHARGE_NOTIFY_URL)
+    if(base.protocol==='https:') {
+      message={...message,html:message.html.replaceAll('https://shop.example.invalid/email-logo.png',escape(base.origin+'/api/catalog?brand-logo=1&v='+shop.version)).replaceAll('https://shop.example.invalid/',escape(base.origin+'/')),text:message.text.replaceAll('https://shop.example.invalid/',base.origin+'/')}
+    }
+  }
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     redirect: 'manual',
     headers: { Authorization: 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify({ from: env.RESEND_FROM, to: [to], ...message }),
+    body: JSON.stringify({ from, to: [to], ...message }),
     signal: AbortSignal.timeout(10000),
   })
   if (!response.ok) throw new Error('delivery failed')

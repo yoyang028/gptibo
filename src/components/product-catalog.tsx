@@ -14,6 +14,7 @@ import { UPCOMING_PRODUCTS } from '@/lib/products'
 import { storefrontHref } from '@/lib/storefront-routing'
 import { catalogSubscriptionPlans, catalogStartingPrice, formatCatalogPrice } from '@/lib/catalog-display'
 import type { CatalogPlan } from '@/lib/api'
+import type { ShopProduct } from '../../shared/shop-products'
 import '@/styles/storefront-home.css'
 
 const categories = [
@@ -34,7 +35,7 @@ function CatalogSkeleton() {
   </div>
 }
 
-export function ProductCatalog({ onHelp, onOrders, onNavigate, offers, catalogReady, error, productOrder = [], hiddenProductIds = [] }: { catalogReady: boolean; error?: string; productOrder?: readonly string[]; hiddenProductIds?: readonly string[]; onHelp: () => void; onOrders: () => void; onNavigate: (page: string) => void; offers: CatalogPlan[] }) {
+export function ProductCatalog({ onHelp, onOrders, onNavigate, offers, catalogReady, error, productOrder = [], hiddenProductIds = [], products = [] }: { products?: ShopProduct[]; catalogReady: boolean; error?: string; productOrder?: readonly string[]; hiddenProductIds?: readonly string[]; onHelp: () => void; onOrders: () => void; onNavigate: (page: string) => void; offers: CatalogPlan[] }) {
   const { t } = useStorefrontI18n()
   const [category, setCategory] = useState('all')
   const [query, setQuery] = useState('')
@@ -57,6 +58,7 @@ export function ProductCatalog({ onHelp, onOrders, onNavigate, offers, catalogRe
     event.preventDefault(); onNavigate(page)
   }
   const cards: { id: string; compact?: boolean; node: ReactNode }[] = [
+    ...products.filter(p=>matches(/学习|语言/.test(p.category)?'learning':/邮箱|邮件/.test(p.category)?'mail':/AI|订阅|GPT|Claude|Codex/i.test(p.category+' '+p.name)?'ai':'tool',p.name+' '+p.category+' '+p.tagline)).map(p=>({id:p.id,node:<article className="store-product"><div className="store-product-heading"><h3>{p.name}</h3><span>{p.stock===0?'暂时售罄':p.badge}</span></div><p className="store-spec">{p.duration} · {p.tagline}</p><div className="shop-product-art"><img src={p.image} alt=""/></div><div className="store-product-bottom"><span className="store-starting-price">¥{(p.priceCents/100).toFixed(2)}<small>／{p.unit}</small></span><a className="store-action" href={storefrontHref('product/'+p.id)} onClick={e=>navigate(e,'product/'+p.id)}>查看商品</a></div></article>})),
     { id: "chatgpt", node: chatgpt && <article className="store-product"><div className="store-product-heading"><h3>ChatGPT</h3>{offers.length > 0 && !plans.some(p => p.enabled) && <span>{t('暂停售卖')}</span>}</div><p className="store-spec">{t('自有账号充值 · Plus / Pro')}</p><SubscriptionDeck plans={plans} /><div className="store-product-bottom"><span className="store-starting-price">{startingPrice === null ? <small>{t(offers.length ? '价格暂不可用' : '价格加载中')}</small> : <>¥{formatCatalogPrice(startingPrice)}<small>{t(' 起')}</small></>}</span><a className="store-action" href={storefrontHref('product/chatgpt')} onClick={e => navigate(e, 'product/chatgpt')}>{t('选择套餐')}</a></div></article> },
     ...memberships.map(([id, product]) => { const offer = offers.find(p => p.id === id); return { id: product.productId, node: <article key={id} className="store-product membership-product"><div className="store-product-heading"><h3>{product.productId === 'gemini' ? 'Gemini Pro' : t('多邻国')}</h3><span>{t(product.duration + '会员')}</span></div><p className="store-spec">{t(product.label)} · {t('邮件交付')}</p><MembershipScene productId={product.productId as 'gemini' | 'duolingo'} /><div className="store-product-bottom"><span className="store-starting-price">{offer ? <>¥{formatCatalogPrice(offer.price_cents / 100)}<small> / {t(product.duration)}</small></> : <small>{t(offers.length ? '暂未开放' : '价格加载中')}</small>}</span><a className="store-action" href={storefrontHref('product/' + product.productId)} onClick={e => navigate(e, 'product/' + product.productId)}>{t(offer?.enabled ? '查看商品' : '查看详情')}</a></div></article> } }),
     { id: "x-premium", node: xgift && <article className="store-product membership-product x-product"><div className="store-product-heading"><h3>X Premium</h3><span>{t(offers.length > 0 && !xAvailable ? '暂停售卖' : '会员订阅')}</span></div><p className="store-spec">{t('3 / 6 个月 · 你的账号，继续精彩')}</p><XPremiumScene /><div className="store-product-bottom"><span className="store-starting-price">{xOffer ? <>¥{formatCatalogPrice(xOffer.price_cents / 100)}<small>{t(' 起')}</small></> : <small>{t('价格加载中')}</small>}</span><a className="store-action" href={storefrontHref('product/x-premium')} onClick={e => navigate(e, 'product/x-premium')}>{t(xAvailable ? '选择套餐' : '查看详情')}</a></div></article> },
@@ -65,7 +67,7 @@ export function ProductCatalog({ onHelp, onOrders, onNavigate, offers, catalogRe
     { id: 'codex-sms', compact: true, node: sms && <a className="store-compact" href={storefrontHref('product/codex-sms')} onClick={e => navigate(e, 'product/codex-sms')}><ProductMark small productId="codex-sms" /><span><strong>{t('Codex 接码')}</strong><small>{t(offers.some(o => o.product_id === 'codex-sms' && o.enabled) ? '按次服务' : '暂停售卖')}</small></span><ChevronRight size={16} /></a> },
   ]
   const groups: typeof cards[] = []
-  for (const id of normalizeProductOrder(productOrder)) {
+  for (const id of [...new Set([...productOrder,...normalizeProductOrder(productOrder),...products.map(p=>p.id)])]) {
     const card = cards.find(item => item.id === id)
     if (!card?.node || hiddenProductIds.includes(id)) continue
     const last = groups.at(-1)

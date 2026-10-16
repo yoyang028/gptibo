@@ -1,4 +1,4 @@
-export async function prepareLogo(file: File) {
+export async function prepareLogo(file: File, maxDimension = 256) {
   if (
     !['image/png', 'image/jpeg'].includes(file.type) ||
     file.size > 5 * 1024 * 1024
@@ -13,7 +13,7 @@ export async function prepareLogo(file: File) {
       image.height > 8192
     )
       throw new Error('图片尺寸过大，请选择较小的 Logo。')
-    const size = Math.min(1, 256 / Math.max(image.width, image.height))
+    const size = Math.min(1, maxDimension / Math.max(image.width, image.height))
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(image.width * size))
     canvas.height = Math.max(1, Math.round(image.height * size))

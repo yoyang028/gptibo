@@ -2,6 +2,8 @@ import { telegramWebhook, retryTelegramInvitations } from './telegram.ts'
 import { reconcileXGift } from './xgift/service.ts'
 import { reconcileDeliverySupplier } from './delivery_supplier/service.ts'
 import type { Env } from './platform.ts'
+import { reconcileShopProducts } from './shop-products.ts'
+import { sendOwnerOrderNotifications } from './owner-shop.ts'
 import { commerce } from './commerce.ts'
 import { paymentNotification, reconcilePayments } from './payments/service.ts'
 import { reconcileRecharge, rechargeWebhook } from './recharge/service.ts'
@@ -31,7 +33,8 @@ export default {
       await Promise.all([reconcilePayments(env), reconcileRecharge(env), retryPayoutNotifications(env), reconcileInvoicePayments(env)])
       await reconcileRechargeRefunds(env)
     }
-    await Promise.all([sendDueRechargeReminders(env), reconcileGmail(env), reconcileDeliverySupplier(env), reconcileXGift(env)])
+    await Promise.all([sendDueRechargeReminders(env), reconcileGmail(env), reconcileDeliverySupplier(env), reconcileXGift(env), reconcileShopProducts(env)])
+    await sendOwnerOrderNotifications(env)
   },
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
@@ -63,6 +66,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       try {
         // Verify the active commerce schema as well as the D1 binding.
         await env.INTEREST_DB.prepare('SELECT paused,remote_attempt_no FROM recharge_redemptions LIMIT 1').all()
+        await env.INTEREST_DB.prepare('SELECT lease_token FROM shop_order_details LIMIT 1').all()
         return json({ ok: true, backend: 'cloudflare-d1' })
       } catch { return error('数据库尚未就绪。', 503) }
     }

@@ -17,15 +17,17 @@ export const PLANS = [
 ] as const
 // Retired plans remain readable without silently changing historical purchases.
 export const ORDER_PLANS = [...PLANS, { id: 'pro', productId: 'chatgpt', name: 'Pro', price: 800, renewalOnly: false }] as const
-export type PlanId = typeof ORDER_PLANS[number]['id']
+export type BuiltinPlanId = typeof ORDER_PLANS[number]['id']
+export type PlanId = BuiltinPlanId | `custom-${string}`
 export type OrderStatus = 'pending' | 'session' | 'processing' | 'success' | 'failed' | 'cancelled'
 export type DemoOrder = { id: string; plan: PlanId; price: number; createdAt: number; status: OrderStatus; startedAt?: number; outcome?: 'success' | 'failed'; smsPhone?: string; customerEmail?: string | null; refundedCents?: number; platformStatus?: PlatformOrderStatus | null; refundHold?: boolean; redemptionBlocked?: boolean }
 export type OrderAction = 'pay' | 'acquire-phone' | 'submit-success' | 'submit-failed' | 'settle' | 'retry' | 'cancel'
 export const ORDER_LABELS: Record<OrderStatus, string> = { pending: '待付款', session: '待提交凭据', processing: '充值中', success: '已完成', failed: '需重新提交', cancelled: '已关闭' }
-export function orderLabel(order: DemoOrder & { manualFulfillment?: boolean; fulfillment?: { paymentExpired?: boolean; rechargeStatus?: string | null } }): string {
+export function orderLabel(order: DemoOrder & { custom?: {productName:string}|null; manualFulfillment?: boolean; fulfillment?: { paymentExpired?: boolean; rechargeStatus?: string | null } }): string {
   const refundLabel = confirmedRefundLabel(Math.max(order.refundedCents ?? 0, order.platformStatus?.refundedCents ?? 0), Math.round(order.price * 100))
   if (refundLabel) return refundLabel
   if (order.refundHold) return '售后处理中'
+  if(order.custom)return ({pending:'待核对付款',session:'待交付',processing:'交付中',success:'已交付',failed:'交付待核对',cancelled:'已关闭'})[order.status]
   if (order.redemptionBlocked && order.status !== 'success') return '已禁止兑换'
   if (['session', 'processing'].includes(order.status) && order.fulfillment?.rechargeStatus === 'unknown') return '提交待确认'
   if (order.status === 'cancelled' && order.fulfillment?.paymentExpired) return '已过期'

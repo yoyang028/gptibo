@@ -30,8 +30,23 @@ const ca = fs.readFileSync(path.join(privateRoot, 'cert.pem'))
 const key = fs.readFileSync(path.join(privateRoot, 'key.pem'), 'utf8')
 await build({ entryPoints: [path.join(root, 'worker/index.ts')], bundle: true, format: 'esm', target: 'es2023', platform: 'browser', external: ['node:*'], outfile: path.join(runtime, 'worker.mjs'), logLevel: 'silent' })
 let supplierRequests = 0
+const genericOrders = new Map()
 const outbound = async request => {
   const url = new URL(request.url)
+  if(url.origin==='https://fixture-supplier.example.com') {
+    // Isolated JSON v1 fixture for owner-published products. Never forwards to a network.
+    if(url.pathname==='/v1/products'&&request.method==='GET')return Response.json({products:[{product_code:'fixture-subscription',available:true}]})
+    if(url.pathname==='/v1/orders'&&request.method==='POST') {
+      const input=await request.json()
+      if(request.headers.get('Idempotency-Key')!==input.merchant_order_no)return Response.json({}, {status:400})
+      const order={order_id:input.merchant_order_no,merchant_order_no:input.merchant_order_no,status:'pending',cost_cents:100,delivery_content:'LOCAL-FIXTURE-DELIVERY'}
+      if(!genericOrders.has(order.order_id))genericOrders.set(order.order_id,order)
+      return Response.json(genericOrders.get(order.order_id))
+    }
+    const id=url.pathname.match(/^\/v1\/orders\/([A-Z0-9-]+)$/)?.[1],order=genericOrders.get(id)
+    if(order&&request.method==='GET')return Response.json({...order,status:'success'})
+    return Response.json({}, {status:404})
+  }
   if (url.origin === 'https://api.resend.com' && url.pathname === '/emails' && request.method === 'POST') {
     const mail = await request.json()
     if (!Array.isArray(mail.to) || mail.to.length !== 1 || !/^[^@\s]+@(?:example\.(?:invalid|test)|gmail\.com)$/.test(mail.to[0])) throw new Error('Unexpected local mailbox recipient')

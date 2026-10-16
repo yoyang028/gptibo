@@ -64,6 +64,8 @@ npm run preview:worker
 
 ChatGPT Plus 单店的 Workers + D1 部署准备、本机完整验收、发布前配置项与回滚步骤见 [Cloudflare 部署准备说明](docs/CLOUDFLARE_DEPLOYMENT.md)。`local-cloudflare.cmd` 提供独立本机模拟环境；`cloudflare:prepare`、`cloudflare:check` 和 `cloudflare:dry-run` 只生成与验证本地发布产物，不发布网站。真实 Plus 交付、退款与利润提现仍需分别记录证据。
 
+主管理后台的「我的店铺」、商品发布、人工收款交付、JSON v1 供货契约与独立浏览器验收见 [自营店铺说明](docs/OWNER_SHOP.md)。新商品沿用现有商城样式，主店铺与代理账号分别保存；开售仍需核实对应供货与收款配置。
+
 ## 接入与安全
 
 - `recharge`：匿名充值适配器。

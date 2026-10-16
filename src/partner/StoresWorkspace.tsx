@@ -60,6 +60,7 @@ type Shop = {
   visitors: number
 }
 type Price = {
+  cost_known?: boolean
   store_id: string
   plan: string
   name: string
@@ -151,6 +152,8 @@ export function StoresWorkspace({
   active = true,
   revision: parentRevision = 0,
   sortingContent,
+  publishingContent,
+  owner = false,
 }: {
   prefix?: string
   readOnly?: boolean
@@ -159,6 +162,8 @@ export function StoresWorkspace({
   active?: boolean
   revision?: number
   sortingContent?: ReactNode
+  publishingContent?: ReactNode
+  owner?: boolean
   onSaved?: () => void
 }) {
   const [revision, setRevision] = useState(0)
@@ -194,6 +199,7 @@ export function StoresWorkspace({
   const monthlyFee = domainResource.data?.monthlyFeeCents ?? 0
   const data = resource.data
   const shop = data?.stores.find((s) => s.id === selected) ?? data?.stores[0]
+  const storefrontPath = owner ? () => '/' : partnerStorefrontPath
   const reload = () => {
     setRevision((v) => v + 1)
     onSaved?.()
@@ -287,13 +293,13 @@ export function StoresWorkspace({
           <a
             href={
               (data.referralOrigin || location.origin) +
-              partnerStorefrontPath(shop.slug)
+              storefrontPath(shop.slug)
             }
             target="_blank"
             rel="noreferrer"
           >
             {(data.referralOrigin || location.origin) +
-              partnerStorefrontPath(shop.slug)}{' '}
+              storefrontPath(shop.slug)}{' '}
             <ArrowUpRight size={14} />
           </a>
         </div>
@@ -301,9 +307,9 @@ export function StoresWorkspace({
           <CopyButton
             value={
               (data.referralOrigin || location.origin) +
-              partnerStorefrontPath(shop.slug)
+              storefrontPath(shop.slug)
             }
-            label="复制推广链接"
+            label={owner ? '复制店铺链接' : '复制推广链接'}
           />
           {!readOnly && (
             <Button variant="outline" onClick={() => setEditor(shop)}>
@@ -320,13 +326,13 @@ export function StoresWorkspace({
         <div>
           <h2>
             <Store size={21} />
-            我的商店 <small>{data.stores.length}/5</small>
+            {owner ? '我的店铺' : '我的商店'} <small>{data.stores.length}/{owner ? 1 : 5}</small>
           </h2>
-          <p>各店独立定价和优惠，收益汇入同一个代理账户。</p>
+          <p>{owner ? '管理主商城的形象、商品、优惠、订单和域名。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
         </div>
         {!readOnly && (
           <Button
-            disabled={busy || data.stores.length >= 5}
+            disabled={busy || owner || data.stores.length >= 5}
             onClick={() => setEditor('new')}
           >
             <Plus size={15} />
@@ -350,6 +356,7 @@ export function StoresWorkspace({
           value={tab}
           onValueChange={setTab}
           items={[
+            ...(publishingContent ? [{value:'publishing',label:'商品发布',content:publishingContent}] : []),
             {
               value: 'overview',
               label: '商店概览',
@@ -399,7 +406,7 @@ export function StoresWorkspace({
                       </div>
                       <div className="store-overview-stat">
                         <strong>{money(s.earned_cents)}</strong>
-                        <small>累计收益</small>
+                        <small>{owner ? '已确认订单差额' : '累计收益'}</small>
                       </div>
                       <div className="store-overview-stat">
                         <strong>{s.visitors}</strong>
@@ -409,9 +416,9 @@ export function StoresWorkspace({
                         <CopyButton
                           value={
                             (data.referralOrigin || location.origin) +
-                            partnerStorefrontPath(s.slug)
+                            storefrontPath(s.slug)
                           }
-                          label="复制推广链接"
+                          label={owner ? '复制店铺链接' : '复制推广链接'}
                         />
                         <Button
                           variant="outline"
@@ -580,16 +587,16 @@ export function StoresWorkspace({
                           域名与续费
                         </h3>
                         <p>
-                          {monthlyFee === 0
+                          {owner ? '主商城域名已绑定 Cloudflare；域名变更需同步正式回调配置。' : monthlyFee === 0
                             ? '额外域名暂时免费（¥0/月），免费开通、自动续期，不扣余额。'
                             : `每个代理一个免费域名，额外域名 ${money(monthlyFee)}/月。到期自动抵扣可提现余额，不足时宽限三天。`}
                         </p>
                       </div>
                     </div>
                     <p className="stores-help">
-                      域名暂停不影响主站推广链接、已有订单和售后。登录状态在不同域名独立。
+                      {owner ? '当前使用主商城正式域名，访问与后台登录共用该域名。' : '域名暂停不影响主站推广链接、已有订单和售后。登录状态在不同域名独立。'}
                     </p>
-                    {!readOnly &&
+                    {!readOnly && !owner &&
                       domainResource.data?.enabled &&
                       domainResource.data.eligible && (
                         <DomainBinder
@@ -642,7 +649,7 @@ export function StoresWorkspace({
                               value={
                                 'https://' +
                                 d.hostname +
-                                partnerStorefrontPath(shop.slug)
+                                storefrontPath(shop.slug)
                               }
                               label="复制域名推广链接"
                             />
@@ -670,7 +677,7 @@ export function StoresWorkspace({
                             </p>
                           </WorkspaceDisclosure>
                           <div className="store-actions">
-                            {!readOnly && d.state !== 'deleting' && (
+                            {!readOnly && !owner && d.state !== 'deleting' && (
                               <>
                                 <Button
                                   variant="outline"
@@ -792,7 +799,7 @@ export function StoresWorkspace({
               ? [
                   {
                     value: 'sorting',
-                    label: '默认店排序',
+                    label: owner ? '商品上下架与排序' : '默认店排序',
                     content: sortingContent,
                   },
                 ]
@@ -847,6 +854,8 @@ export function StoresWorkspace({
       </Dialog>
       {editor && (
         <StoreEditor
+          logoEndpoint={prefix + '/branding/logo'}
+          owner={owner}
           error={error}
           shop={editor === 'new' ? undefined : editor}
           busy={busy}
@@ -999,7 +1008,7 @@ function PriceEditor({
       <div>
         <strong>{p.name}</strong>
         <small>
-          {p.product_id} · 拿货 {money(p.cost_cents)}
+          {p.product_id} · {p.cost_known === false ? '供货价待核对' : '拿货 ' + money(p.cost_cents)}
         </small>
       </div>
       <label>
@@ -1121,12 +1130,16 @@ function DomainBinder({
   )
 }
 function StoreEditor({
+  logoEndpoint,
+  owner = false,
   error,
   shop,
   busy,
   onClose,
   save,
 }: {
+  logoEndpoint: string
+  owner?: boolean
   error: string
   shop?: Shop
   busy: boolean
@@ -1143,7 +1156,7 @@ function StoreEditor({
     setUploadError('')
     try {
       const logo = await prepareLogo(file)
-      const result = await api<{ logo: string }>('/api/partner/branding/logo', {
+      const result = await api<{ logo: string }>(logoEndpoint, {
         logo,
       })
       setSettings((v) => ({ ...v, logo: result.logo }))
@@ -1178,7 +1191,7 @@ function StoreEditor({
         <DialogHeader>
           <DialogTitle>{shop ? '编辑商店' : '新增商店'}</DialogTitle>
           <DialogDescription>
-            设置仅属于这家店。推广码创建后保持固定。
+            {owner ? '保存后更新主商城。联系方式与主后台共用，店铺形象可随时修改。' : '设置仅属于这家店。推广码创建后保持固定。'}
           </DialogDescription>
         </DialogHeader>
         <form
