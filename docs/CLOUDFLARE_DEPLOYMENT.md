@@ -4,6 +4,10 @@
 
 2026-10-15 本轮仅完成本地验证和发布准备，没有创建云资源、上传版本、修改 DNS 或绑定域名，也没有再次付款或向真实账号提交充值。实际域名和资源标识写入被 Git 忽略的 `artifacts/cloudflare/prepared/`，公共源码只保留示例。
 
+2026-10-16 继续准备：通过 Chrome 中的官方设备授权连接 Cloudflare，实际核对一个可访问账户及所选域名的 active Zone，并将正确账户标识写入私有部署配置。仅申请 `account:read`、`user:read`、`zone:read`；没有创建 D1、上传 Worker 或修改 DNS。该权限不能读取 DNS 记录，公网 DNS 快照单独刷新并保留现有 CNAME。账户与域名访问已验证，不等于整套云端部署已验收。
+
+正式后台收件邮箱已由店主指定，独立管理员认证秘密和已有供货凭据已用 Windows DPAPI 加密保存在本机。店主已在 Chrome 登录 Resend，并通过本机窗口保存仅发信密钥，解密结构检查通过；发信域名、发件地址及正式 webhook secret 仍待补齐，生产 2FA 尚未完成绑定。配置没有上传云端，也没有发送真实邮件。
+
 ## 已验证范围
 
 | 项目 | 结果与证据边界 |
@@ -23,6 +27,8 @@
 
 最终本机回归：403 项 Node/前端/Worker 测试通过；20 个 Go 测试包、620 个测试及子用例通过，失败和跳过的测试均为 0。Go vet、TypeScript 和生产构建通过。Lint 保留 5 条既有 Fast Refresh 警告，构建保留既有大块体积提示。远程 CI 未取得本分支运行记录，不能把本机结果写成云端验收。
 
+10 月 16 日账户准备新增 4 个安全用例，Node 全量回归共 407 项通过。覆盖凭据与目录隔离、仅允许 GET、禁止重定向、隐藏失败响应，以及避免选错域名所属账户。本机邮件配置窗口已实际运行，空白遮蔽输入、取消保留原凭据、真实密钥加密保存均已核对；发信结果仍需另记实际验证。
+
 暂存源码导出后分别通过公共源码检查和 Gitleaks 凭据扫描。Windows 路径统一为 `/` 后识别已审核图片，保留对未知二进制、私钥和意外外部地址的检查；运行资料及实际配置不进入提交。
 
 ## 本机验收
@@ -34,6 +40,8 @@
 .\local-cloudflare.cmd status
 .\local-cloudflare.cmd test
 .\local-cloudflare.cmd login
+.\local-cloudflare.cmd account
+.\local-cloudflare.cmd mail
 .\local-cloudflare.cmd stop
 ```
 
@@ -46,6 +54,10 @@
 - 复测曾遇到辅助 API 客户端单次 `socket hang up`；随后 90 次本机只读连接探测和完整浏览器验收通过，未定位到稳定复现条件。该现象保留在本地日志，不作为生产稳定性证明。
 
 所有数据库、证书、模拟邮件、备份、截图和日志均位于 `artifacts/local/`。原 Go 测试商城仍在 5176，数据库与模拟服务保持独立。
+
+`account` 只读取已经授权的 Cloudflare 账户与 Zone，只有所选域名唯一匹配到可访问的 active Zone 后才更新本地账户配置；不会默认选择列表中的第一个账户。OAuth 配置位于 `artifacts/cloudflare/account/config/`，不会写入 C 盘全局 Wrangler 目录。取令牌时关闭 Wrangler 调试日志，令牌只在子进程输出管道和请求内存中使用，不保存到检查结果。
+
+`mail` 打开本机加密配置窗口，Resend API Key 使用遮蔽输入；可以先保存密钥，再补发件地址。该操作只更新 `artifacts/cloudflare/.secrets/production.dpapi`，不发送邮件、不上传秘密，也不把本地“已保存”当作发信服务“已验证”。网页登录使用 Chrome；Cloudflare 的设备码只供当次授权使用，不能复用旧授权链接。
 
 真实供货只读复查：
 
@@ -81,13 +93,13 @@ npm run cloudflare:dry-run
 
 ## 实际发布前需要的信息
 
-1. Cloudflare 账号及处于该账号有效 Zone 中的域名，确认所选子域名当前记录和服务。现有 CNAME 需要单独核对，不能直接覆盖。
+1. Cloudflare 账户与域名访问已完成只读核对；正式部署时仍需创建 D1 和管理 Worker 所需的对应权限，当前只读授权不能发布。现有 CNAME 需要核对旧服务并安排切换，不能直接覆盖。
 2. 新建、空的生产 D1，绑定 `INTEREST_DB` 并执行本仓库 44 个迁移。不上传本地模拟库或使用已有客户数据库。
 3. 生产管理员用户名、管理员邮箱、全新 TOTP、独立认证秘密；Resend 发信身份与有效密钥。后台登录需要真实邮箱验证。
 4. 供货 API 地址、同一应用的 partner/key/client secret；正式完整回调 URL 与该 URL 独立的 webhook secret。之前临时隧道地址不能用于正式店铺，旧登记应在供货平台停用。
 5. 核对售价、当前供货价、客服与售后说明。平台代收由供货商向顾客收款，无需本店另接支付宝商户支付；利润结算时间、提现门槛和手续费以供货平台规则为准，尚未实测。
 
-生产秘密使用 Workers Secrets，不放在 `vars`、前端代码或版本库中。此轮未登录云账号或上传任何秘密。
+生产秘密使用 Workers Secrets，不放在 `vars`、前端代码或版本库中。当前只完成账号读取与本地加密准备，未向云端上传任何秘密。
 
 ## 发布顺序（本轮未执行）
 

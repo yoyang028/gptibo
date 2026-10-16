@@ -16,6 +16,7 @@
     "security:scan": "python3 scripts/scan-public-source.py",
     "cloudflare:prepare": "node scripts/cloudflare/prepare.mjs",
     "cloudflare:check": "node scripts/cloudflare/readiness.mjs",
+    "cloudflare:account": "node scripts/cloudflare/account.mjs",
     "cloudflare:dry-run": "node scripts/cloudflare/dry-run.mjs",
     "test:cloudflare": "node scripts/cloudflare/acceptance.mjs"
   },

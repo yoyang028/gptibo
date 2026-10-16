@@ -1,10 +1,12 @@
-param([ValidateSet('start','stop','status','test','login')][string]$Mode = 'start')
+param([ValidateSet('start','stop','status','test','login','account','mail')][string]$Mode = 'start')
 . (Join-Path $PSScriptRoot 'env.ps1')
 $recordFile = Join-Path $LocalRoot 'run/cloudflare-processes.json'
 $private = Join-Path $SecretsRoot 'quefa-cloudflare-mock'
 $mockExe = Join-Path $LocalRoot 'run/quefa-cloudflare-mock.exe'
 $state = if (Test-Path -LiteralPath $recordFile) { Get-Content -LiteralPath $recordFile -Raw | ConvertFrom-Json -AsHashtable } else { @{} }
 if ($Mode -eq 'login') { & $NodeExe (Join-Path $ProjectRoot 'scripts/cloudflare/login.mjs'); return }
+if ($Mode -eq 'account') { & $NodeExe (Join-Path $ProjectRoot 'scripts/cloudflare/account.mjs'); Assert-Exit 'Cloudflare read-only account preflight'; return }
+if ($Mode -eq 'mail') { & (Join-Path $PSScriptRoot 'cloudflare-mail.ps1'); return }
 
 if ($Mode -eq 'test') {
     & $NodeExe (Join-Path $ProjectRoot 'scripts/cloudflare/acceptance.mjs')
