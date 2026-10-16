@@ -20,6 +20,7 @@ PUBLIC_HOSTS = {
     'github.com', 'raw.githubusercontent.com', 'registry.npmjs.org',
     'www.w3.org', 'www.apache.org', 'ui.shadcn.com', 'transitions.dev', 'vite.dev',
     'www.duolingo.com', 'www.duolingo.cn', 'd35aaqx5ub95lt.cloudfront.net',
+    '98-xj.com',  # Reviewed public Xiaojiu upstream API and documentation.
 }
 BINARY_ASSETS = {'public/email-logo.png', 'public/email-shop.png', 'src/assets/hero.png'}
 FORBIDDEN_PARTS = {'.git', '.secrets', '.imports', '.admin-auth', '.xgift-private',

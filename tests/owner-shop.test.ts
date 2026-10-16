@@ -10,6 +10,7 @@ import { sendOwnerOrderNotifications } from '../worker/owner-shop.ts'
 import type { ShopProduct } from '../shared/shop-products.ts'
 import { sendVerificationEmail } from '../worker/email.ts'
 import { fulfillCustomOrder } from '../worker/shop-products.ts'
+import { reconcileShopProducts } from '../worker/shop-products.ts'
 import {
   ARTWORK_TEMPLATES,
   defaultLayout,
@@ -168,6 +169,331 @@ function product(overrides: Partial<ShopProduct> = {}): ShopProduct {
   }
 }
 
+async function xiaojiuFixture(t: Parameters<Parameters<typeof test>[1]>[0]) {
+  const s = await setup()
+  t.after(() => s.db.close())
+  s.env.XIAOJIU_PURCHASE_ENABLED = 'true'
+  const key = 'b'.repeat(64),
+    secret = 'c'.repeat(128)
+  const calls: { path: string; body: string }[] = []
+  let loseCreate = false,
+    actual = '2.00',
+    authFailure = false
+  let merchant = ''
+  t.mock.method(globalThis, 'fetch', async (input, init) => {
+    const url = new URL(String(input)),
+      raw = String(init?.body ?? '')
+    assert.equal(url.origin, 'https://98-xj.com')
+    assert.equal(new Headers(init?.headers).get('Dujiao-Next-Api-Key'), key)
+    calls.push({ path: url.pathname, body: raw })
+    if (url.pathname.endsWith('/ping'))
+      return Response.json({
+        ok: true,
+        user_id: 1,
+        balance: '100.00',
+        currency: 'CNY',
+      })
+    if (url.pathname.endsWith('/products/10'))
+      return Response.json({
+        ok: true,
+        product: {
+          id: 10,
+          is_active: true,
+          fulfillment_type: 'auto',
+          skus: [
+            {
+              id: 123,
+              is_active: true,
+              price_amount: '2.00',
+              stock_status: 'in_stock',
+              stock_quantity: 20,
+            },
+          ],
+        },
+      })
+    if (url.pathname.endsWith('/orders')) {
+      merchant = JSON.parse(raw).downstream_order_no
+      if (authFailure)
+        return Response.json(
+          { ok: false, error_code: 'authentication_failed' },
+          { status: 401 },
+        )
+      if (loseCreate) {
+        loseCreate = false
+        throw new Error('Response lost after debit')
+      }
+      return Response.json({
+        ok: true,
+        order_id: 456,
+        amount: actual,
+        currency: 'CNY',
+        downstream_order_no: merchant,
+      })
+    }
+    assert.equal(url.pathname, '/api/v1/upstream/orders/456')
+    return Response.json({
+      ok: true,
+      order_id: 456,
+      amount: actual,
+      refunded_amount: '0.00',
+      currency: 'CNY',
+      status: 'completed',
+      items: [
+        {
+          product_id: 10,
+          sku_id: 123,
+          quantity: 1,
+          unit_price: actual,
+          total_price: actual,
+          fulfillment_type: 'auto',
+        },
+      ],
+      fulfillment: {
+        type: 'auto',
+        status: 'delivered',
+        payload: 'XIAOJIU-PRIVATE-FIXTURE-CARD',
+      },
+    })
+  })
+  const verified = await s.request(
+    '/api/admin/my-shop/products/verify-api',
+    {
+      ...product({
+        status: 'draft',
+        delivery: 'api',
+        api: {
+          provider: 'xiaojiu',
+          baseUrl: 'https://98-xj.com',
+          productCode: '123',
+          supplierProductId: 10,
+          maxCostCents: 300,
+          configured: false,
+          verified: false,
+        },
+      }),
+      apiKey: key,
+      apiToken: secret,
+    },
+    s.admin,
+  )
+  assert.equal(verified.status, 201, await verified.clone().text())
+  const p = await s.saveProduct({
+    ...(await verified.json()).product,
+    status: 'published',
+  })
+  const buyer = await s.buyer()
+  const create = async () => {
+    const response = await s.create(p, buyer)
+    assert.equal(response.status, 201, await response.clone().text())
+    return (await response.json()).order
+  }
+  const confirm = async (order: { id: string; version: number }) => {
+    await s.request(
+      '/api/orders/' + order.id + '/custom-action',
+      {
+        action: 'claim-payment',
+        reference: 'fixture-payment-123',
+        version: order.version,
+      },
+      buyer,
+    )
+    const response = await s.request(
+      '/api/admin/my-shop/orders/' + order.id,
+      {
+        action: 'confirm-payment',
+        version: order.version,
+        note: '已核对本机模拟到账',
+      },
+      s.admin,
+    )
+    assert.equal(response.status, 200, await response.clone().text())
+    return (await response.json()).order
+  }
+  return {
+    ...s,
+    key,
+    secret,
+    p,
+    buyerCookie: buyer,
+    calls,
+    createXiaojiu: create,
+    confirm,
+    loseNextCreate: () => {
+      loseCreate = true
+    },
+    raiseActualCost: () => {
+      actual = '4.00'
+    },
+    rejectAuth: () => {
+      authFailure = true
+    },
+  }
+}
+
+test('Xiaojiu product credentials are encrypted, checks spend nothing, and only owner-confirmed payment buys and delivers', async (t) => {
+  const s = await xiaojiuFixture(t)
+  assert.equal(s.calls.filter((c) => c.path.endsWith('/orders')).length, 0)
+  const stored = s.db
+    .prepare('SELECT api_secret FROM shop_products WHERE id=?')
+    .get(s.p.id)!.api_secret as string
+  assert.ok(!stored.includes(s.key) && !stored.includes(s.secret))
+  const catalog = await (await s.request('/api/catalog')).text()
+  assert.ok(!catalog.includes(s.key) && !catalog.includes(s.secret))
+  const order = await s.createXiaojiu()
+  assert.equal(s.calls.filter((c) => c.path.endsWith('/orders')).length, 0)
+  const delivered = await s.confirm(order)
+  assert.equal(delivered.status, 'success')
+  assert.equal(delivered.custom.deliveryContent, 'XIAOJIU-PRIVATE-FIXTURE-CARD')
+  assert.equal(
+    s.db.prepare('SELECT cost_cents FROM orders WHERE id=?').get(order.id)!
+      .cost_cents,
+    200,
+  )
+  await Promise.all([
+    fulfillCustomOrder(s.env, order.id),
+    fulfillCustomOrder(s.env, order.id),
+  ])
+  assert.equal(s.calls.filter((c) => c.path.endsWith('/orders')).length, 1)
+  assert.equal(
+    (await s.request('/api/orders/' + order.id, undefined, await s.buyer()))
+      .status,
+    404,
+  )
+})
+
+test('Xiaojiu durable uncertain-creation recovery reuses the same business number instead of buying another card', async (t) => {
+  const s = await xiaojiuFixture(t),
+    order = await s.createXiaojiu()
+  s.loseNextCreate()
+  const pending = await s.confirm(order)
+  assert.equal(pending.custom.supplierState, 'unknown')
+  assert.equal(
+    s.db
+      .prepare(
+        'SELECT supplier_attempted FROM shop_order_details WHERE order_id=?',
+      )
+      .get(order.id)!.supplier_attempted,
+    1,
+  )
+  await fulfillCustomOrder(s.env, order.id)
+  const creates = s.calls.filter((c) => c.path.endsWith('/orders'))
+  assert.equal(creates.length, 2)
+  assert.equal(creates[0].body, creates[1].body)
+  const recovered = (
+    await (
+      await s.request('/api/orders/' + order.id, undefined, s.buyerCookie)
+    ).json()
+  ).order
+  assert.equal(recovered.status, 'success')
+  assert.equal(recovered.custom.deliveryContent, 'XIAOJIU-PRIVATE-FIXTURE-CARD')
+})
+
+test('Xiaojiu actual over-limit charges retain cost and remote ID without delivering, repurchasing, or hiding the issue from admin', async (t) => {
+  const s = await xiaojiuFixture(t),
+    order = await s.createXiaojiu()
+  s.raiseActualCost()
+  const result = await s.confirm(order)
+  assert.equal(result.custom.supplierState, 'review')
+  assert.match(result.custom.supplierError, /实际扣款/)
+  assert.equal(result.custom.deliveryContent, null)
+  assert.equal(
+    s.db.prepare('SELECT cost_cents FROM orders WHERE id=?').get(order.id)!
+      .cost_cents,
+    400,
+  )
+  assert.equal(
+    s.db
+      .prepare('SELECT supplier_id FROM shop_order_details WHERE order_id=?')
+      .get(order.id)!.supplier_id,
+    '456',
+  )
+  await reconcileShopProducts(s.env)
+  await fulfillCustomOrder(s.env, order.id)
+  assert.equal(s.calls.filter((c) => c.path.endsWith('/orders')).length, 1)
+  const deliver = () =>
+    s.request(
+      '/api/admin/my-shop/orders/' + order.id,
+      {
+        action: 'deliver',
+        version: result.version,
+        note: '核对中的订单不能直接补发',
+        content: 'MUST-NOT-DELIVER',
+      },
+      s.admin,
+    )
+  assert.equal((await deliver()).status, 409)
+  assert.equal(
+    (
+      await s.request(
+        '/api/orders/' + order.id + '/refunds',
+        {
+          action: 'request',
+          version: result.version,
+          key: crypto.randomUUID(),
+          reason: '采购结果仍在核对',
+          amountCents: result.priceCents,
+        },
+        s.buyerCookie,
+      )
+    ).status,
+    409,
+  )
+  // A reconciliation result can change after the initial admin precheck.
+  // The transaction must recheck the hold before marking delivery successful.
+  s.db
+    .prepare(
+      "UPDATE shop_order_details SET supplier_state='failed' WHERE order_id=?",
+    )
+    .run(order.id)
+  const batch = s.env.INTEREST_DB.batch.bind(s.env.INTEREST_DB)
+  s.env.INTEREST_DB.batch = async (statements) => {
+    s.db
+      .prepare(
+        "UPDATE shop_order_details SET supplier_state='review' WHERE order_id=?",
+      )
+      .run(order.id)
+    return batch(statements)
+  }
+  assert.equal((await deliver()).status, 409)
+  assert.equal(
+    s.db.prepare('SELECT status FROM orders WHERE id=?').get(order.id)!.status,
+    'processing',
+  )
+  assert.equal(
+    s.db
+      .prepare(
+        'SELECT delivery_content FROM shop_order_details WHERE order_id=?',
+      )
+      .get(order.id)!.delivery_content,
+    '',
+  )
+})
+
+test('Xiaojiu sales are unavailable when spending is disabled and auth failures remain paused for background reconciliation', async (t) => {
+  const s = await xiaojiuFixture(t)
+  s.env.XIAOJIU_PURCHASE_ENABLED = 'false'
+  const catalog = await (await s.request('/api/catalog')).json()
+  assert.equal(
+    catalog.products.some((p: ShopProduct) => p.id === s.p.id),
+    false,
+  )
+  assert.equal((await s.create(s.p, s.buyerCookie)).status, 409)
+  s.env.XIAOJIU_PURCHASE_ENABLED = 'true'
+  const order = await s.createXiaojiu()
+  s.rejectAuth()
+  const result = await s.confirm(order)
+  assert.equal(result.custom.supplierState, 'review')
+  assert.match(result.custom.supplierError, /凭据/)
+  const count = s.calls.length
+  await reconcileShopProducts(s.env)
+  await fulfillCustomOrder(s.env, order.id, true)
+  assert.equal(s.calls.length, count)
+  assert.equal(
+    s.db.prepare('SELECT paused FROM xiaojiu_api_controls').get()!.paused,
+    1,
+  )
+})
+
 test('owner workspace requires main-admin session and rejects cross-origin writes', async () => {
   const s = await setup(),
     buyer = await s.buyer()
@@ -285,9 +611,11 @@ test('publishing validates all detail fields and keeps drafts off the storefront
       purchaseNote: '',
     }),
   )
+  const publicDraftCatalog = await (await s.request('/api/catalog')).json()
+  assert.equal(publicDraftCatalog.products.length, 0)
   assert.equal(
-    (await (await s.request('/api/catalog')).json()).products.length,
-    0,
+    publicDraftCatalog.plans.some((p: { id: string }) => p.id === draft.id),
+    false,
   )
   const response = await s.request(
     '/api/admin/my-shop/products',
@@ -304,6 +632,12 @@ test('publishing validates all detail fields and keeps drafts off the storefront
   assert.equal(
     (await (await s.request('/api/catalog')).json()).products[0].id,
     published.id,
+  )
+  assert.equal(
+    (await (await s.request('/api/catalog')).json()).plans.some(
+      (p: { id: string }) => p.id === published.id,
+    ),
+    true,
   )
   assert.equal(
     (

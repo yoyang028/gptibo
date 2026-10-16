@@ -515,6 +515,7 @@ export function ShopOrderDialog({
                     </pre>
                   )}
                   {order.refundHold && <p>售后处理中，请联系店主。</p>}
+                  {view.supplierError && <p role="status">供货正在核对，请联系店主并保留原订单，无需重复下单或付款。</p>}
                 </>
               )}
               {error && <p role="alert">{error}</p>}

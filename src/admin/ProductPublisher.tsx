@@ -50,6 +50,22 @@ const freshProduct = (): ShopProduct => ({
   version: 0,
 })
 const statuses = { draft: '草稿', published: '已发布', archived: '已下架' }
+type XiaojiuCatalog = {
+  items: {
+    productId: number
+    skuId: number
+    name: string
+    skuCode: string
+    specification: string
+    priceCents: number
+    stock: number
+    available: boolean
+  }[]
+  balanceCents: number
+  page: number
+  pageSize: number
+  total: number
+}
 function ProductEditor({
   initial,
   onClose,
@@ -61,6 +77,7 @@ function ProductEditor({
 }) {
   const [product, setProduct] = useState(initial),
     [apiToken, setApiToken] = useState(''),
+    [apiKey, setApiKey] = useState(''),
     [features, setFeatures] = useState(initial.features.join('\n')),
     [price, setPrice] = useState((initial.priceCents / 100).toFixed(2)),
     [busy, setBusy] = useState(false),
@@ -69,6 +86,9 @@ function ProductEditor({
     [preview, setPreview] = useState(false),
     [discard, setDiscard] = useState(false)
   const [baseline, setBaseline] = useState(JSON.stringify(initial))
+  const [supplierCatalog, setSupplierCatalog] = useState<XiaojiuCatalog | null>(
+    null,
+  )
   const imageInput = useRef<HTMLInputElement>(null),
     qrInput = useRef<HTMLInputElement>(null),
     submitting = useRef(false)
@@ -80,7 +100,8 @@ function ProductEditor({
       .map((s) => s.trim())
       .filter(Boolean),
   }
-  const dirty = JSON.stringify(value) !== baseline || Boolean(apiToken)
+  const dirty =
+    JSON.stringify(value) !== baseline || Boolean(apiToken) || Boolean(apiKey)
   useEffect(() => {
     if (!dirty) return
     const warn = (e: BeforeUnloadEvent) => {
@@ -136,12 +157,17 @@ function ProductEditor({
       const result = await api<{ product: ShopProduct }>(
         '/api/admin/my-shop/products' +
           (action === 'verify' ? '/verify-api' : ''),
-        { ...outgoing, ...(apiToken ? { apiToken } : {}) },
+        {
+          ...outgoing,
+          ...(apiToken ? { apiToken } : {}),
+          ...(apiKey ? { apiKey } : {}),
+        },
       )
       setProduct(result.product)
       setFeatures(result.product.features.join('\n'))
       setPrice((result.product.priceCents / 100).toFixed(2))
       setApiToken('')
+      setApiKey('')
       setBaseline(JSON.stringify(result.product))
       setMessage(
         action === 'verify'
@@ -151,6 +177,31 @@ function ProductEditor({
             : '商品已保存。',
       )
       onSaved()
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      submitting.current = false
+      setBusy(false)
+    }
+  }
+  async function loadSupplierCatalog(page = 1) {
+    if (busy || submitting.current) return
+    submitting.current = true
+    setBusy(true)
+    setError('')
+    try {
+      const result = await api<XiaojiuCatalog>(
+        '/api/admin/my-shop/products/xiaojiu-catalog',
+        {
+          id: product.id,
+          version: product.version,
+          page,
+          ...(apiKey ? { apiKey } : {}),
+          ...(apiToken ? { apiToken } : {}),
+        },
+      )
+      setSupplierCatalog(result)
+      setMessage('已读取小久余额与商品目录，未创建采购订单。')
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -360,9 +411,33 @@ function ProductEditor({
               {product.delivery === 'api' && (
                 <>
                   <label>
+                    供货来源
+                    <select
+                      value={product.api?.provider ?? 'json-v1'}
+                      onChange={(e) => {
+                        const provider = e.target.value as 'json-v1' | 'xiaojiu'
+                        setApiToken('')
+                        setApiKey('')
+                        setSupplierCatalog(null)
+                        update('api', {
+                          provider,
+                          baseUrl:
+                            provider === 'xiaojiu' ? 'https://98-xj.com' : '',
+                          productCode: '',
+                          configured: false,
+                          verified: false,
+                        })
+                      }}
+                    >
+                      <option value="json-v1">通用 JSON v1 供货</option>
+                      <option value="xiaojiu">小久 · 钱包余额采购</option>
+                    </select>
+                  </label>
+                  <label>
                     供货 API 基础地址
                     <Input
                       type="url"
+                      readOnly={product.api?.provider === 'xiaojiu'}
                       placeholder="https://supplier.example.com/v1"
                       value={product.api?.baseUrl ?? ''}
                       onChange={(e) =>
@@ -376,8 +451,28 @@ function ProductEditor({
                       }
                     />
                   </label>
+                  {product.api?.provider === 'xiaojiu' && (
+                    <label>
+                      小久商品 ID
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={product.api.supplierProductId ?? ''}
+                        onChange={(e) =>
+                          update('api', {
+                            ...product.api!,
+                            supplierProductId: Number(e.target.value),
+                            verified: false,
+                          })
+                        }
+                      />
+                    </label>
+                  )}
                   <label>
-                    上游商品编码
+                    {product.api?.provider === 'xiaojiu'
+                      ? '小久 SKU ID（规格编号）'
+                      : '上游商品编码'}
                     <Input
                       value={product.api?.productCode ?? ''}
                       maxLength={100}
@@ -393,7 +488,9 @@ function ProductEditor({
                     />
                   </label>
                   <label>
-                    最高采购成本（元）
+                    {product.api?.provider === 'xiaojiu'
+                      ? '采购参考上限（元）'
+                      : '最高采购成本（元）'}
                     <Input
                       type="number"
                       step="0.01"
@@ -406,6 +503,7 @@ function ProductEditor({
                       }
                       onChange={(e) =>
                         update('api', {
+                          ...product.api,
                           baseUrl: product.api?.baseUrl ?? '',
                           productCode: product.api?.productCode ?? '',
                           configured: product.api?.configured ?? false,
@@ -417,8 +515,35 @@ function ProductEditor({
                       }
                     />
                   </label>
+                  {product.api?.provider === 'xiaojiu' && (
+                    <>
+                      <p className="owner-editor-notice">
+                        使用小久钱包余额按单购买，每单采购一份。上游不提供锁价参数；系统采购前核价，实际扣款超限时保留原单并暂停自动处理。只读检查不会购买或扣款。
+                      </p>
+                      <label>
+                        小久 API Key
+                        <Input
+                          type="password"
+                          autoComplete="new-password"
+                          value={apiKey}
+                          maxLength={64}
+                          placeholder={
+                            product.api.configured
+                              ? '已加密保存；更换时同时填写 Key 与 Secret'
+                              : '个人中心上方采购 API 的 64 位 Key'
+                          }
+                          onChange={(e) => {
+                            setApiKey(e.target.value)
+                            update('api', { ...product.api!, verified: false })
+                          }}
+                        />
+                      </label>
+                    </>
+                  )}
                   <label>
-                    服务端 API 密钥
+                    {product.api?.provider === 'xiaojiu'
+                      ? '小久 API Secret（完整原文）'
+                      : '服务端 API 密钥'}
                     <Input
                       type="password"
                       autoComplete="new-password"
@@ -441,18 +566,124 @@ function ProductEditor({
                       maxLength={4000}
                     />
                   </label>
-                  <details className="owner-editor-notice">
-                    <summary>JSON v1 供货接口格式</summary>
-                    <p>
-                      需支持 GET /products 返回 products 列表，包含 product_code
-                      与 available；POST /orders 接收
-                      merchant_order_no、product_code、email、fields 和
-                      Idempotency-Key；GET /orders/订单编号
-                      查询同一订单。订单响应必须包含
-                      merchant_order_no、order_id、status（pending／success／failed）；成功时提供
-                      delivery_content。超时只查询原单，不重新采购。不同协议的供应商需先适配此契约。
-                    </p>
-                  </details>
+                  {product.api?.provider === 'xiaojiu' && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void loadSupplierCatalog()}
+                      >
+                        读取小久余额与商品目录
+                      </Button>
+                      {supplierCatalog && (
+                        <>
+                          <p role="status">
+                            小久钱包可用余额：¥
+                            {(supplierCatalog.balanceCents / 100).toFixed(2)} ·
+                            当前第 {supplierCatalog.page} 页
+                          </p>
+                          <label>
+                            从小久目录选择商品规格
+                            <select
+                              aria-label="从小久目录选择商品规格"
+                              value={
+                                supplierCatalog.items.some(
+                                  (item) =>
+                                    item.productId ===
+                                      product.api?.supplierProductId &&
+                                    String(item.skuId) ===
+                                      product.api?.productCode,
+                                )
+                                  ? `${product.api.supplierProductId}:${product.api.productCode}`
+                                  : ''
+                              }
+                              onChange={(e) => {
+                                const selected = supplierCatalog.items.find(
+                                  (item) =>
+                                    `${item.productId}:${item.skuId}` ===
+                                    e.target.value,
+                                )
+                                if (selected)
+                                  update('api', {
+                                    ...product.api!,
+                                    supplierProductId: selected.productId,
+                                    productCode: String(selected.skuId),
+                                    maxCostCents: selected.priceCents,
+                                    verified: false,
+                                  })
+                              }}
+                            >
+                              <option value="" disabled>
+                                选择商品与规格（自动填入编号和当前供货价）
+                              </option>
+                              {supplierCatalog.items.map((item) => (
+                                <option
+                                  key={`${item.productId}:${item.skuId}`}
+                                  value={`${item.productId}:${item.skuId}`}
+                                  disabled={!item.available}
+                                >
+                                  {item.name} ·{' '}
+                                  {item.specification ||
+                                    item.skuCode ||
+                                    item.skuId}{' '}
+                                  · ¥{(item.priceCents / 100).toFixed(2)} ·{' '}
+                                  {item.available
+                                    ? item.stock === -1
+                                      ? '不限库存'
+                                      : `库存 ${item.stock}`
+                                    : '缺货'}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="owner-editor-grid">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={supplierCatalog.page <= 1}
+                              onClick={() =>
+                                void loadSupplierCatalog(
+                                  supplierCatalog.page - 1,
+                                )
+                              }
+                            >
+                              上一页
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={
+                                supplierCatalog.page *
+                                  supplierCatalog.pageSize >=
+                                supplierCatalog.total
+                              }
+                              onClick={() =>
+                                void loadSupplierCatalog(
+                                  supplierCatalog.page + 1,
+                                )
+                              }
+                            >
+                              下一页
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                  {product.api?.provider !== 'xiaojiu' && (
+                    <details className="owner-editor-notice">
+                      <summary>JSON v1 供货接口格式</summary>
+                      <p>
+                        需支持 GET /products 返回 products 列表，包含
+                        product_code 与 available；POST /orders 接收
+                        merchant_order_no、product_code、email、fields 和
+                        Idempotency-Key；GET /orders/订单编号
+                        查询同一订单。订单响应必须包含
+                        merchant_order_no、order_id、status（pending／success／failed）；成功时提供
+                        delivery_content。超时只查询原单，不重新采购。不同协议的供应商需先适配此契约。
+                      </p>
+                    </details>
+                  )}
                   <Button
                     type="button"
                     variant="outline"
@@ -858,7 +1089,11 @@ export default function ProductPublisher({
       {loading && !data && <p>正在读取商品…</p>}
       <div className="owner-product-list">
         {data?.products.map((p) => (
-          <article className="owner-product-row" key={p.id}>
+          <article
+            className="owner-product-row"
+            data-product-id={p.id}
+            key={p.id}
+          >
             {p.image ? <img src={p.image} alt="" /> : <Package size={26} />}
             <div className="owner-product-info">
               <strong>{p.name}</strong>

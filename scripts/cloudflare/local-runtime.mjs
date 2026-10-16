@@ -8,12 +8,17 @@ import { fileURLToPath } from 'node:url'
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { build } from 'esbuild'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
+import { createXiaojiuFixture } from './xiaojiu-fixture.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 if (process.platform === 'win32' && !/^D:\\/i.test(root)) throw new Error('Local artifacts must stay on D:')
-const runtime = path.join(root, 'artifacts/local/cloudflare')
-const privateRoot = path.join(root, 'artifacts/local/.secrets/quefa-cloudflare-mock')
-const origin = 'https://127.0.0.1:8771'
+const xiaojiuVariant = process.env.GPTIBO_LOCAL_VARIANT === 'xiaojiu'
+const runtime = path.join(root, xiaojiuVariant ? 'artifacts/local/cloudflare-xiaojiu' : 'artifacts/local/cloudflare')
+const privateRoot = path.join(root, xiaojiuVariant ? 'artifacts/local/.secrets/xiaojiu-cloudflare-mock' : 'artifacts/local/.secrets/quefa-cloudflare-mock')
+const tlsRoot = path.join(root, 'artifacts/local/.secrets/quefa-cloudflare-mock')
+const port = xiaojiuVariant ? 8781 : 8771, controlPort = xiaojiuVariant ? 8784 : 8774
+const origin = 'https://127.0.0.1:' + port
+fs.mkdirSync(privateRoot, { recursive: true })
 fs.mkdirSync(runtime, { recursive: true })
 process.env.XDG_CONFIG_HOME = path.join(runtime, 'config')
 process.env.WRANGLER_LOG_PATH = path.join(runtime, 'wrangler.log')
@@ -26,13 +31,15 @@ if (!fs.existsSync(authPath)) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
   fs.writeFileSync(authPath, Array.from(randomBytes(32), b => alphabet[b & 31]).join(''), { mode: 0o600, flag: 'wx' })
 }
-const ca = fs.readFileSync(path.join(privateRoot, 'cert.pem'))
-const key = fs.readFileSync(path.join(privateRoot, 'key.pem'), 'utf8')
+const ca = fs.readFileSync(path.join(tlsRoot, 'cert.pem'))
+const key = fs.readFileSync(path.join(tlsRoot, 'key.pem'), 'utf8')
 await build({ entryPoints: [path.join(root, 'worker/index.ts')], bundle: true, format: 'esm', target: 'es2023', platform: 'browser', external: ['node:*'], outfile: path.join(runtime, 'worker.mjs'), logLevel: 'silent' })
 let supplierRequests = 0
 const genericOrders = new Map()
+const xiaojiuFixture = createXiaojiuFixture()
 const outbound = async request => {
   const url = new URL(request.url)
+  if (url.origin === 'https://98-xj.com') return xiaojiuFixture.fetch(request)
   if(url.origin==='https://fixture-supplier.example.com') {
     // Isolated JSON v1 fixture for owner-published products. Never forwards to a network.
     if(url.pathname==='/v1/products'&&request.method==='GET')return Response.json({products:[{product_code:'fixture-subscription',available:true}]})
@@ -79,9 +86,9 @@ for (const line of fs.readFileSync(path.join(root, 'public/_headers'), 'utf8').s
   }
 }
 const config = {
-  host: '127.0.0.1', port: 8771, https: true, httpsCert: ca.toString(), httpsKey: key,
+  host: '127.0.0.1', port, https: true, httpsCert: ca.toString(), httpsKey: key,
   modules: true, scriptPath: path.join(runtime, 'worker.mjs'), compatibilityDate: '2026-09-26', compatibilityFlags: ['nodejs_compat', 'service_binding_extra_handlers'],
-  d1Databases: { INTEREST_DB: 'gptibo-cloudflare-local' },
+  d1Databases: { INTEREST_DB: xiaojiuVariant ? 'gptibo-cloudflare-xiaojiu-local' : 'gptibo-cloudflare-local' },
   ratelimits: {
     INTEREST_LIMITER: { namespace_id: '2001', simple: { limit: 30, period: 60 } },
     API_LIMITER: { namespace_id: '2002', simple: { limit: 120, period: 60 } },
@@ -92,6 +99,7 @@ const config = {
     ADMIN_USERNAME: 'dev-admin', ADMIN_EMAIL: 'admin@example.invalid', ADMIN_TOTP_SECRET: fs.readFileSync(authPath, 'utf8').trim(),
     RESEND_API_KEY: 'local_mailbox_only', RESEND_FROM: 'GPTibo Local <noreply@example.invalid>', PARTNER_AUTH_SECRET: 'local_cloudflare_partner_fixture_not_a_real_secret_32',
     ORDER_TESTING_ENABLED: 'false', EMAIL_PRODUCTS_ENABLED: 'false', PAYMENT_CHECKOUT_ENABLED: 'false', PAYMENT_TEST_ENABLED: 'false', XGIFT_CHECKOUT_ENABLED: 'false', ACCOUNT_SUPPLIER_CHECKOUT_ENABLED: 'false', DELIVERY_SUPPLIER_CHECKOUT_ENABLED: 'false',
+    XIAOJIU_PURCHASE_ENABLED: 'true', // Only the isolated outbound fixture above is reachable.
     RECHARGE_API_BASE: 'https://127.0.0.1:8773/v1', RECHARGE_PARTNER_ID: 'pt_local_mock', RECHARGE_KEY_ID: 'key_local_mock',
     RECHARGE_CLIENT_SECRET: 'local_mock_signing_not_a_real_credential', RECHARGE_WEBHOOK_SECRET: 'local_mock_webhook_not_a_real_credential',
     RECHARGE_NOTIFY_URL: origin + '/api/recharge/webhook', RECHARGE_PRODUCT_MAP: '{"plus":"chatgpt_plus_cdk_1m"}', RECHARGE_COLLECTION_MODE: 'platform_collect', RECHARGE_CHECKOUT_ENABLED: 'true', RECHARGE_READ_ONLY: 'false',
@@ -127,12 +135,12 @@ try {
   control = createServer(async (request, response) => {
     const supplied = Buffer.from(request.headers['x-local-control'] ?? '')
     const authorized = supplied.length === token.length && timingSafeEqual(supplied, Buffer.from(token))
-    if (request.headers.host !== '127.0.0.1:8774') { response.writeHead(403).end(); return }
+    if (request.headers.host !== '127.0.0.1:' + controlPort) { response.writeHead(403).end(); return }
     if (request.url === '/state' && request.method === 'GET') {
       response.setHeader('Content-Type', 'application/json'); response.setHeader('Cache-Control', 'no-store')
-      response.end(JSON.stringify({ localMock: true, origin, supplierRequests })); return
+      response.end(JSON.stringify({ localMock: true, origin, supplierRequests, xiaojiu: xiaojiuFixture.stats() })); return
     }
-    if (request.method !== 'POST' || request.headers.origin !== 'http://127.0.0.1:8774' || !authorized) { response.writeHead(403).end(); return }
+    if (request.method !== 'POST' || request.headers.origin !== 'http://127.0.0.1:' + controlPort || !authorized) { response.writeHead(403).end(); return }
     if (request.url === '/shutdown') { response.writeHead(204).end(); await shutdown(); return }
     if (request.url === '/scheduled') {
       try { await worker.scheduled({ scheduledTime: Math.floor(Date.now() / 300000) * 300000 }); response.writeHead(204).end() }
@@ -154,7 +162,7 @@ try {
       response.end(JSON.stringify({ counts, credentialStored, paymentConfirmedEvents: paymentEvents.n })); return
     }
     response.writeHead(404).end()
-  }).listen(8774, '127.0.0.1')
+  }).listen(controlPort, '127.0.0.1')
   process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown)
 } catch (error) {
   clearInterval(cron); await mf.dispose()

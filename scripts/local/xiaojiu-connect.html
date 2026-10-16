@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>小久供货目录 · 本机配置</title>
+  <link rel="stylesheet" href="/style.css" />
+  <main>
+    <h1>小久供货目录</h1>
+    <p>
+      只读取钱包与商品目录，不采购、不扣款。凭据使用 Windows
+      当前用户加密保存在本机 D 盘。
+    </p>
+    <form>
+      <label
+        >API Key<input
+          name="key"
+          type="password"
+          autocomplete="off"
+          maxlength="64"
+          pattern="[a-fA-F0-9]{64}"
+          required
+          placeholder="从小久后台复制 64 位 API Key"
+      /></label>
+      <label
+        >API Secret（128 位完整原文）<input
+          name="secret"
+          type="password"
+          autocomplete="new-password"
+          maxlength="128"
+          pattern="[a-fA-F0-9]{128}"
+          required
+      /></label>
+      <button>加密保存并读取供货目录</button>
+    </form>
+    <button id="recheck" type="button">使用已保存凭据重新查询</button>
+    <p id="status" role="status">正在读取本机状态…</p>
+    <div class="table">
+      <table>
+        <thead>
+          <tr>
+            <th>商品</th>
+            <th>规格</th>
+            <th>供货成本</th>
+            <th>库存</th>
+            <th>商品 / SKU ID</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p>金额是当前账号目录返回的 CNY 供货价，最终成交金额以上游实际下单为准。</p>
+  </main>
+  <script src="/app.js"></script>
+</html>

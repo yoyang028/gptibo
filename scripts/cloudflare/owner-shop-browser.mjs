@@ -6,10 +6,22 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { totp } from '../local/auth.mjs'
+import { xiaojiuFixtureKey, xiaojiuFixtureSecret } from './xiaojiu-fixture.mjs'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const origin = 'https://127.0.0.1:8771',
-  control = 'http://127.0.0.1:8774'
-const evidence = path.join(root, 'artifacts/local/evidence/owner-shop')
+const xiaojiuVariant = process.argv.includes('--xiaojiu')
+const origin = xiaojiuVariant
+    ? 'https://127.0.0.1:8781'
+    : 'https://127.0.0.1:8771',
+  control = xiaojiuVariant ? 'http://127.0.0.1:8784' : 'http://127.0.0.1:8774'
+const evidence = path.join(
+  root,
+  xiaojiuVariant
+    ? 'artifacts/local/evidence/owner-shop-xiaojiu'
+    : 'artifacts/local/evidence/owner-shop',
+)
+const runtimeDirectory = xiaojiuVariant
+  ? 'artifacts/local/cloudflare-xiaojiu'
+  : 'artifacts/local/cloudflare'
 fs.mkdirSync(evidence, { recursive: true })
 const runtime = await (await fetch(control + '/state')).json()
 assert.equal(runtime.localMock, true)
@@ -60,18 +72,22 @@ async function context(mobile = false) {
   )
   return ctx
 }
-async function api(ctx, url, data, expected = 200) {
+async function api(ctx, url, data, expected = 200, rateLimitRetries = 0) {
   const response = await ctx.request.fetch(url, {
       method: data === undefined ? 'GET' : 'POST',
       headers: { Origin: origin },
       ...(data === undefined ? {} : { data }),
     }),
     body = await response.json()
+  if (response.status() === 429 && rateLimitRetries > 0) {
+    await new Promise((resolve) => setTimeout(resolve, 31000))
+    return api(ctx, url, data, expected, rateLimitRetries - 1)
+  }
   assert.equal(response.status(), expected, url + ': ' + JSON.stringify(body))
   return body
 }
 function code() {
-  const folder = path.join(root, 'artifacts/local/cloudflare/mailbox')
+  const folder = path.join(root, runtimeDirectory, 'mailbox')
   for (const name of fs
     .readdirSync(folder)
     .filter((n) => n.endsWith('.json'))
@@ -92,7 +108,7 @@ const admin = await context(),
   mobile = await context(true),
   adminPage = await admin.newPage(),
   buyerPage = await buyer.newPage()
-let initial, manualId, apiId
+let initial, manualId, apiId, xiaojiuId
 try {
   await adminPage.goto('/admin?view=my-shop')
   await adminPage.locator('#admin-username').fill('dev-admin')
@@ -112,7 +128,9 @@ try {
           .readFileSync(
             path.join(
               root,
-              'artifacts/local/.secrets/quefa-cloudflare-mock/admin-totp',
+              xiaojiuVariant
+                ? 'artifacts/local/.secrets/xiaojiu-cloudflare-mock/admin-totp'
+                : 'artifacts/local/.secrets/quefa-cloudflare-mock/admin-totp',
             ),
             'utf8',
           )
@@ -384,6 +402,161 @@ try {
   record(
     'Desktop and 390px mobile storefront details render without horizontal overflow',
   )
+  const beforeXiaojiu = (await (await fetch(control + '/state')).json()).xiaojiu
+  const draft = (
+    await api(
+      admin,
+      '/api/admin/my-shop/products',
+      {
+        ...manual,
+        id: '',
+        version: 0,
+        name: '本机验收小久卡密',
+        status: 'draft',
+        delivery: 'api',
+        api: {
+          provider: 'xiaojiu',
+          baseUrl: 'https://98-xj.com',
+          productCode: '',
+          configured: false,
+          verified: false,
+        },
+      },
+      201,
+    )
+  ).product
+  xiaojiuId = draft.id
+  await adminPage.getByRole('button', { name: '重新读取', exact: true }).click()
+  await adminPage
+    .locator(`.owner-product-row[data-product-id="${xiaojiuId}"]`)
+    .getByRole('button', { name: '编辑商品', exact: true })
+    .click()
+  const xiaojiuDialog = adminPage.getByRole('dialog')
+  await xiaojiuDialog
+    .getByLabel('小久 API Key', { exact: true })
+    .fill(xiaojiuFixtureKey)
+  await xiaojiuDialog
+    .getByLabel('小久 API Secret（完整原文）', { exact: true })
+    .fill(xiaojiuFixtureSecret)
+  await xiaojiuDialog
+    .getByRole('button', { name: '读取小久余额与商品目录', exact: true })
+    .click()
+  await xiaojiuDialog.getByText(/小久钱包可用余额：¥100.00/).waitFor()
+  await xiaojiuDialog
+    .getByLabel('从小久目录选择商品规格', { exact: true })
+    .selectOption('10:123')
+  assert.equal(
+    await xiaojiuDialog.getByLabel('小久商品 ID', { exact: true }).inputValue(),
+    '10',
+  )
+  assert.equal(
+    await xiaojiuDialog
+      .getByLabel('小久 SKU ID（规格编号）', { exact: true })
+      .inputValue(),
+    '123',
+  )
+  await xiaojiuDialog
+    .getByRole('button', { name: '只读检查供货目录并保存配置', exact: true })
+    .click()
+  await xiaojiuDialog
+    .getByText('供货目录只读检查通过，配置已保存。', { exact: true })
+    .waitFor()
+  assert.equal(
+    await xiaojiuDialog
+      .getByLabel('小久 API Secret（完整原文）', { exact: true })
+      .inputValue(),
+    '',
+  )
+  await xiaojiuDialog
+    .getByRole('button', { name: '发布商品', exact: true })
+    .click()
+  await xiaojiuDialog
+    .getByRole('status')
+    .filter({ hasText: '商品已发布' })
+    .waitFor()
+  await adminPage.screenshot({
+    path: path.join(evidence, 'xiaojiu-configuration.png'),
+    fullPage: true,
+  })
+  await xiaojiuDialog
+    .getByRole('button', { name: '关闭弹窗', exact: true })
+    .click()
+  record(
+    'Xiaojiu UI reads the real local Worker catalog, selects an SKU and encrypts its paired credentials without spending',
+  )
+  const afterRead = (await (await fetch(control + '/state')).json()).xiaojiu
+  assert.equal(afterRead.debits, beforeXiaojiu.debits)
+  await buyerPage.goto('/product/' + xiaojiuId)
+  await buyerPage.getByRole('button', { name: '立即购买', exact: true }).click()
+  await buyerPage
+    .getByLabel('下单邮箱', { exact: true })
+    .fill('buyer@example.test')
+  await buyerPage.getByRole('dialog').getByRole('checkbox').check()
+  await buyerPage
+    .getByRole('button', { name: '确认下单，继续付款', exact: true })
+    .click()
+  await buyerPage
+    .getByLabel('付款交易号／付款备注', { exact: true })
+    .fill('LOCAL-XIAOJIU-PAYMENT')
+  await buyerPage
+    .getByRole('button', { name: '我已付款，提交核对', exact: true })
+    .click()
+  await buyerPage
+    .getByText('已提交付款信息，等待店主核对。请勿重复付款。', { exact: true })
+    .waitFor()
+  const xiaojiuOrder = (await api(buyer, '/api/orders')).orders.find(
+    (order) => order.plan === xiaojiuId,
+  )
+  assert.equal(xiaojiuOrder.paymentStatus, 'unpaid')
+  assert.equal(
+    (await (await fetch(control + '/state')).json()).xiaojiu.debits,
+    beforeXiaojiu.debits,
+  )
+  await adminPage
+    .getByRole('navigation', { name: '后台导航' })
+    .getByRole('button', { name: '订单管理', exact: true })
+    .click()
+  await adminPage.getByText(xiaojiuOrder.id, { exact: true }).first().click()
+  const xiaojiuOrderDialog = adminPage.getByRole('dialog')
+  await xiaojiuOrderDialog
+    .locator('#shop-admin-note')
+    .fill('本机模拟：已核对收款，允许采购一份')
+  await xiaojiuOrderDialog
+    .getByRole('button', { name: '已核对真实到账，确认收款', exact: true })
+    .click()
+  await buyerPage
+    .getByRole('button', { name: '刷新原订单进度', exact: true })
+    .click()
+  await buyerPage
+    .getByText('XIAOJIU-LOCAL-FIXTURE-CARD', { exact: true })
+    .waitFor()
+  await buyerPage.screenshot({
+    path: path.join(evidence, 'xiaojiu-delivered.png'),
+    fullPage: true,
+  })
+  const afterPurchase = (await (await fetch(control + '/state')).json()).xiaojiu
+  assert.equal(afterPurchase.debits - beforeXiaojiu.debits, 1)
+  await buyerPage
+    .getByRole('button', { name: '刷新原订单进度', exact: true })
+    .click()
+  assert.equal(
+    (await (await fetch(control + '/state')).json()).xiaojiu.debits,
+    afterPurchase.debits,
+  )
+  record(
+    'Xiaojiu checkout, buyer payment declaration, owner confirmation and card delivery perform exactly one simulated wallet debit',
+  )
+  await xiaojiuOrderDialog
+    .getByRole('button', { name: '关闭弹窗', exact: true })
+    .click()
+  const xiaojiuPublic = JSON.stringify(await api(buyer, '/api/catalog'))
+  assert.ok(
+    !xiaojiuPublic.includes(xiaojiuFixtureKey) &&
+      !xiaojiuPublic.includes(xiaojiuFixtureSecret),
+  )
+  record(
+    'Xiaojiu API credentials stay absent from public catalog and buyer data',
+  )
   assert.deepEqual(results.pageErrors, [])
   assert.deepEqual(results.externalRequests, [])
   record(
@@ -407,29 +580,40 @@ try {
     .catch(() => {})
   throw e
 } finally {
-  if (initial) {
-    const current = (await api(admin, '/api/admin/my-shop/stores')).stores[0]
-    await api(admin, '/api/admin/my-shop/stores', {
-      id: 'platform',
-      version: current.version,
-      name: initial.name,
-      active: initial.active,
-      settings: initial.settings,
-    }).catch(() => {})
-    const products = (await api(admin, '/api/admin/my-shop/products')).products
-    for (const id of [manualId, apiId].filter(Boolean)) {
-      const p = products.find((p) => p.id === id)
-      if (p)
-        await api(admin, '/api/admin/my-shop/products', {
-          ...p,
-          status: 'archived',
-        }).catch(() => {})
+  try {
+    // Browser polling can exhaust the real local API budget. Wait for its
+    // window during cleanup without relaxing the application rate limits.
+    const cleanup = (url, data) => api(admin, url, data, 200, 2)
+    if (initial) {
+      const current = (await cleanup('/api/admin/my-shop/stores')).stores[0]
+      await cleanup('/api/admin/my-shop/stores', {
+        id: 'platform',
+        version: current.version,
+        name: initial.name,
+        active: initial.active,
+        settings: initial.settings,
+      })
+      const products = (await cleanup('/api/admin/my-shop/products')).products
+      for (const id of [manualId, apiId, xiaojiuId].filter(Boolean)) {
+        const p = products.find((p) => p.id === id)
+        if (p)
+          await cleanup('/api/admin/my-shop/products', {
+            ...p,
+            status: 'archived',
+          })
+      }
+      await cleanup('/api/admin/logout', {})
     }
-    await api(admin, '/api/admin/logout', {}).catch(() => {})
+    results.cleanupPassed = true
+  } catch (error) {
+    results.passed = false
+    results.cleanupError = String(error.message).slice(0, 2000)
+    process.exitCode = 1
+  } finally {
+    fs.writeFileSync(
+      path.join(evidence, 'result.json'),
+      JSON.stringify(results, null, 2) + '\n',
+    )
+    await browser.close()
   }
-  fs.writeFileSync(
-    path.join(evidence, 'result.json'),
-    JSON.stringify(results, null, 2) + '\n',
-  )
-  await browser.close()
 }

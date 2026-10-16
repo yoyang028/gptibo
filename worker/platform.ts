@@ -42,6 +42,8 @@ export interface Env {
   ACCOUNT_SUPPLIER_GOODS_ID?: string
   ACCOUNT_SUPPLIER_MAX_COST_CENTS?: string
   ACCOUNT_SUPPLIER_CHECKOUT_ENABLED?: string
+  /** Enables wallet-funded Xiaojiu purchases; read-only product checks remain available. */
+  XIAOJIU_PURCHASE_ENABLED?: string
   PAYMENT_PROVIDER?: string
   PAYMENT_CHECKOUT_ENABLED?: string
   PAYMENT_TEST_ENABLED?: string

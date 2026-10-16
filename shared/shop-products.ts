@@ -28,14 +28,19 @@ export type ShopProduct = {
   status: 'draft' | 'published' | 'archived'
   version: number
   api?: {
+    provider?: 'json-v1' | 'xiaojiu'
     baseUrl: string
     productCode: string
+    supplierProductId?: number
     maxCostCents?: number
     configured: boolean
     verified: boolean
   }
 }
-export type ShopProductInput = ShopProduct & { apiToken?: string }
+export type ShopProductInput = ShopProduct & {
+  apiToken?: string
+  apiKey?: string
+}
 export type CustomOrderView = {
   productId: string
   productName: string
@@ -49,6 +54,7 @@ export type CustomOrderView = {
   paymentReference: string
   fields: Record<string, string>
   supplierState: string | null
+  supplierError?: string
 }
 export const customProductId = /^custom-[a-f0-9]{32}$/
 export const hasControlCharacters = (value: string) =>
@@ -94,6 +100,22 @@ export function productProblems(
   if (!['draft', 'published', 'archived'].includes(product.status))
     errors.push('发布状态')
   if (!['manual', 'api'].includes(product.delivery)) errors.push('交付方式')
+  if (
+    product.api?.provider &&
+    !['json-v1', 'xiaojiu'].includes(product.api.provider)
+  )
+    errors.push('供货接口类型')
+  if (
+    product.delivery === 'api' &&
+    product.api?.provider === 'xiaojiu' &&
+    ((product.api.supplierProductId !== undefined &&
+      (!Number.isSafeInteger(product.api.supplierProductId) ||
+        Number(product.api.supplierProductId) < 1)) ||
+      (product.api.productCode !== '' &&
+        !/^[1-9]\d{0,14}$/.test(product.api.productCode)) ||
+      product.api.baseUrl !== 'https://98-xj.com')
+  )
+    errors.push('小久商品 ID、SKU ID 与正确的采购接口地址')
   if (
     !Number.isSafeInteger(product.priceCents) ||
     product.priceCents < 1 ||

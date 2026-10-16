@@ -9,3 +9,11 @@ regexTarget = "secret"
 regexes = ['''^GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ$''']
 paths = ['''(?:^|/)(?:tests/[^/]+\.ts|services/storefront/internal/security/security_test\.go)$''']
 condition = "AND"
+
+# Public Xiaojiu HMAC-v2 signature vector from the official sample, test-only.
+[[allowlists]]
+description = "Published Xiaojiu offline signing vector"
+regexTarget = "secret"
+regexes = ['''^0123456789abcdef$''']
+paths = ['''^tests/xiaojiu-purchase\.test\.ts$''']
+condition = "AND"

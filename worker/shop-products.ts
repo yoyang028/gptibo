@@ -4,12 +4,19 @@ import {
   safeHttps,
   type ShopProduct,
   type CustomOrderView,
+  type ShopProductInput,
 } from '../shared/shop-products.ts'
 import { ApiError, body, hash, json, type Env } from './platform.ts'
 import { boundedResponseText } from './bounded-response.ts'
 import { change, getOrder, type Order } from './order-state.ts'
 import { ownerShop } from './owner-shop.ts'
 import { couponQuote, couponReservation } from './shop-coupons.ts'
+import {
+  XiaojiuPurchaseClient,
+  XiaojiuPurchaseError,
+  fulfillXiaojiuPurchase,
+  purchaseCredentials,
+} from './xiaojiu/purchase.ts'
 
 type Row = {
   id: string
@@ -35,6 +42,8 @@ type Detail = {
   lease_until: number
   lease_token: string
   api_secret: string
+  supplier_error: string
+  supplier_attempted: number
 }
 const encoder = new TextEncoder()
 async function secretKey(env: Env) {
@@ -84,7 +93,16 @@ export async function shopProducts(env: Env, includeDrafts = false) {
   ).results
   return rows
     .map(rowProduct)
-    .filter((p) => includeDrafts || p.status === 'published')
+    .filter(
+      (p) =>
+        includeDrafts ||
+        (p.status === 'published' &&
+          !(
+            p.delivery === 'api' &&
+            p.api?.provider === 'xiaojiu' &&
+            env.XIAOJIU_PURCHASE_ENABLED !== 'true'
+          )),
+    )
     .map((p) => {
       if (!includeDrafts) delete p.api
       return p
@@ -150,6 +168,8 @@ const fingerprint = (p: ShopProduct, sealed: string) =>
       p.api?.baseUrl,
       p.api?.productCode,
       p.api?.maxCostCents,
+      p.api?.provider ?? 'json-v1',
+      p.api?.supplierProductId ?? null,
       sealed,
     ]),
   )
@@ -171,6 +191,43 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     return json({ products: await shopProducts(env, true) })
   if (request.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
   const data = await body(request, 1000000)
+  if (suffix === '/xiaojiu-catalog') {
+    try {
+      let credential: string
+      if (data.apiKey || data.apiToken)
+        credential = JSON.stringify({ key: data.apiKey, secret: data.apiToken })
+      else {
+        const row = customProductId.test(String(data.id))
+          ? await productRow(env, String(data.id))
+          : null
+        if (
+          !row ||
+          row.version !== data.version ||
+          rowProduct(row).api?.provider !== 'xiaojiu'
+        )
+          throw new ApiError(
+            '请先填写小久 API Key 和完整 Secret，或重新读取已保存商品。',
+            409,
+          )
+        credential = await unseal(env, row.api_secret)
+      }
+      const client = new XiaojiuPurchaseClient(
+        env,
+        purchaseCredentials(credential),
+      )
+      const wallet = await client.ping(true)
+      return json({
+        ...(await client.catalog(
+          data.page === undefined ? 1 : Number(data.page),
+        )),
+        ...wallet,
+      })
+    } catch (e) {
+      if (e instanceof XiaojiuPurchaseError)
+        throw new ApiError(e.message, e.retryable ? 503 : 409)
+      throw e
+    }
+  }
   const id =
     typeof data.id === 'string' && data.id
       ? data.id
@@ -179,11 +236,15 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
   const previous = await productRow(env, id)
   if ((previous?.version ?? 0) !== data.version)
     throw new ApiError('商品已更新，请重新读取。', 409)
-  const input = data as unknown as ShopProduct & { apiToken?: string }
+  const input = data as unknown as ShopProductInput
   const api = input.api
     ? {
+        ...(input.api.provider ? { provider: input.api.provider } : {}),
         baseUrl: String(input.api.baseUrl ?? '').replace(/\/$/, ''),
         productCode: String(input.api.productCode ?? '').trim(),
+        ...(input.api.supplierProductId !== undefined
+          ? { supplierProductId: input.api.supplierProductId }
+          : {}),
         maxCostCents: input.api.maxCostCents,
         configured: false,
         verified: false,
@@ -224,9 +285,27 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
       /[\r\n]/.test(input.apiToken))
   )
     throw new ApiError('API 密钥格式无效。')
-  const sealed = input.apiToken
-    ? await seal(env, input.apiToken)
-    : (previous?.api_secret ?? '')
+  const previousProduct = previous ? rowProduct(previous) : null
+  const sameProvider =
+    (previousProduct?.api?.provider ?? 'json-v1') ===
+    (api?.provider ?? 'json-v1')
+  let credential = input.apiToken ?? ''
+  if (api?.provider === 'xiaojiu' && (input.apiToken || input.apiKey)) {
+    try {
+      const pair = purchaseCredentials(
+        JSON.stringify({ key: input.apiKey, secret: input.apiToken }),
+      )
+      credential = JSON.stringify(pair)
+    } catch (e) {
+      if (e instanceof XiaojiuPurchaseError) throw new ApiError(e.message)
+      throw e
+    }
+  }
+  const sealed = credential
+    ? await seal(env, credential)
+    : sameProvider
+      ? (previous?.api_secret ?? '')
+      : ''
   const verified = sealed && api ? await fingerprint(product, sealed) : ''
   if (api) {
     api.configured = Boolean(sealed)
@@ -246,24 +325,53 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
       Number(api.maxCostCents) > 10000000
     )
       throw new ApiError('请填写 API 地址、商品编码、最高采购成本及密钥。')
-    const result = await supplierRequest(env, product, sealed, '/products')
-    const products = Array.isArray(result.products) ? result.products : []
-    if (
-      !products.some(
-        (p) =>
-          p &&
-          typeof p === 'object' &&
-          (p as Record<string, unknown>).product_code === api.productCode &&
-          (p as Record<string, unknown>).available === true,
+    if (api.provider === 'xiaojiu') {
+      try {
+        const client = new XiaojiuPurchaseClient(
+          env,
+          purchaseCredentials(await unseal(env, sealed)),
+        )
+        await client.ping(true)
+        await client.product(
+          Number(api.supplierProductId),
+          Number(api.productCode),
+          Number(api.maxCostCents),
+        )
+      } catch (e) {
+        if (e instanceof XiaojiuPurchaseError)
+          throw new ApiError(e.message, e.retryable ? 503 : 409)
+        throw e
+      }
+    } else {
+      const result = await supplierRequest(env, product, sealed, '/products')
+      const products = Array.isArray(result.products) ? result.products : []
+      if (
+        !products.some(
+          (p) =>
+            p &&
+            typeof p === 'object' &&
+            (p as Record<string, unknown>).product_code === api.productCode &&
+            (p as Record<string, unknown>).available === true,
+        )
       )
-    )
-      throw new ApiError(
-        '供货目录未返回当前商品可售；请按 JSON v1 接口契约适配。',
-        409,
-      )
+        throw new ApiError(
+          '供货目录未返回当前商品可售；请按 JSON v1 接口契约适配。',
+          409,
+        )
+    }
     api.verified = true
   } else if (suffix) throw new ApiError('未找到商品操作。', 404)
   const finalProblems = productProblems(product)
+  if (
+    product.status === 'published' &&
+    product.delivery === 'api' &&
+    product.api?.provider === 'xiaojiu' &&
+    env.XIAOJIU_PURCHASE_ENABLED !== 'true'
+  )
+    throw new ApiError(
+      '小久余额采购尚未启用，可先保存草稿并进行只读检查。',
+      409,
+    )
   if (finalProblems.length)
     throw new ApiError('发布前请补全：' + finalProblems.join('、'))
   const next = { ...product, version: product.version + 1 },
@@ -360,6 +468,7 @@ export async function customOrderSummary(
     paymentReference: d.payment_reference,
     fields: JSON.parse(d.fields),
     supplierState: d.supplier_state,
+    supplierError: d.supplier_error ?? '',
   }
 }
 export async function createCustomOrder(
@@ -407,6 +516,12 @@ export async function createCustomOrder(
   )
     throw new ApiError('该商品暂未开放购买。', 409)
   const p = rowProduct(row)
+  if (
+    p.delivery === 'api' &&
+    p.api?.provider === 'xiaojiu' &&
+    env.XIAOJIU_PURCHASE_ENABLED !== 'true'
+  )
+    throw new ApiError('小久商品暂未开放余额采购。', 409)
   const coupon = data.couponCode
     ? await couponQuote(env, id, email, data.couponCode)
     : null
@@ -632,7 +747,9 @@ export async function customAdminAction(
     if (
       !d ||
       d.lease_until > Date.now() ||
-      ['creating', 'pending', 'unknown'].includes(d.supplier_state ?? '')
+      ['creating', 'pending', 'unknown', 'review'].includes(
+        d.supplier_state ?? '',
+      )
     )
       throw new ApiError('自动供货状态尚未确认，请先核对原任务。', 409)
     const event = crypto.randomUUID(),
@@ -641,7 +758,7 @@ export async function customAdminAction(
     await db.batch([
       db
         .prepare(
-          "UPDATE orders SET status='success',version=version+1,updated_at=?,last_event_id=? WHERE id=? AND version=? AND payment_status='paid' AND refund_hold=0 AND redemption_blocked=0 AND refunded_cents=0 AND status IN ('processing','failed') AND EXISTS(SELECT 1 FROM shop_order_details d WHERE d.order_id=orders.id AND d.lease_until<=? AND COALESCE(d.supplier_state,'') NOT IN ('creating','pending','unknown'))",
+          "UPDATE orders SET status='success',version=version+1,updated_at=?,last_event_id=? WHERE id=? AND version=? AND payment_status='paid' AND refund_hold=0 AND redemption_blocked=0 AND refunded_cents=0 AND status IN ('processing','failed') AND EXISTS(SELECT 1 FROM shop_order_details d WHERE d.order_id=orders.id AND d.lease_until<=? AND COALESCE(d.supplier_state,'') NOT IN ('creating','pending','unknown','review'))",
         )
         .bind(now, event, order.id, order.version, now),
       db
@@ -691,10 +808,11 @@ export async function fulfillCustomOrder(
     .bind(id)
     .first<Detail>()
   if (!detail || detail.lease_until > Date.now()) return
-  if (detail.supplier_state === 'failed' && !forceQuery) return
+  if (['failed', 'review'].includes(detail.supplier_state ?? '') && !forceQuery)
+    return
   const product = JSON.parse(detail.snapshot) as ShopProduct
   if (product.delivery !== 'api') return
-  const lease = Date.now() + 30000,
+  const lease = Date.now() + 90000,
     token = crypto.randomUUID()
   await db
     .prepare(
@@ -712,28 +830,86 @@ export async function fulfillCustomOrder(
   )
     return
   try {
-    // Unknown creation is looked up using the original merchant number. Never POST again.
-    const remote = detail.supplier_state
-      ? await supplierRequest(
-          env,
-          product,
-          detail.api_secret,
-          '/orders/' + (detail.supplier_id ?? id),
-        )
-      : await supplierRequest(
-          env,
-          product,
-          detail.api_secret,
-          '/orders',
-          {
-            merchant_order_no: id,
-            product_code: product.api!.productCode,
-            max_cost_cents: product.api!.maxCostCents,
-            email: order.customer_email,
-            fields: JSON.parse(detail.fields),
-          },
-          id,
-        )
+    // Each protocol keeps its documented recovery contract. Xiaojiu replays the
+    // same downstream number only when the original response did not supply an ID.
+    const remote =
+      product.api?.provider === 'xiaojiu'
+        ? await fulfillXiaojiuPurchase(
+            new XiaojiuPurchaseClient(
+              env,
+              purchaseCredentials(await unseal(env, detail.api_secret)),
+            ),
+            {
+              productId: Number(product.api.supplierProductId),
+              skuId: Number(product.api.productCode),
+              maximum: Number(product.api.maxCostCents),
+              merchant: id,
+              remoteId: detail.supplier_id,
+              replay: Boolean(detail.supplier_attempted),
+              beforeCreate: async () => {
+                if (env.XIAOJIU_PURCHASE_ENABLED !== 'true')
+                  throw new XiaojiuPurchaseError('purchase_disabled')
+                const prepared = await db
+                  .prepare(
+                    "UPDATE shop_order_details SET supplier_attempted=1 WHERE order_id=? AND lease_token=? AND lease_until>? AND EXISTS(SELECT 1 FROM orders o WHERE o.id=shop_order_details.order_id AND o.payment_status='paid' AND o.refund_hold=0 AND o.refunded_cents=0 AND o.redemption_blocked=0 AND o.status IN ('processing','failed')) RETURNING order_id",
+                  )
+                  .bind(id, token, Date.now())
+                  .first()
+                if (!prepared)
+                  throw new XiaojiuPurchaseError('invalid_response')
+              },
+              remember: async (remoteId, cost) => {
+                const current = await db
+                  .prepare(
+                    'SELECT supplier_id FROM shop_order_details WHERE order_id=? AND lease_token=? AND lease_until>?',
+                  )
+                  .bind(id, token, Date.now())
+                  .first<{ supplier_id: string | null }>()
+                if (
+                  !current ||
+                  (current.supplier_id && current.supplier_id !== remoteId)
+                )
+                  throw new XiaojiuPurchaseError('invalid_response')
+                await db.batch([
+                  db
+                    .prepare(
+                      "UPDATE shop_order_details SET supplier_id=?,supplier_state='pending' WHERE order_id=? AND lease_token=? AND lease_until>?",
+                    )
+                    .bind(remoteId, id, token, Date.now()),
+                  ...(cost >= 0
+                    ? [
+                        db
+                          .prepare(
+                            'UPDATE orders SET cost_cents=? WHERE id=? AND EXISTS(SELECT 1 FROM shop_order_details d WHERE d.order_id=orders.id AND d.lease_token=?)',
+                          )
+                          .bind(cost, id, token),
+                      ]
+                    : []),
+                ])
+              },
+            },
+          )
+        : detail.supplier_state
+          ? await supplierRequest(
+              env,
+              product,
+              detail.api_secret,
+              '/orders/' + (detail.supplier_id ?? id),
+            )
+          : await supplierRequest(
+              env,
+              product,
+              detail.api_secret,
+              '/orders',
+              {
+                merchant_order_no: id,
+                product_code: product.api!.productCode,
+                max_cost_cents: product.api!.maxCostCents,
+                email: order.customer_email,
+                fields: JSON.parse(detail.fields),
+              },
+              id,
+            )
     if (
       remote.merchant_order_no !== id ||
       typeof remote.order_id !== 'string' ||
@@ -767,7 +943,7 @@ export async function fulfillCustomOrder(
         .bind(Number(remote.cost_cents), id, token),
       db
         .prepare(
-          "UPDATE shop_order_details SET supplier_id=?,supplier_state=?,delivery_content=?,last_checked_at=? WHERE order_id=? AND lease_token=? AND (COALESCE(supplier_state,'')<>'success' OR ?='success')",
+          "UPDATE shop_order_details SET supplier_id=?,supplier_state=?,delivery_content=?,last_checked_at=?,supplier_error='' WHERE order_id=? AND lease_token=? AND (COALESCE(supplier_state,'')<>'success' OR ?='success')",
         )
         .bind(
           remote.order_id,
@@ -808,7 +984,16 @@ export async function fulfillCustomOrder(
               ),
           ]),
     ])
-  } catch {
+  } catch (error) {
+    if (error instanceof XiaojiuPurchaseError) {
+      await db
+        .prepare(
+          "UPDATE shop_order_details SET supplier_state=CASE WHEN ?=0 THEN 'review' WHEN supplier_id IS NULL THEN 'unknown' ELSE 'pending' END,supplier_error=?,last_checked_at=? WHERE order_id=? AND lease_token=?",
+        )
+        .bind(Number(error.retryable), error.message, Date.now(), id, token)
+        .run()
+      return
+    }
     await db
       .prepare(
         "UPDATE shop_order_details SET supplier_state=CASE WHEN supplier_state IN ('creating','unknown') THEN 'unknown' ELSE supplier_state END,last_checked_at=? WHERE order_id=? AND lease_token=?",
@@ -826,11 +1011,11 @@ export async function fulfillCustomOrder(
 }
 export async function reconcileShopProducts(env: Env) {
   const rows = await env.INTEREST_DB.prepare(
-    "SELECT d.order_id FROM shop_order_details d JOIN orders o ON o.id=d.order_id WHERE o.payment_status='paid' AND o.status IN ('processing','failed') AND o.refund_hold=0 AND o.refunded_cents=0 AND COALESCE(d.supplier_state,'')<>'failed' AND json_extract(d.snapshot,'$.delivery')='api' AND d.last_checked_at<? ORDER BY d.last_checked_at LIMIT 10",
+    "SELECT d.order_id FROM shop_order_details d JOIN orders o ON o.id=d.order_id WHERE o.payment_status='paid' AND o.status IN ('processing','failed') AND o.refund_hold=0 AND o.refunded_cents=0 AND COALESCE(d.supplier_state,'') NOT IN ('failed','review') AND json_extract(d.snapshot,'$.delivery')='api' AND d.last_checked_at<? ORDER BY d.last_checked_at LIMIT 10",
   )
     .bind(Date.now() - 60000)
     .all<{ order_id: string }>()
-  await Promise.all(
-    rows.results.map((row) => fulfillCustomOrder(env, row.order_id)),
-  )
+  // One credential can be shared by several products; serialize reconciliation
+  // instead of exhausting the upstream's two-write concurrency allowance.
+  for (const row of rows.results) await fulfillCustomOrder(env, row.order_id)
 }

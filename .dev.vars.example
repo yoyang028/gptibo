@@ -50,6 +50,10 @@ ACCOUNT_SUPPLIER_GOODS_ID= # Configure locally; never commit a real value.
 ACCOUNT_SUPPLIER_MAX_COST_CENTS= # Configure locally; never commit a real value.
 ACCOUNT_SUPPLIER_CHECKOUT_ENABLED="false"
 
+# Xiaojiu wallet purchases. Key + Secret are entered in the admin product editor
+# and encrypted server-side; keep purchases disabled during read-only validation.
+XIAOJIU_PURCHASE_ENABLED="false"
+
 # DeliverySupplier 自动采购，美元/USDT 按固定汇率折算人民币记账
 DELIVERY_SUPPLIER_API_KEY= # Configure locally; never commit a real value.
 DELIVERY_SUPPLIER_CHECKOUT_ENABLED=false

@@ -14,7 +14,7 @@ export function inspectPreparation(config, secretNames = []) {
   add('reconciliation scheduled every minute', config.triggers?.crons?.includes('* * * * *'))
   const limits = new Map((config.ratelimits ?? []).map(l => [l.name, l.simple]))
   add('three edge request limits configured', ['INTEREST_LIMITER', 'API_LIMITER', 'EXPENSIVE_LIMITER'].every(name => limits.get(name)?.limit > 0 && limits.get(name)?.period === 60))
-  add('test payments and unrelated products disabled', disabled.every(name => config.vars?.[name] === 'false'))
+  add('test payments and unrelated products disabled', disabled.every(name => config.vars?.[name] === 'false') && config.vars?.XIAOJIU_PURCHASE_ENABLED !== 'true')
   add('preparation cannot sell or write to supplier', config.vars?.RECHARGE_CHECKOUT_ENABLED === 'false' && config.vars?.RECHARGE_READ_ONLY === 'true')
   add('platform collection with bound callback', config.vars?.RECHARGE_COLLECTION_MODE === 'platform_collect' && config.vars?.RECHARGE_NOTIFY_URL === `https://${domain}/api/recharge/webhook`)
   let map

@@ -53,6 +53,7 @@ export default function ShopOrderActions({
         <p>付款交易号／备注：{custom.paymentReference}</p>
       )}
       {custom.supplierState && <p>供货状态：{custom.supplierState}</p>}
+      {custom.supplierError && <p role="status">{custom.supplierError}</p>}
       <label htmlFor="shop-admin-note">处理说明（必填）</label>
       <Input
         id="shop-admin-note"
@@ -100,7 +101,7 @@ export default function ShopOrderActions({
               busy ||
               note.trim().length < 3 ||
               !content.trim() ||
-              ['creating', 'pending', 'unknown'].includes(
+              ['creating', 'pending', 'unknown', 'review'].includes(
                 custom.supplierState ?? '',
               )
             }

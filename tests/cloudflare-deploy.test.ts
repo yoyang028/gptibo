@@ -26,6 +26,7 @@ test('offline readiness rejects accidental demo or real purchases, unsafe asset 
   const changes = [
     c => { c.vars.ORDER_TESTING_ENABLED = 'true' },
     c => { c.vars.PAYMENT_TEST_ENABLED = 'true' },
+    c => { c.vars.XIAOJIU_PURCHASE_ENABLED = 'true' },
     c => { c.vars.RECHARGE_CHECKOUT_ENABLED = 'true' },
     c => { c.vars.RECHARGE_READ_ONLY = 'false' },
     c => { c.vars.RECHARGE_COLLECTION_MODE = 'agent_collect' },
