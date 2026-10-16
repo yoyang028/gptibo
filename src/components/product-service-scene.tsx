@@ -13,7 +13,7 @@ export function ProductServiceScene({ productId, name, duration }: { productId: 
     <span className="scene-floating-label"><Check size={13} />成品账号</span>
   </div>
   if (productId === 'codex-sms') return <div className="service-scene sms-scene" aria-hidden="true">
-    <div className="sms-terminal"><span className="scene-eyebrow"><i /><i /><i /><span>SMS / CODEX</span></span><strong>+1 ··· ··· ····</strong><span className="sms-code"><b>✱</b><b>✱</b><b>✱</b><b>✱</b><b>✱</b><b>✱</b></span><span className="sms-terminal-footer"><MessageSquareText size={12} />单次短信接码</span></div>
+    <div className="sms-terminal"><span className="scene-eyebrow"><i /><i /><i /><span>SMS / CODEX</span></span><strong>+1 ··· ··· ····</strong><span className="sms-scene-code"><b>✱</b><b>✱</b><b>✱</b><b>✱</b><b>✱</b><b>✱</b></span><span className="sms-terminal-footer"><MessageSquareText size={12} />单次短信接码</span></div>
   </div>
   return <div className="service-scene generic-service-scene" aria-hidden="true"><div className="service-pass"><ProductMark productId={productId} /><strong>{name}</strong><span>{duration}</span></div></div>
 }
