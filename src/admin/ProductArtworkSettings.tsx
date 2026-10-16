@@ -1,5 +1,5 @@
-import { useId, useRef, useState } from 'react'
-import { ImagePlus, Save, Upload } from 'lucide-react'
+import { useId, useMemo, useRef, useState } from 'react'
+import { ImagePlus, Save, Upload, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -12,15 +12,39 @@ import { ProductArtwork } from '@/components/product-artwork'
 import { ProductMark } from '@/components/brand'
 import { api, errorMessage } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
-import { prepareLogo } from '@/lib/prepare-logo'
+import {
+  prepareArtworkSource,
+  processArtwork,
+  vectorizeArtworkImage,
+} from '@/lib/prepare-artwork'
+import {
+  ArtworkMaterialControls,
+  ArtworkLayoutControls,
+} from './ArtworkControls'
 import {
   ARTWORK_TEMPLATES,
   artworkProblem,
+  defaultLayout,
+  defaultProcessing,
+  type ArtworkProcessing,
   type ArtworkProduct,
   type ProductArtworkConfig,
 } from '../../shared/product-artwork'
 import './product-artwork-settings.css'
 import '@/styles/storefront-home.css'
+
+const equalSetting = (a: unknown, b: unknown) =>
+  a === b || JSON.stringify(a) === JSON.stringify(b)
+function sameArtwork(a: ProductArtworkConfig, b: ProductArtworkConfig) {
+  return (
+    a.template === b.template &&
+    a.image === b.image &&
+    a.source === b.source &&
+    equalSetting(a.layout, b.layout) &&
+    equalSetting(a.processing, b.processing) &&
+    equalSetting(a.vector, b.vector)
+  )
+}
 
 export function ProductArtworkSettingsButton({
   productId,
@@ -117,11 +141,30 @@ function ArtworkEditor({
     [discard, setDiscard] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null),
     saving = useRef(false)
+  const history = useRef<ProductArtworkConfig[]>([]),
+    group = useRef('')
+  const [undoCount, setUndoCount] = useState(0)
   const id = useId(),
-    dirty = JSON.stringify(draft) !== JSON.stringify(selected.config)
-  const problem = artworkProblem(draft)
-  const update = (value: Partial<ProductArtworkConfig>) => {
-    setDraft((previous) => ({ ...previous, ...value }))
+    dirty = !sameArtwork(draft, selected.config)
+  // Sliders only change layout; avoid decoding two large base64 pictures on every frame.
+  const problem = useMemo(
+    () =>
+      artworkProblem({
+        template: draft.template,
+        image: draft.image,
+        source: draft.source,
+        processing: draft.processing,
+        vector: draft.vector,
+      }),
+    [draft.template, draft.image, draft.source, draft.processing, draft.vector],
+  )
+  const update = (value: Partial<ProductArtworkConfig>, coalesce = '') => {
+    if (!coalesce || group.current !== coalesce) {
+      history.current = [...history.current.slice(-19), draft]
+      setUndoCount(history.current.length)
+    }
+    group.current = coalesce
+    setDraft({ ...draft, ...value })
     setError('')
     setMessage('')
   }
@@ -134,6 +177,9 @@ function ArtworkEditor({
     if (row) {
       setSelected(row)
       setDraft({ ...row.config })
+      history.current = []
+      group.current = ''
+      setUndoCount(0)
       setError('')
       setMessage('')
     }
@@ -149,19 +195,82 @@ function ArtworkEditor({
     setError('')
     setMessage('')
     try {
-      const image = await prepareLogo(file, 512, 'source')
+      const source = await prepareArtworkSource(file),
+        processing = defaultProcessing()
+      const result = await processArtwork(source, processing)
       update({
-        image,
+        source,
+        image: result.image,
+        processing,
+        vector: undefined,
+        layout: draft.layout ?? defaultLayout(),
         template: draft.template === 'original' ? 'static' : draft.template,
       })
+      setMessage(result.note)
     } catch (e) {
       setError(errorMessage(e))
     } finally {
       setBusy(false)
     }
   }
+  async function reprocess(processing: ArtworkProcessing) {
+    const source = draft.source || draft.image
+    if (!source || busy) return
+    setBusy(true)
+    setError('')
+    setMessage('')
+    try {
+      const result = await processArtwork(source, processing)
+      update({
+        source,
+        image: result.image,
+        processing,
+        vector: undefined,
+        layout: draft.layout ?? defaultLayout(),
+      })
+      setMessage(result.note)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function vectorize() {
+    if (!draft.image || busy) return
+    setBusy(true)
+    setError('')
+    setMessage('')
+    try {
+      const vector = await vectorizeArtworkImage(draft.image)
+      if (vector) {
+        update({ vector })
+        setMessage('已生成纯色矢量轮廓；位图与原图继续保留，可随时切回。')
+      } else
+        setMessage(
+          '这张图片包含渐变、较多颜色或复杂细节，已保留高质量位图，未强制矢量化。',
+        )
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  function undo() {
+    const previous = history.current.pop()
+    if (!previous) return
+    setDraft(previous)
+    setUndoCount(history.current.length)
+    group.current = ''
+    setError('')
+    setMessage('已撤销上一步修改。')
+  }
   async function save() {
     if (busy || saving.current || problem) return
+    const validation = artworkProblem(draft)
+    if (validation) {
+      setError(validation)
+      return
+    }
     saving.current = true
     setBusy(true)
     setError('')
@@ -176,6 +285,9 @@ function ArtworkEditor({
       )
       setSelected(result.product)
       setDraft({ ...result.product.config })
+      history.current = []
+      group.current = ''
+      setUndoCount(0)
       setMessage('展示样式已保存，前台商品列表和详情页已更新。')
       onSaved?.()
     } catch (e) {
@@ -256,9 +368,36 @@ function ArtworkEditor({
                       <Upload size={14} />
                       {draft.image ? '更换图片' : '上传图片'}
                     </Button>
-                    <p>PNG／JPG，最大 5 MB；保留 PNG 透明背景。</p>
+                    <p>
+                      PNG／JPG，最大 5
+                      MB；自动处理简单背景与留白，保留内部细节。
+                    </p>
                   </div>
                 </div>
+                {draft.image && (
+                  <ArtworkMaterialControls
+                    config={draft}
+                    id={id}
+                    onProcess={(value) => void reprocess(value)}
+                    onVectorize={() => void vectorize()}
+                    onRaster={() => update({ vector: undefined })}
+                    onRestore={() => {
+                      update({
+                        image: draft.source || draft.image,
+                        vector: undefined,
+                        processing: {
+                          ...defaultProcessing(),
+                          removeBackground: false,
+                          trim: false,
+                          cleanEdges: false,
+                        },
+                      })
+                      setMessage(
+                        '已还原上传原图，布局设置保留；可撤销或重新处理。',
+                      )
+                    }}
+                  />
+                )}
                 <fieldset className="artwork-template-fieldset">
                   <legend>展示模板</legend>
                   <div className="artwork-template-options">
@@ -282,6 +421,16 @@ function ArtworkEditor({
                 <p className="artwork-settings-help">
                   “沿用原展示”保留商品现有图片和动画。其他模板使用上方上传的图片；静态模板不播放动效。
                 </p>
+                {draft.image && (
+                  <ArtworkLayoutControls
+                    layout={draft.layout ?? defaultLayout()}
+                    id={id}
+                    onChange={(layout, key) => update({ layout }, key)}
+                    onEnd={() => {
+                      group.current = ''
+                    }}
+                  />
+                )}
               </fieldset>
               <section
                 className="artwork-preview-panel"
@@ -364,6 +513,15 @@ function ArtworkEditor({
               >
                 <Save size={15} />
                 {busy ? '处理中…' : '保存展示样式'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || !undoCount}
+                onClick={undo}
+              >
+                <Undo2 size={15} />
+                撤销上一步
               </Button>
               <Button
                 type="button"

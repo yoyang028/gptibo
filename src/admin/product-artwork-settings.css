@@ -19,6 +19,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: 60dvh;
+  overflow: auto;
+  padding-right: 10px;
 }
 .artwork-settings-controls > label,
 .artwork-template-fieldset legend {
@@ -95,6 +98,119 @@
 .artwork-preview-panel {
   min-width: 0;
 }
+.artwork-control-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 16px 0 0;
+  margin-top: 6px;
+  min-width: 0;
+}
+.artwork-control-section legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 6px 0 0;
+}
+.artwork-control-section > label {
+  font-size: 12px;
+}
+.artwork-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.artwork-checks label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.artwork-checks input {
+  accent-color: var(--primary);
+}
+.artwork-material-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.artwork-material-actions button {
+  font-size: 12px;
+}
+.artwork-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.artwork-comparison figure {
+  margin: 0;
+  min-width: 0;
+}
+.artwork-comparison figcaption {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 6px;
+}
+.artwork-checker {
+  display: grid;
+  place-items: center;
+  height: 132px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background-color: #fff;
+  background-image: conic-gradient(
+    #e8e8ed 25%,
+    transparent 0 50%,
+    #e8e8ed 0 75%,
+    transparent 0
+  );
+  background-size: 16px 16px;
+}
+.artwork-checker img,
+.artwork-checker svg {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  border-radius: 0;
+}
+.artwork-range {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.artwork-range > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.artwork-range output {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+.artwork-range input {
+  width: 100%;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.artwork-color {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.artwork-color input {
+  width: 52px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--background);
+  cursor: pointer;
+}
 .artwork-preview-heading {
   display: flex;
   align-items: center;
@@ -163,6 +279,11 @@
   margin-top: 14px;
 }
 @media (max-width: 740px) {
+  .artwork-settings-controls {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
   .artwork-settings-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 20px;

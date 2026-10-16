@@ -10,7 +10,11 @@ import { sendOwnerOrderNotifications } from '../worker/owner-shop.ts'
 import type { ShopProduct } from '../shared/shop-products.ts'
 import { sendVerificationEmail } from '../worker/email.ts'
 import { fulfillCustomOrder } from '../worker/shop-products.ts'
-import { ARTWORK_TEMPLATES } from '../shared/product-artwork.ts'
+import {
+  ARTWORK_TEMPLATES,
+  defaultLayout,
+  defaultProcessing,
+} from '../shared/product-artwork.ts'
 
 const credential = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
 const image =
@@ -1419,5 +1423,132 @@ test('custom artwork survives ordinary product edits and hides unpublished produ
   assert.deepEqual(
     read.products.find((row: { id: string }) => row.id === p.id).config,
     config,
+  )
+})
+
+test('processed artwork saves originals and layout for editing but only publishes the finished image and safe geometry', async () => {
+  const s = await setup()
+  const catalogue = s.db
+    .prepare('SELECT * FROM catalog_plans ORDER BY id')
+    .all()
+  const config = {
+    template: 'float',
+    image,
+    source: image,
+    processing: defaultProcessing(),
+    layout: {
+      ...defaultLayout(),
+      scale: 120,
+      x: -8,
+      y: 6,
+      background: 'halo',
+      pedestal: 'disc',
+    },
+    vector: {
+      width: 32,
+      height: 32,
+      paths: [{ fill: '#3c46eb', d: 'M2,2L30,2L30,30L2,30Z' }],
+    },
+    discardedProperty: 'not part of artwork settings',
+  }
+  const saved = await s.request(
+    '/api/admin/product-artwork',
+    { productId: 'chatgpt', version: 0, config },
+    s.admin,
+  )
+  assert.equal(saved.status, 200, await saved.clone().text())
+  const stored = (await saved.json()).product.config
+  const { discardedProperty: _unused, ...expected } = config
+  assert.deepEqual(stored, expected)
+  const read = await (
+    await s.request('/api/admin/product-artwork', undefined, s.admin)
+  ).json()
+  assert.deepEqual(
+    read.products.find((p) => p.id === 'chatgpt').config,
+    expected,
+  )
+  const exposed = (await (await s.request('/api/catalog')).json())
+    .productArtwork.chatgpt
+  assert.deepEqual(exposed, {
+    template: config.template,
+    image,
+    layout: config.layout,
+    vector: config.vector,
+  })
+  assert.equal('source' in exposed, false)
+  assert.equal('processing' in exposed, false)
+  assert.deepEqual(
+    s.db.prepare('SELECT * FROM catalog_plans ORDER BY id').all(),
+    catalogue,
+  )
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 0)
+  assert.equal(
+    s.db.prepare('SELECT COUNT(*) n FROM recharge_orders').get()!.n,
+    0,
+  )
+})
+
+test('artwork endpoint rejects malformed processing, injected vector paths and excessive payloads without database writes', async () => {
+  const s = await setup()
+  for (const config of [
+    { template: 'float', image, source: 'data:image/svg+xml;base64,PHN2Zy8+' },
+    { template: 'float', image, layout: { ...defaultLayout(), y: 999 } },
+    {
+      template: 'float',
+      image,
+      processing: { ...defaultProcessing(), tolerance: -1 },
+    },
+    {
+      template: 'float',
+      image,
+      vector: {
+        width: 32,
+        height: 32,
+        paths: [{ fill: '#ffffff', d: 'M0,0L1,1Z" onload="alert(1)' }],
+      },
+    },
+    {
+      template: 'float',
+      image,
+      vector: {
+        width: 32,
+        height: 32,
+        paths: [{ fill: '#ffffff', d: 'M0,0L1,1Z'.repeat(11000) }],
+      },
+    },
+    {
+      template: 'float',
+      image,
+      source: 'data:image/png;base64,' + 'A'.repeat(600001),
+    },
+  ]) {
+    assert.equal(
+      (
+        await s.request(
+          '/api/admin/product-artwork',
+          { productId: 'chatgpt', version: 0, config },
+          s.admin,
+        )
+      ).status,
+      400,
+    )
+  }
+  assert.equal(
+    (
+      await s.request(
+        '/api/admin/product-artwork',
+        {
+          productId: 'chatgpt',
+          version: 0,
+          config: { template: 'float', image, source: 'x'.repeat(1300001) },
+        },
+        s.admin,
+      )
+    ).status,
+    413,
+  )
+  assert.equal(
+    s.db.prepare('SELECT COUNT(*) n FROM product_artwork').get()!.n,
+    0,
   )
 })

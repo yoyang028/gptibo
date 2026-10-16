@@ -12,6 +12,51 @@
   display: grid;
   place-items: center;
 }
+.artwork-placement {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  position: relative;
+  transform: translate(var(--artwork-x), var(--artwork-y))
+    scale(var(--artwork-scale));
+  transform-origin: center;
+}
+.product-artwork:has(.artwork-bg-none),
+.product-artwork:has(.artwork-bg-solid),
+.product-artwork:has(.artwork-bg-halo) {
+  background: transparent;
+}
+.artwork-bg-solid {
+  background: var(--artwork-background);
+}
+.artwork-bg-halo {
+  background: radial-gradient(
+    ellipse at 50% 65%,
+    var(--artwork-background),
+    transparent 75%
+  );
+}
+.artwork-pedestal {
+  position: absolute;
+  width: 140px;
+  height: 22px;
+  bottom: 15%;
+  left: calc(50% - 70px);
+  border-radius: 50%;
+  background: var(--artwork-pedestal);
+  transform: translateX(var(--artwork-x)) scaleX(var(--artwork-scale));
+  pointer-events: none;
+}
+.pedestal-shadow {
+  filter: blur(9px);
+  opacity: 0.5;
+}
+.pedestal-disc {
+  box-shadow:
+    0 5px 0 color-mix(in oklab, var(--artwork-pedestal) 75%, #888),
+    0 12px 18px #21212c14;
+}
 .artwork-image-wrap {
   width: 150px;
   height: 150px;
@@ -81,7 +126,7 @@
   gap: 12px;
   min-width: 0;
 }
-.artwork-member-brand img {
+.artwork-member-brand .artwork-image {
   width: 45px;
   height: 45px;
   object-fit: contain;
@@ -92,6 +137,9 @@
   font-size: 17px;
   line-height: 1.35;
   overflow-wrap: anywhere;
+}
+.artwork-custom-layout .artwork-image {
+  border-radius: 0;
 }
 .artwork-member-caption {
   font-size: 12px;

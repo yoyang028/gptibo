@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { totp } from '../local/auth.mjs'
+import { checkArtworkMaterials } from './artwork-material-checks.mjs'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const origin = 'https://127.0.0.1:8771',
   control = 'http://127.0.0.1:8774'
@@ -127,11 +128,9 @@ async function open() {
     .getByRole('button', { name: '展示样式', exact: true })
     .first()
     .click()
-  const dialog = page
-    .getByRole('dialog')
-    .filter({
-      has: page.getByRole('heading', { name: '商品展示样式', exact: true }),
-    })
+  const dialog = page.getByRole('dialog').filter({
+    has: page.getByRole('heading', { name: '商品展示样式', exact: true }),
+  })
   await dialog.getByLabel('选择商品', { exact: true }).waitFor()
   return dialog
 }
@@ -227,216 +226,239 @@ try {
     jpg = path.join(evidence, 'fixture.jpg')
   fs.writeFileSync(png, Buffer.from(pictures.png.split(',')[1], 'base64'))
   fs.writeFileSync(jpg, Buffer.from(pictures.jpg.split(',')[1], 'base64'))
-  for (const [template, label] of [
-    ['static', '静态'],
-    ['float', '漂浮'],
-    ['zoom', '缩放'],
-    ['shine', '扫光'],
-    ['membership', '会员卡片'],
-  ]) {
-    let dialog = await open()
-    await dialog.getByLabel('选择商品', { exact: true }).selectOption('chatgpt')
-    if (template === 'static') {
-      await dialog.getByLabel('展示图片', { exact: true }).setInputFiles(png)
-      await dialog.getByAltText('当前展示图片').waitFor()
-    }
-    await dialog.getByRole('radio', { name: label, exact: true }).check()
-    const preview = dialog.locator('[data-artwork-template]')
-    assert.equal(await preview.getAttribute('data-artwork-template'), template)
-    await preview.scrollIntoViewIfNeeded()
-    await page.waitForTimeout(850)
-    await preview.screenshot({
-      path: path.join(evidence, 'preview-' + template + '.png'),
-    })
-    await save(dialog)
-    const persisted = (
-      await api(admin, '/api/admin/product-artwork')
-    ).products.find((p) => p.id === 'chatgpt')
-    assert.equal(persisted.config.template, template)
-    assert.match(persisted.config.image, /^data:image\/png/)
-    dialog = await open()
-    assert.equal(
-      await dialog.getByRole('radio', { name: label, exact: true }).isChecked(),
-      true,
-    )
-    assert.equal(
-      await dialog.getByAltText('当前展示图片').getAttribute('src'),
-      persisted.config.image,
-    )
-    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
-    await dialog.waitFor({ state: 'hidden' })
-    await front.bringToFront()
-    await front.goto('/')
-    const card = front.getByRole('img', {
-      name: 'ChatGPT商品展示图',
-      exact: true,
-    })
-    await card.waitFor()
-    assert.equal(await card.getAttribute('data-artwork-template'), template)
-    await card.scrollIntoViewIfNeeded()
-    await card.screenshot({
-      path: path.join(evidence, 'storefront-' + template + '.png'),
-    })
-    await front.bringToFront()
-    await front.goto('/product/chatgpt')
-    const detail = front.getByRole('img', {
-      name: 'ChatGPT商品展示图',
-      exact: true,
-    })
-    await detail.waitFor()
-    await detail.scrollIntoViewIfNeeded()
-    await front.waitForFunction(
-      () =>
-        document.querySelector('.product-artwork')?.dataset.paused === 'false',
-    )
-    await front.waitForTimeout(850)
-    const running = await detail.evaluate((el) =>
-      el
-        .getAnimations({ subtree: true })
-        .filter((a) => a.playState === 'running')
-        .map((a) => a.animationName),
-    )
-    if (template === 'static') assert.equal(running.length, 0)
-    else
-      assert(
-        running.length > 0,
-        template + ' has an actual running CSS animation',
+  await checkArtworkMaterials({
+    page,
+    front,
+    phone,
+    open,
+    save,
+    api,
+    admin,
+    evidence,
+    record,
+  })
+  if (!process.argv.includes('--materials-only')) {
+    for (const [template, label] of [
+      ['static', '静态'],
+      ['float', '漂浮'],
+      ['zoom', '缩放'],
+      ['shine', '扫光'],
+      ['membership', '会员卡片'],
+    ]) {
+      let dialog = await open()
+      await dialog
+        .getByLabel('选择商品', { exact: true })
+        .selectOption('chatgpt')
+      if (template === 'static') {
+        await dialog.getByLabel('展示图片', { exact: true }).setInputFiles(png)
+        await dialog.getByAltText('当前展示图片').waitFor()
+      }
+      await dialog.getByRole('radio', { name: label, exact: true }).check()
+      const preview = dialog.locator('[data-artwork-template]')
+      assert.equal(
+        await preview.getAttribute('data-artwork-template'),
+        template,
       )
-    record(
-      label +
-        ' template previews live, survives save/reopen and renders on both native catalogue and detail',
-    )
-    await front.waitForTimeout(15000)
-  }
-  const alpha = await page.evaluate(
-    async (data) => {
-      const img = new Image()
-      img.src = data
-      await img.decode()
-      const c = document.createElement('canvas')
-      c.width = 192
-      c.height = 192
-      const g = c.getContext('2d')
-      g.drawImage(img, 0, 0)
-      return g.getImageData(0, 0, 1, 1).data[3]
-    },
-    (await api(admin, '/api/admin/product-artwork')).products.find(
-      (p) => p.id === 'chatgpt',
-    ).config.image,
-  )
-  assert.equal(alpha, 0)
-  let dialog = await open()
-  await dialog.getByLabel('展示图片', { exact: true }).setInputFiles(jpg)
-  await page.waitForFunction(
-    () =>
-      document.querySelector('[role="dialog"] button[type="submit"]') &&
-      !document.querySelector('[role="dialog"] button[type="submit"]').disabled,
-  )
-  await save(dialog)
-  assert.match(
-    (await api(admin, '/api/admin/product-artwork')).products.find(
-      (p) => p.id === 'chatgpt',
-    ).config.image,
-    /^data:image\/jpeg;base64,/,
-  )
-  record(
-    'PNG transparency is retained and a JPG upload is accepted, processed and saved',
-  )
-  await phone.bringToFront()
-  await phone.goto('/product/chatgpt')
-  const mobileArt = phone.getByRole('img', {
-    name: 'ChatGPT商品展示图',
-    exact: true,
-  })
-  await mobileArt.waitFor()
-  await mobileArt.scrollIntoViewIfNeeded()
-  assert.equal(
-    await phone.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth + 1,
-    ),
-    true,
-  )
-  await phone.screenshot({
-    path: path.join(evidence, 'native-mobile.png'),
-    fullPage: true,
-  })
-  await phone.emulateMedia({ reducedMotion: 'reduce' })
-  assert.equal(
-    await mobileArt.evaluate(
-      (el) =>
+      await preview.scrollIntoViewIfNeeded()
+      await page.waitForTimeout(850)
+      await preview.screenshot({
+        path: path.join(evidence, 'preview-' + template + '.png'),
+      })
+      await save(dialog)
+      const persisted = (
+        await api(admin, '/api/admin/product-artwork')
+      ).products.find((p) => p.id === 'chatgpt')
+      assert.equal(persisted.config.template, template)
+      assert.match(persisted.config.image, /^data:image\/png/)
+      dialog = await open()
+      assert.equal(
+        await dialog
+          .getByRole('radio', { name: label, exact: true })
+          .isChecked(),
+        true,
+      )
+      assert.equal(
+        await dialog.getByAltText('当前展示图片').getAttribute('src'),
+        persisted.config.image,
+      )
+      await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
+      await front.bringToFront()
+      await front.goto('/')
+      const card = front.getByRole('img', {
+        name: 'ChatGPT商品展示图',
+        exact: true,
+      })
+      await card.waitFor()
+      assert.equal(await card.getAttribute('data-artwork-template'), template)
+      await card.scrollIntoViewIfNeeded()
+      await card.screenshot({
+        path: path.join(evidence, 'storefront-' + template + '.png'),
+      })
+      await front.bringToFront()
+      await front.goto('/product/chatgpt')
+      const detail = front.getByRole('img', {
+        name: 'ChatGPT商品展示图',
+        exact: true,
+      })
+      await detail.waitFor()
+      await detail.scrollIntoViewIfNeeded()
+      await front.waitForFunction(
+        () =>
+          document.querySelector('.product-artwork')?.dataset.paused ===
+          'false',
+      )
+      await front.waitForTimeout(850)
+      const running = await detail.evaluate((el) =>
         el
           .getAnimations({ subtree: true })
-          .filter((a) => a.playState === 'running').length,
-    ),
-    0,
-  )
-  await phone.emulateMedia({ reducedMotion: 'no-preference' })
-  await phone.evaluate(() => scrollTo(0, document.body.scrollHeight))
-  await phone.waitForFunction(
-    () => document.querySelector('.product-artwork')?.dataset.paused === 'true',
-  )
-  record(
-    '390px mobile has no overflow; reduced motion and offscreen visibility stop artwork animations',
-  )
-  custom = (
-    await api(admin, '/api/admin/my-shop/products', {
-      id: '',
-      version: 0,
-      status: 'published',
-      name: '本机展示样式商品',
-      category: '工具服务',
-      tagline: '样式验收',
-      description: '仅供本机展示样式验证',
-      image: pictures.png,
-      badge: '测试',
-      unit: '份',
-      duration: '展示测试规格',
-      priceCents: 990,
-      stock: -1,
-      features: ['样式可编辑'],
-      purchaseNote: '本机模拟，不发生真实付款。',
-      deliveryInstructions: '本机模拟交付。',
-      steps: [{ title: '查看', description: '查看商品展示。' }],
-      faq: [{ question: '如何使用？', answer: '用于本机验证。' }],
-      fields: [],
-      delivery: 'manual',
-      payment: {
-        label: '本机',
-        instructions: '仅测试展示，不付款。',
-        url: 'https://payments.example.com/fixture',
-        qr: '',
+          .filter((a) => a.playState === 'running')
+          .map((a) => a.animationName),
+      )
+      if (template === 'static') assert.equal(running.length, 0)
+      else
+        assert(
+          running.length > 0,
+          template + ' has an actual running CSS animation',
+        )
+      record(
+        label +
+          ' template previews live, survives save/reopen and renders on both native catalogue and detail',
+      )
+      await front.waitForTimeout(15000)
+    }
+    const alpha = await page.evaluate(
+      async (data) => {
+        const img = new Image()
+        img.src = data
+        await img.decode()
+        const c = document.createElement('canvas')
+        c.width = 192
+        c.height = 192
+        const g = c.getContext('2d')
+        g.drawImage(img, 0, 0)
+        return g.getImageData(0, 0, 1, 1).data[3]
       },
+      (await api(admin, '/api/admin/product-artwork')).products.find(
+        (p) => p.id === 'chatgpt',
+      ).config.image,
+    )
+    assert.equal(alpha, 0)
+    let dialog = await open()
+    await dialog.getByLabel('展示图片', { exact: true }).setInputFiles(jpg)
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[role="dialog"] button[type="submit"]') &&
+        !document.querySelector('[role="dialog"] button[type="submit"]')
+          .disabled,
+    )
+    await save(dialog)
+    assert.match(
+      (await api(admin, '/api/admin/product-artwork')).products.find(
+        (p) => p.id === 'chatgpt',
+      ).config.source,
+      /^data:image\/jpeg;base64,/,
+    )
+    record(
+      'PNG transparency is retained and a JPG upload is accepted, processed and saved',
+    )
+    await phone.bringToFront()
+    await phone.goto('/product/chatgpt')
+    const mobileArt = phone.getByRole('img', {
+      name: 'ChatGPT商品展示图',
+      exact: true,
     })
-  ).product
-  dialog = await open()
-  await dialog.getByLabel('选择商品', { exact: true }).selectOption(custom.id)
-  await dialog.getByLabel('展示图片', { exact: true }).setInputFiles(png)
-  await dialog.getByRole('radio', { name: '会员卡片', exact: true }).check()
-  await save(dialog)
-  await front.bringToFront()
-  await front.goto('/product/' + custom.id)
-  await front
-    .getByRole('img', { name: custom.name + '商品展示图', exact: true })
-    .waitFor()
-  await phone.bringToFront()
-  await phone.goto('/product/' + custom.id)
-  await phone
-    .getByRole('img', { name: custom.name + '商品展示图', exact: true })
-    .waitFor()
-  assert.equal(
-    await phone.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth + 1,
-    ),
-    true,
-  )
-  await phone.waitForTimeout(850)
-  await phone.screenshot({
-    path: path.join(evidence, 'custom-mobile.png'),
-    fullPage: true,
-  })
-  record(
-    'Self-published products use the same saved artwork on desktop and mobile detail pages',
-  )
+    await mobileArt.waitFor()
+    await mobileArt.scrollIntoViewIfNeeded()
+    assert.equal(
+      await phone.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+      true,
+    )
+    await phone.screenshot({
+      path: path.join(evidence, 'native-mobile.png'),
+      fullPage: true,
+    })
+    await phone.emulateMedia({ reducedMotion: 'reduce' })
+    assert.equal(
+      await mobileArt.evaluate(
+        (el) =>
+          el
+            .getAnimations({ subtree: true })
+            .filter((a) => a.playState === 'running').length,
+      ),
+      0,
+    )
+    await phone.emulateMedia({ reducedMotion: 'no-preference' })
+    await phone.evaluate(() => scrollTo(0, document.body.scrollHeight))
+    await phone.waitForFunction(
+      () =>
+        document.querySelector('.product-artwork')?.dataset.paused === 'true',
+    )
+    record(
+      '390px mobile has no overflow; reduced motion and offscreen visibility stop artwork animations',
+    )
+    custom = (
+      await api(admin, '/api/admin/my-shop/products', {
+        id: '',
+        version: 0,
+        status: 'published',
+        name: '本机展示样式商品',
+        category: '工具服务',
+        tagline: '样式验收',
+        description: '仅供本机展示样式验证',
+        image: pictures.png,
+        badge: '测试',
+        unit: '份',
+        duration: '展示测试规格',
+        priceCents: 990,
+        stock: -1,
+        features: ['样式可编辑'],
+        purchaseNote: '本机模拟，不发生真实付款。',
+        deliveryInstructions: '本机模拟交付。',
+        steps: [{ title: '查看', description: '查看商品展示。' }],
+        faq: [{ question: '如何使用？', answer: '用于本机验证。' }],
+        fields: [],
+        delivery: 'manual',
+        payment: {
+          label: '本机',
+          instructions: '仅测试展示，不付款。',
+          url: 'https://payments.example.com/fixture',
+          qr: '',
+        },
+      })
+    ).product
+    dialog = await open()
+    await dialog.getByLabel('选择商品', { exact: true }).selectOption(custom.id)
+    await dialog.getByLabel('展示图片', { exact: true }).setInputFiles(png)
+    await dialog.getByRole('radio', { name: '会员卡片', exact: true }).check()
+    await save(dialog)
+    await front.bringToFront()
+    await front.goto('/product/' + custom.id)
+    await front
+      .getByRole('img', { name: custom.name + '商品展示图', exact: true })
+      .waitFor()
+    await phone.bringToFront()
+    await phone.goto('/product/' + custom.id)
+    await phone
+      .getByRole('img', { name: custom.name + '商品展示图', exact: true })
+      .waitFor()
+    assert.equal(
+      await phone.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+      true,
+    )
+    await phone.waitForTimeout(850)
+    await phone.screenshot({
+      path: path.join(evidence, 'custom-mobile.png'),
+      fullPage: true,
+    })
+    record(
+      'Self-published products use the same saved artwork on desktop and mobile detail pages',
+    )
+  }
   const current = (
     await api(admin, '/api/admin/product-artwork')
   ).products.find((p) => p.id === 'chatgpt')

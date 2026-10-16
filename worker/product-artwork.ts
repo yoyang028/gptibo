@@ -1,6 +1,7 @@
 import { ApiError, body, json, type Env } from './platform.ts'
 import {
   artworkProblem,
+  cleanArtwork,
   originalArtwork,
   type ArtworkProduct,
   type ProductArtworkConfig,
@@ -31,7 +32,7 @@ export async function publicArtwork(
       .filter((row) => visible.has(row.product_id))
       .map((row) => [
         row.product_id,
-        JSON.parse(row.settings) as ProductArtworkConfig,
+        cleanArtwork(JSON.parse(row.settings) as ProductArtworkConfig, true),
       ])
       .filter(
         ([, config]) =>
@@ -66,7 +67,7 @@ export async function artworkRoute(request: Request, env: Env) {
   if (request.method === 'GET')
     return json({ products: await artworkProducts(env) })
   if (request.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
-  const input = await body(request, 400000)
+  const input = await body(request, 1300000)
   if (
     typeof input.productId !== 'string' ||
     !Number.isSafeInteger(input.version) ||
@@ -82,10 +83,7 @@ export async function artworkRoute(request: Request, env: Env) {
   if (product.version !== input.version)
     throw new ApiError('展示配置已更新，请重新打开后编辑。', 409)
   const config = input.config as ProductArtworkConfig
-  const settings = JSON.stringify({
-    template: config.template,
-    image: config.image,
-  })
+  const settings = JSON.stringify(cleanArtwork(config))
   const id = crypto.randomUUID(),
     now = Date.now(),
     db = env.INTEREST_DB
