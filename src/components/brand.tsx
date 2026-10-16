@@ -1,5 +1,5 @@
 import { DuoMark, GeminiMark } from './membership-scene'
-import { Mail, Package } from 'lucide-react'
+import { Mail, Package, GraduationCap, Sparkles } from 'lucide-react'
 
 export function BrandMark({ className = '' }: { className?: string }) {
   return <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
@@ -18,7 +18,9 @@ export function ProductLogo({ productId }: { productId: string }) {
   if (productId === 'duolingo') return <DuoMark />
   if (productId === 'gemini') return <GeminiMark />
   if (productId === 'gmail') return <Mail className="product-logo" style={{ background: 'none' }} aria-hidden="true" />
-  const slug = productId === 'chatgpt' ? 'openai' : productId === 'codex-sms' ? 'codex' : productId
+  if (productId === 'student-verification') return <GraduationCap className="product-logo" style={{ background: 'none' }} aria-hidden="true" />
+  if (productId === 'muse') return <Sparkles className="product-logo" style={{ background: 'none' }} aria-hidden="true" />
+  const slug = productId === 'chatgpt' ? 'openai' : ['codex-sms', 'codex-credits'].includes(productId) ? 'codex' : productId
   return <span className="product-logo" style={{ maskImage: `url(/brands/${slug}.svg)` }} aria-hidden="true" />
 }
 export function SuccessMark() {

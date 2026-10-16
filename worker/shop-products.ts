@@ -5,6 +5,7 @@ import {
   type ShopProduct,
   type CustomOrderView,
   type ShopProductInput,
+  shopProductDisplayId,
 } from '../shared/shop-products.ts'
 import { ApiError, body, hash, json, type Env } from './platform.ts'
 import { boundedResponseText } from './bounded-response.ts'
@@ -96,6 +97,7 @@ export async function shopProducts(env: Env, includeDrafts = false) {
     .filter(
       (p) =>
         includeDrafts ||
+        p.status === 'listed' ||
         (p.status === 'published' &&
           !(
             p.delivery === 'api' &&
@@ -256,6 +258,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     )
   const product: ShopProduct = {
     id,
+    ...(input.groupId !== undefined ? { groupId: input.groupId } : {}),
     name: input.name,
     category: input.category,
     tagline: input.tagline,
@@ -381,11 +384,11 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
   await db.batch([
     db
       .prepare(
-        'INSERT INTO catalog_plans(id,product_id,name,price_cents,enabled,partner_enabled,updated_at,purchase_note,delivery_instructions) SELECT ?,?,?,?,?,0,?,?,? WHERE NOT EXISTS(SELECT 1 FROM shop_products WHERE id=? AND version<>?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,price_cents=excluded.price_cents,enabled=excluded.enabled,version=catalog_plans.version+1,updated_at=excluded.updated_at,purchase_note=excluded.purchase_note,delivery_instructions=excluded.delivery_instructions WHERE EXISTS(SELECT 1 FROM shop_products WHERE id=? AND version=?)',
+        'INSERT INTO catalog_plans(id,product_id,name,price_cents,enabled,partner_enabled,updated_at,purchase_note,delivery_instructions) SELECT ?,?,?,?,?,0,?,?,? WHERE NOT EXISTS(SELECT 1 FROM shop_products WHERE id=? AND version<>?) ON CONFLICT(id) DO UPDATE SET product_id=excluded.product_id,name=excluded.name,price_cents=excluded.price_cents,enabled=excluded.enabled,version=catalog_plans.version+1,updated_at=excluded.updated_at,purchase_note=excluded.purchase_note,delivery_instructions=excluded.delivery_instructions WHERE EXISTS(SELECT 1 FROM shop_products WHERE id=? AND version=?)',
       )
       .bind(
         id,
-        id,
+        shopProductDisplayId(product),
         product.name,
         product.priceCents,
         Number(product.status === 'published'),
@@ -516,6 +519,8 @@ export async function createCustomOrder(
   )
     throw new ApiError('该商品暂未开放购买。', 409)
   const p = rowProduct(row)
+  if (shop.hiddenProductIds.includes(shopProductDisplayId(p)))
+    throw new ApiError('该商品暂未开放购买。', 409)
   if (
     p.delivery === 'api' &&
     p.api?.provider === 'xiaojiu' &&

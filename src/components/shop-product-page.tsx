@@ -1,5 +1,8 @@
 import { ProductArtwork } from './product-artwork'
-import type { ProductArtworkConfig } from '../../shared/product-artwork'
+import type {
+  ProductArtworkConfig,
+  ProductArtworkMap,
+} from '../../shared/product-artwork'
 import { useRef, useState } from 'react'
 import {
   ArrowRight,
@@ -26,9 +29,49 @@ import {
 import { api, errorMessage } from '@/lib/api'
 import { storefrontHref } from '@/lib/storefront-routing'
 import type { ServerOrder } from '@/lib/use-store'
-import type { ShopProduct } from '../../shared/shop-products'
+import { groupShopProducts, type ShopProduct } from '../../shared/shop-products'
 import { RefundContent } from './order-services'
 import './shop-products.css'
+
+export function ShopProductGroupPage({
+  group,
+  offers,
+  checkoutEnabled,
+  artwork,
+  initialProductId,
+  onHome,
+  onCreated,
+}: {
+  group: ReturnType<typeof groupShopProducts>[number]
+  offers: { id: string; enabled: number }[]
+  checkoutEnabled: boolean
+  artwork: ProductArtworkMap
+  initialProductId?: string
+  onHome: () => void
+  onCreated: (order: ServerOrder) => void
+}) {
+  const [selected, setSelected] = useState(
+    initialProductId ?? group.products[0].id,
+  )
+  const product =
+    group.products.find((p) => p.id === selected) ?? group.products[0]
+  return (
+    <ShopProductPage
+      product={product}
+      displayName={group.name}
+      variants={group.products}
+      onVariantChange={setSelected}
+      artwork={artwork[group.id] ?? artwork[product.id]}
+      available={
+        checkoutEnabled &&
+        product.status === 'published' &&
+        Boolean(offers.find((p) => p.id === product.id)?.enabled)
+      }
+      onHome={onHome}
+      onCreated={onCreated}
+    />
+  )
+}
 
 export function ShopProductPage({
   product,
@@ -36,6 +79,9 @@ export function ShopProductPage({
   available = true,
   preview = false,
   onCreated,
+  displayName,
+  variants,
+  onVariantChange,
   onHome,
 }: {
   product: ShopProduct
@@ -43,6 +89,9 @@ export function ShopProductPage({
   available?: boolean
   preview?: boolean
   onCreated?: (o: ServerOrder) => void
+  displayName?: string
+  variants?: ShopProduct[]
+  onVariantChange?: (id: string) => void
   onHome?: () => void
 }) {
   const [open, setOpen] = useState(false),
@@ -52,6 +101,7 @@ export function ShopProductPage({
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const requestKey = useRef<{ identity: string; key: string } | null>(null)
+  const displayOnly = product.status === 'listed'
   const [couponCode, setCouponCode] = useState(''),
     [coupon, setCoupon] = useState<{ code: string; priceCents: number } | null>(
       null,
@@ -149,7 +199,9 @@ export function ShopProductPage({
                 ? '暂时售罄'
                 : available
                   ? '可购买'
-                  : '暂停售卖'}
+                  : displayOnly
+                    ? '暂未开售'
+                    : '暂停售卖'}
             </span>
           </div>
           <div className="product-heading">
@@ -159,7 +211,7 @@ export function ShopProductPage({
               <Package size={40} />
             )}
             <div>
-              <h2>{product.name || '商品名称'}</h2>
+              <h2>{displayName || product.name || '商品名称'}</h2>
               <span className="personal-badge">
                 {product.badge || '自营商品'}
               </span>
@@ -168,7 +220,40 @@ export function ShopProductPage({
           <p className="product-pitch shop-product-copy">
             {product.description || '在后台填写商品的详细介绍。'}
           </p>
-          <ProductArtwork config={artwork} name={product.name} caption={product.duration} detail />
+          <ProductArtwork
+            config={artwork}
+            name={product.name}
+            caption={product.duration}
+            detail
+          />
+          {variants && variants.length > 1 && (
+            <fieldset className="shop-product-variants">
+              <legend>选择规格</legend>
+              {variants.map((variant) => (
+                <label
+                  key={variant.id}
+                  className="shop-variant"
+                  data-selected={variant.id === product.id}
+                >
+                  <input
+                    type="radio"
+                    name="product-variant"
+                    value={variant.id}
+                    checked={variant.id === product.id}
+                    onChange={() => {
+                      setCoupon(null)
+                      onVariantChange?.(variant.id)
+                    }}
+                  />
+                  <span>
+                    <strong>{variant.name}</strong>
+                    <small>{variant.duration}</small>
+                  </span>
+                  <strong>¥{(variant.priceCents / 100).toFixed(2)}</strong>
+                </label>
+              ))}
+            </fieldset>
+          )}
           <div className="shop-product-option">
             <div className="plan-option-top">
               <strong>{product.duration || '商品规格'}</strong>
@@ -195,7 +280,7 @@ export function ShopProductPage({
         </div>
         <aside className="order-summary">
           <div className="summary-title">
-            <h3>订单摘要</h3>
+            <h3>{displayOnly ? '商品信息' : '订单摘要'}</h3>
             <ShieldCheck size={18} />
           </div>
           <div className="summary-product">
@@ -211,13 +296,15 @@ export function ShopProductPage({
               <dt>交付方式</dt>
               <dd>{product.delivery === 'api' ? '自动供货' : '人工交付'}</dd>
             </div>
-            <div>
-              <dt>收款方式</dt>
-              <dd>{product.payment.label || '待设置'}</dd>
-            </div>
+            {!displayOnly && (
+              <div>
+                <dt>收款方式</dt>
+                <dd>{product.payment.label || '待设置'}</dd>
+              </div>
+            )}
           </dl>
           <div className="summary-total">
-            <span>应付金额</span>
+            <span>{displayOnly ? '商品价格' : '应付金额'}</span>
             <strong className="total-price">
               ¥{(product.priceCents / 100).toFixed(2)}
             </strong>
@@ -230,14 +317,18 @@ export function ShopProductPage({
             {preview
               ? '商品预览'
               : !available
-                ? '暂停售卖'
+                ? displayOnly
+                  ? '暂未开放购买'
+                  : '暂停售卖'
                 : product.stock === 0
                   ? '暂时售罄'
                   : '立即购买'}
             <ArrowRight size={16} />
           </Button>
           <p className="summary-note">
-            付款后由店主核对收款，确认后按说明交付。
+            {displayOnly
+              ? '该商品暂未开放购买，开售后可在此下单。'
+              : '付款后由店主核对收款，确认后按说明交付。'}
           </p>
           <p className="summary-footnote shop-product-copy">
             {product.deliveryInstructions}
@@ -515,7 +606,11 @@ export function ShopOrderDialog({
                     </pre>
                   )}
                   {order.refundHold && <p>售后处理中，请联系店主。</p>}
-                  {view.supplierError && <p role="status">供货正在核对，请联系店主并保留原订单，无需重复下单或付款。</p>}
+                  {view.supplierError && (
+                    <p role="status">
+                      供货正在核对，请联系店主并保留原订单，无需重复下单或付款。
+                    </p>
+                  )}
                 </>
               )}
               {error && <p role="alert">{error}</p>}

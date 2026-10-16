@@ -19,11 +19,12 @@ type Product = {id:StorefrontProductId;name:string;upcoming?:boolean}
 
 function ProductSummary({ product, plans, hidden = false }: { product: Product; plans: Offer[]; hidden?: boolean }) {
   const available = plans.filter(plan => plan.enabled)
-  const lowest = available.length ? Math.min(...available.map(plan => plan.price_cents)) : null
+  const lowest = plans.length ? Math.min(...(available.length ? available : plans).map(plan => plan.price_cents)) : null
+  const upcoming = 'upcoming' in product && !plans.length
   return <>
     <ProductMark small productId={product.id} />
-    <span className="partner-product-info"><strong>{product.name}</strong><small>{hidden ? '已下架 · 商店中隐藏' : 'upcoming' in product ? '待上架 · 可提前安排位置' : plans.length ? `${plans.length} 个套餐${available.length ? '' : ' · 暂停售卖'}` : '暂未开通套餐'}</small></span>
-    <span className="partner-product-price">{lowest !== null ? <><strong>{money(lowest)}</strong><small>起</small></> : <small>{'upcoming' in product ? '敬请期待' : '暂无在售套餐'}</small>}</span>
+    <span className="partner-product-info"><strong>{product.name}</strong><small>{hidden ? '已下架 · 商店中隐藏' : upcoming ? '待上架 · 可提前安排位置' : plans.length ? `${plans.length} 个套餐${available.length ? '' : ' · 暂未开售'}` : '暂未开通套餐'}</small></span>
+    <span className="partner-product-price">{lowest !== null ? <><strong>{money(lowest)}</strong><small>起</small></> : <small>{upcoming ? '敬请期待' : '暂无在售套餐'}</small>}</span>
   </>
 }
 

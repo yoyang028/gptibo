@@ -30,7 +30,7 @@ import { rechargeReminderPreview } from './recharge-reminders.ts'
 import { adminGmailOrder, confirmGmailNotPurchased, fulfillGmail, gmailCheckoutEnabled, gmailProductsRoute, gmailSnapshot, gmailSnapshotStatement } from './account_supplier/service.ts'
 import { ownerPublicSettings, ownerShopRoutes, ownerShop } from './owner-shop.ts'
 import { customOrderSummary, createCustomOrder, customBuyerAction, customAdminAction, shopProducts, shopProductRoutes, fulfillCustomOrder, customRetailFloor } from './shop-products.ts'
-import { customProductId } from '../shared/shop-products.ts'
+import { customProductId, shopProductDisplayId } from '../shared/shop-products.ts'
 import { quefaPurchaseNote } from '../shared/quefa-gpt-products.ts'
 import { artworkRoute, publicArtwork } from './product-artwork.ts'
 import { couponQuote, couponReservation } from './shop-coupons.ts'
@@ -127,14 +127,14 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         partner ? publicAnnouncement(env, partner.id) : null,
       ])
       const owner = partner ? null : await ownerPublicSettings(env)
-      const products = partner ? [] : (await shopProducts(env)).filter(p=>!owner?.hiddenProductIds.includes(p.id))
+      const products = partner ? [] : (await shopProducts(env)).filter(p=>!owner?.hiddenProductIds.includes(p.id)&&!owner?.hiddenProductIds.includes(shopProductDisplayId(p)))
       const productArtwork = partner ? {} : await publicArtwork(env, (catalog.plans as Plan[]).map(p=>p.product_id).filter(id=>!owner?.hiddenProductIds.includes(id) && (!customProductId.test(id) || products.some(p=>p.id===id))))
       const coupons=partner?[]:(await env.INTEREST_DB.prepare('SELECT settings FROM shop_coupons').all<{settings:string}>()).results.map(r=>JSON.parse(r.settings)).filter(c=>c.active&&Date.parse(c.starts_at)<=Date.now()&&Date.parse(c.ends_at)>Date.now())
       // Storefront prices are configured retail prices, independent of supplier latency.
       const offers = (catalog.plans as Plan[]).filter(plan=>!customProductId.test(plan.id)||products.some(p=>p.id===plan.id)).map(plan => ({ ...plan,purchase_note:quefaPurchaseNote(mapped[plan.id],plan.purchase_note),has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId==='platform'&&t.plan===plan.id)), enabled: plan.enabled && (
-        customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.stock!==0) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
+        customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.status==='published'&&p.stock!==0) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
       ) ? 1 : 0 }))
-      return json({ ...catalog,...owner, products, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
+      return json({ ...catalog,...owner, products, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
     }
     if (path === '/api/orders/client' && method === 'POST') {
       await body(request)

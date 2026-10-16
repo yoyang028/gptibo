@@ -1,4 +1,12 @@
 export type ShopDelivery = 'manual' | 'api'
+export const SHOP_PRODUCT_GROUPS = {
+  claude: 'Claude',
+  'codex-credits': 'Codex 额度',
+  'student-verification': 'Plus 学生认证',
+  muse: 'Muse AI',
+  grok: 'Grok',
+} as const
+export type ShopProductGroupId = keyof typeof SHOP_PRODUCT_GROUPS
 export type ShopPayment = {
   label: string
   instructions: string
@@ -7,6 +15,7 @@ export type ShopPayment = {
 }
 export type ShopProduct = {
   id: string
+  groupId?: ShopProductGroupId
   name: string
   category: string
   tagline: string
@@ -25,7 +34,7 @@ export type ShopProduct = {
   fields: { key: string; label: string; required: boolean }[]
   delivery: ShopDelivery
   payment: ShopPayment
-  status: 'draft' | 'published' | 'archived'
+  status: 'draft' | 'listed' | 'published' | 'archived'
   version: number
   api?: {
     provider?: 'json-v1' | 'xiaojiu'
@@ -40,6 +49,35 @@ export type ShopProduct = {
 export type ShopProductInput = ShopProduct & {
   apiToken?: string
   apiKey?: string
+}
+export const shopProductDisplayId = (
+  product: Pick<ShopProduct, 'id' | 'groupId'>,
+) => product.groupId ?? product.id
+export function groupShopProducts(products: readonly ShopProduct[]) {
+  const groups = new Map<
+    string,
+    { id: string; name: string; products: ShopProduct[] }
+  >()
+  for (const product of products) {
+    const id = shopProductDisplayId(product)
+    let group = groups.get(id)
+    if (!group) {
+      group = {
+        id,
+        name: product.groupId
+          ? SHOP_PRODUCT_GROUPS[product.groupId]
+          : product.name,
+        products: [],
+      }
+      groups.set(id, group)
+    }
+    group.products.push(product)
+  }
+  for (const group of groups.values())
+    group.products.sort(
+      (a, b) => a.priceCents - b.priceCents || a.id.localeCompare(b.id),
+    )
+  return [...groups.values()]
 }
 export type CustomOrderView = {
   productId: string
@@ -97,8 +135,13 @@ export function productProblems(
     value.length <= max &&
     !hasControlCharacters(value)
   if (!text(product.name, 80)) errors.push('商品名称（1–80 字）')
-  if (!['draft', 'published', 'archived'].includes(product.status))
+  if (!['draft', 'listed', 'published', 'archived'].includes(product.status))
     errors.push('发布状态')
+  if (
+    product.groupId !== undefined &&
+    !Object.hasOwn(SHOP_PRODUCT_GROUPS, product.groupId)
+  )
+    errors.push('商品分组')
   if (!['manual', 'api'].includes(product.delivery)) errors.push('交付方式')
   if (
     product.api?.provider &&
@@ -203,7 +246,7 @@ export function productProblems(
     !safeImage(product.payment.qr)
   )
     errors.push('收款方式与说明')
-  if (requirePublished || product.status === 'published') {
+  if (requirePublished || ['listed', 'published'].includes(product.status)) {
     for (const [key, label] of Object.entries({
       category: '商品分类',
       tagline: '商品短介绍',
@@ -219,6 +262,8 @@ export function productProblems(
     if (!product.features?.length) errors.push('至少一项商品特点')
     if (!product.steps?.length) errors.push('至少一个交付步骤')
     if (!product.faq?.length) errors.push('至少一个常见问题')
+  }
+  if (requirePublished || product.status === 'published') {
     if (
       !product.payment?.label.trim() ||
       !product.payment?.instructions.trim() ||

@@ -23,7 +23,12 @@ import { api, errorMessage } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
 import { prepareLogo } from '@/lib/prepare-logo'
 import { ShopProductPage } from '@/components/shop-product-page'
-import { productProblems, type ShopProduct } from '../../shared/shop-products'
+import {
+  productProblems,
+  SHOP_PRODUCT_GROUPS,
+  type ShopProduct,
+  type ShopProductGroupId,
+} from '../../shared/shop-products'
 import '@/components/shop-products.css'
 
 const freshProduct = (): ShopProduct => ({
@@ -49,7 +54,12 @@ const freshProduct = (): ShopProduct => ({
   status: 'draft',
   version: 0,
 })
-const statuses = { draft: '草稿', published: '已发布', archived: '已下架' }
+const statuses = {
+  draft: '草稿',
+  listed: '展示中 · 未开售',
+  published: '已发布',
+  archived: '已下架',
+}
 type XiaojiuCatalog = {
   items: {
     productId: number
@@ -129,7 +139,9 @@ function ProductEditor({
       setBusy(false)
     }
   }
-  async function save(action: 'draft' | 'published' | 'archived' | 'verify') {
+  async function save(
+    action: 'draft' | 'listed' | 'published' | 'archived' | 'verify',
+  ) {
     if (busy || submitting.current) return
     if (!/^\d+(\.\d{1,2})?$/.test(price)) {
       setError('售价最多保留两位小数。')
@@ -259,6 +271,28 @@ function ProductEditor({
                     onChange={(e) => update('category', e.target.value)}
                     maxLength={40}
                   />
+                </label>
+                <label>
+                  前台商品分组
+                  <select
+                    value={product.groupId ?? ''}
+                    onChange={(e) =>
+                      update(
+                        'groupId',
+                        e.target.value
+                          ? (e.target.value as ShopProductGroupId)
+                          : undefined,
+                      )
+                    }
+                  >
+                    <option value="">独立商品卡片</option>
+                    {Object.entries(SHOP_PRODUCT_GROUPS).map(([id, name]) => (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <small>同组规格合并为一张首页卡片，进入详情后选择。</small>
                 </label>
                 <label>
                   规格／服务周期
@@ -1006,6 +1040,14 @@ function ProductEditor({
               </Button>
               <Button
                 type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void save('listed')}
+              >
+                仅展示，暂不开售
+              </Button>
+              <Button
+                type="button"
                 disabled={busy}
                 onClick={() => void save('published')}
               >
@@ -1099,6 +1141,7 @@ export default function ProductPublisher({
               <strong>{p.name}</strong>
               <small>
                 {statuses[p.status]} ·{' '}
+                {p.groupId && <>{SHOP_PRODUCT_GROUPS[p.groupId]} 分组 · </>}
                 {p.delivery === 'api' ? 'API 自动供货' : '人工交付'} · ¥
                 {(p.priceCents / 100).toFixed(2)} ·{' '}
                 {p.stock < 0 ? '不限量' : `剩余 ${p.stock}`}
@@ -1108,8 +1151,12 @@ export default function ProductPublisher({
             <Button variant="outline" onClick={() => setEdit(p)}>
               编辑商品
             </Button>
-            {p.status === 'published' && (
-              <a href={'/product/' + p.id} target="_blank" rel="noreferrer">
+            {['listed', 'published'].includes(p.status) && (
+              <a
+                href={'/product/' + (p.groupId ?? p.id)}
+                target="_blank"
+                rel="noreferrer"
+              >
                 查看前台 ↗
               </a>
             )}

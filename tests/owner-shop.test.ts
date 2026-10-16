@@ -650,6 +650,146 @@ test('publishing validates all detail fields and keeps drafts off the storefront
     400,
   )
 })
+test('listed product groups expose specifications without enabling collection or purchases and share one visibility control', async () => {
+  const s = await setup()
+  const emptyPayment = { label: '', instructions: '', url: '', qr: '' }
+  const first = await s.saveProduct(
+    product({
+      name: 'Claude Pro',
+      groupId: 'claude',
+      status: 'listed',
+      payment: emptyPayment,
+    }),
+  )
+  const second = await s.saveProduct(
+    product({
+      name: 'Claude Max',
+      groupId: 'claude',
+      status: 'listed',
+      payment: emptyPayment,
+      priceCents: 2000,
+    }),
+  )
+  const codex = await s.saveProduct(
+    product({
+      name: 'Codex 250',
+      groupId: 'codex-credits',
+      status: 'listed',
+      payment: emptyPayment,
+    }),
+  )
+  const catalog = await (await s.request('/api/catalog')).json()
+  assert.equal(catalog.products.length, 3)
+  assert.equal(catalog.checkoutEnabled, false)
+  assert.deepEqual(
+    catalog.plans
+      .filter((p: { id: string }) => [first.id, second.id].includes(p.id))
+      .map((p: { product_id: string }) => p.product_id),
+    ['claude', 'claude'],
+  )
+  assert.equal(
+    catalog.plans.some(
+      (p: { id: string; enabled: number }) =>
+        [first.id, second.id, codex.id].includes(p.id) && p.enabled,
+    ),
+    false,
+  )
+  const buyer = await s.buyer()
+  assert.equal((await s.create(first, buyer)).status, 409)
+  // An independent price editor cannot make an unconfigured listing purchasable.
+  s.db.prepare('UPDATE catalog_plans SET enabled=1 WHERE id=?').run(first.id)
+  assert.equal((await s.create(first, buyer)).status, 409)
+  const refreshed = await (await s.request('/api/catalog')).json()
+  assert.equal(
+    refreshed.plans.find((p: { id: string }) => p.id === first.id).enabled,
+    0,
+  )
+  const order = await (
+    await s.request('/api/admin/my-shop/product-order', undefined, s.admin)
+  ).json()
+  assert.equal(
+    order.productIds.filter((id: string) => id === 'claude').length,
+    1,
+  )
+  assert.equal(order.productIds.includes(first.id), false)
+  assert.equal(order.productIds.includes(second.id), false)
+  const hidden = await s.request(
+    '/api/admin/my-shop/product-order',
+    { ...order, hiddenProductIds: ['claude'] },
+    s.admin,
+  )
+  assert.equal(hidden.status, 200, await hidden.clone().text())
+  const hiddenCatalog = await (await s.request('/api/catalog')).json()
+  assert.equal(
+    hiddenCatalog.products.some((p: ShopProduct) => p.groupId === 'claude'),
+    false,
+  )
+  assert.equal(
+    hiddenCatalog.products.some((p: ShopProduct) => p.id === codex.id),
+    true,
+  )
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 0)
+  assert.equal(
+    (await s.saveProduct({ ...first, groupId: 'claude', status: 'archived' }))
+      .id,
+    first.id,
+  )
+  const activePrices = (
+    await (
+      await s.request('/api/admin/my-shop/stores', undefined, s.admin)
+    ).json()
+  ).prices
+  assert.equal(
+    activePrices.some((p: { plan: string }) => p.plan === first.id),
+    false,
+  )
+  assert.equal(
+    activePrices.some((p: { plan: string }) => p.plan === second.id),
+    true,
+  )
+})
+
+test('regrouping a specification keeps its order identity and original delivery snapshot', async () => {
+  const s = await setup()
+  const original = await s.saveProduct(
+    product({ groupId: 'claude', name: 'Original specification' }),
+  )
+  const buyer = await s.buyer()
+  const response = await s.create(original, buyer)
+  assert.equal(response.status, 201)
+  const order = (await response.json()).order
+  const edited = await s.saveProduct({
+    ...original,
+    version: Number(
+      s.db
+        .prepare('SELECT version FROM shop_products WHERE id=?')
+        .get(original.id)!.version,
+    ),
+    groupId: 'codex-credits',
+    name: 'Updated specification',
+  })
+  assert.equal(edited.id, original.id)
+  assert.equal(
+    s.db
+      .prepare('SELECT product_id FROM catalog_plans WHERE id=?')
+      .get(original.id)!.product_id,
+    'codex-credits',
+  )
+  const oldOrder = (
+    await (await s.request('/api/orders/' + order.id, undefined, buyer)).json()
+  ).order
+  assert.equal(oldOrder.plan, original.id)
+  assert.equal(oldOrder.custom.productName, 'Original specification')
+  const snapshot = JSON.parse(
+    String(
+      s.db
+        .prepare('SELECT snapshot FROM shop_order_details WHERE order_id=?')
+        .get(order.id)!.snapshot,
+    ),
+  )
+  assert.equal(snapshot.groupId, 'claude')
+})
+
 test('custom order snapshots survive edits; buyer payment declarations do not confirm money or deliver', async () => {
   const s = await setup(),
     p = await s.saveProduct(

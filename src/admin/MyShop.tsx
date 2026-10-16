@@ -87,12 +87,17 @@ export default function MyShop({
                 }
                 sortingContent={
                   <ProductManagement
-                    customProducts={offers
-                      .filter((p) => p.product_id.startsWith('custom-'))
-                      .map((p) => ({
-                        id: p.product_id as StorefrontProductId,
-                        name: p.name,
-                      }))}
+                    customProducts={[
+                      ...new Map(
+                        offers
+                          .filter((p) => p.product_id.startsWith('custom-'))
+                          .map((p) => ({
+                            id: p.product_id as StorefrontProductId,
+                            name: p.name,
+                          }))
+                          .map((p) => [p.id, p]),
+                      ).values(),
+                    ]}
                     endpoint="/api/admin/my-shop/product-order"
                     plans={offers}
                     storeUrl={location.origin + '/'}

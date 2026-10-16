@@ -1,6 +1,11 @@
 import { ApiError, body, json, type Env } from './platform.ts'
 import { DEFAULT_PRODUCT_ORDER } from '../shared/product-order.ts'
-import { safeImage, hasControlCharacters } from '../shared/shop-products.ts'
+import {
+  safeImage,
+  hasControlCharacters,
+  shopProductDisplayId,
+  type ShopProduct,
+} from '../shared/shop-products.ts'
 import { supportContactsSettings } from './support-contacts.ts'
 import { visitorSummary } from './visitors.ts'
 import { productMap, authorizedProduct } from './recharge/client.ts'
@@ -85,14 +90,19 @@ function text(value: unknown, max: number, label: string, required = false) {
     throw new ApiError(`请填写有效的${label}，最多 ${max} 字。`)
   return value.trim()
 }
-export async function ownerPublicSettings(env: Env) {
-  const settings = await ownerShop(env)
+async function ownerProductIds(env: Env) {
   const ids = (
     await env.INTEREST_DB.prepare(
-      'SELECT id FROM shop_products ORDER BY updated_at DESC',
-    ).all<{ id: string }>()
-  ).results.map((p) => p.id)
-  const known = [...DEFAULT_PRODUCT_ORDER, ...ids]
+      "SELECT id,public_json FROM shop_products WHERE json_extract(public_json,'$.status')<>'archived' ORDER BY updated_at DESC",
+    ).all<{ id: string; public_json: string }>()
+  ).results.map((p) =>
+    shopProductDisplayId(JSON.parse(p.public_json) as ShopProduct),
+  )
+  return [...new Set([...DEFAULT_PRODUCT_ORDER, ...ids])]
+}
+export async function ownerPublicSettings(env: Env) {
+  const settings = await ownerShop(env)
+  const known = await ownerProductIds(env)
   return {
     shop: {
       name: settings.name,
@@ -138,14 +148,18 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
     settings = await ownerShop(env)
   if (suffix === '/stores' && request.method === 'GET') {
     const [plans, contacts, stats, visits, costs, coupons] = await Promise.all([
-      db.prepare('SELECT * FROM catalog_plans ORDER BY rowid').all<{
-        id: string
-        name: string
-        product_id: string
-        price_cents: number
-        enabled: number
-        version: number
-      }>(),
+      db
+        .prepare(
+          "SELECT c.* FROM catalog_plans c LEFT JOIN shop_products p ON p.id=c.id WHERE p.id IS NULL OR json_extract(p.public_json,'$.status')<>'archived' ORDER BY c.rowid",
+        )
+        .all<{
+          id: string
+          name: string
+          product_id: string
+          price_cents: number
+          enabled: number
+          version: number
+        }>(),
       supportContactsSettings(env),
       db
         .prepare(
@@ -292,14 +306,7 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
     return json({ logo: data.logo })
   }
   if (suffix === '/product-order') {
-    const known = [
-      ...DEFAULT_PRODUCT_ORDER,
-      ...(
-        await db
-          .prepare('SELECT id FROM shop_products ORDER BY updated_at DESC')
-          .all<{ id: string }>()
-      ).results.map((p) => p.id),
-    ]
+    const known = await ownerProductIds(env)
     if (request.method === 'GET')
       return json({
         productIds: [...new Set([...settings.productIds, ...known])].filter(
