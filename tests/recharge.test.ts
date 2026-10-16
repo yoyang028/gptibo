@@ -12,6 +12,7 @@ import { orderLabel } from '../src/lib/demo-orders.ts'
 import { confirmedRefundLabel } from '../shared/platform-order-status.ts'
 import { reconcileRechargeRefunds } from '../worker/refunds.ts'
 import { totpCode } from '../worker/totp.ts'
+import { QUEFA_GPT_PRODUCT_MAP } from '../shared/quefa-gpt-products.ts'
 import type { Env, Statement, Value } from '../worker/platform.ts'
 
 type Context = Parameters<Parameters<typeof test>[1]>[0]
@@ -386,6 +387,47 @@ test('25x automatic purchases require an authorized available product and safe s
   assert.equal(s.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 2)
   assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 0)
 })
+
+for (const [plan, productCode, supply] of [
+  ['plus', 'chatgpt_plus_cdk_1m', '110.00'],
+  ['pro-5x', 'chatgpt_pro_5x_cdk_1m', '638.00'],
+  ['pro-20x', 'chatgpt_pro_20x_cdk_1m', '1000.00'],
+  ['pro-25x', 'chatgpt_pro_50x_cdk_1m', '3200.00'],
+] as const) {
+  test(`owner-approved ${plan} alias buys the correct supplier SKU and retains its original order after a mapping change`, async t => {
+    const s = setup(t), buyer = await s.buyer()
+    s.env.RECHARGE_PRODUCT_MAP = JSON.stringify(QUEFA_GPT_PRODUCT_MAP)
+    Object.assign(s.products[0], { product_code: productCode, supply_price: supply })
+    s.db.prepare('UPDATE catalog_plans SET purchase_note=? WHERE id=?').run('购买前核对套餐条件', plan)
+    const catalog = await (await s.call('/api/catalog')).json()
+    assert.deepEqual(catalog.plans.filter((p: {enabled: number}) => p.enabled).map((p: {id: string}) => p.id).sort(), ['plus','pro-20x','pro-25x','pro-5x'])
+    const offer = catalog.plans.find((p: {id: string}) => p.id === plan)
+    assert.match(offer.purchase_note, /购买前核对套餐条件/)
+    if (plan === 'pro-25x') assert.match(offer.purchase_note, /菲律宾（PH\/PHP）/)
+    else assert.doesNotMatch(offer.purchase_note, /菲律宾/)
+    const response = await s.call('/api/orders', {plan, expectedPrice: offer.price_cents, email:'buyer@example.test', key:crypto.randomUUID()}, buyer)
+    assert.equal(response.status,201,await response.clone().text())
+    const {order} = await response.json()
+    assert.equal(order.plan,plan)
+    assert.equal((await s.query(order.id,buyer)).status,200)
+    const writes = s.calls.filter(c => c.path === '/v1/orders')
+    assert.equal(writes.length,1)
+    const payload=JSON.parse(writes[0].body)
+    assert.equal(payload.product_code,productCode)
+    assert.equal(payload.sale_amount,(offer.price_cents/100).toFixed(2))
+    assert.equal(payload.collection_mode,'platform_collect')
+    assert.equal(payload.delivery_mode,'auto_recharge')
+    s.env.RECHARGE_PRODUCT_MAP=JSON.stringify({...QUEFA_GPT_PRODUCT_MAP,[plan]:'different_future_sku'})
+    s.setPayment('paid'); await s.query(order.id,buyer)
+    assert.equal((await s.submit(order.id,buyer)).status,200)
+    s.setTask('succeeded')
+    const completed=await (await s.query(order.id,buyer)).json()
+    assert.equal(completed.order.status,'success')
+    assert.equal(completed.order.plan,plan)
+    assert.equal(s.calls.filter(c => c.path === '/v1/orders').length,1)
+    assert.equal(s.db.prepare('SELECT product_code FROM recharge_orders WHERE order_id=?').get(order.id)!.product_code,productCode)
+  })
+}
 
 async function approveRefund(s: ReturnType<typeof setup>, id: string, buyer: string, admin: string, amount: number) {
   const current = await getOrder(s.env,id)
