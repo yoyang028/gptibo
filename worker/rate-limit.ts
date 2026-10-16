@@ -12,6 +12,7 @@ export async function limitApi(request: Request, env: Env, path: string): Promis
 
   // These reads can issue multiple D1 queries or a supplier API request.
   const expensive = (request.method === 'GET' && (path === '/api/catalog' || path === '/api/orders' || /^\/api\/orders\/[^/]+$/.test(path)))
+    || path === '/api/tools/account-check'
     || (request.method === 'POST' && /^\/api\/orders\/[^/]+\/(payment|fulfillment)$/.test(path))
     || (request.method === 'POST' && /^\/api\/(partner|admin)\/invoices\/[^/]+\/payment$/.test(path))
     || (request.method === 'POST' && /^\/api\/admin\/orders\/[^/]+\/(platform-status|delivery|account_supplier)$/.test(path))

@@ -10,6 +10,7 @@ test('direct product and order paths work on reload, including product section a
   assert.equal(readStorefrontPage(current('/product/chatgpt')), 'product/chatgpt')
   assert.equal(readStorefrontPage(current('/product/codex-sms/', '#help')), 'product/codex-sms')
   assert.equal(readStorefrontPage(current('/orders')), 'orders')
+  assert.equal(readStorefrontPage(current('/check')), 'check')
   assert.equal(readStorefrontPage(current('/product/missing')), 'product/missing')
   assert.equal(canonicalStorefrontUrl(current('/product/chatgpt', '#help')), null)
 })
@@ -34,6 +35,9 @@ test('partner deep links preserve the shop and never treat a product path as the
   assert.equal(storefrontHref('store', location), '/s/my-shop?source=friend')
   assert.equal(storefrontHref('product/codex-sms', location), '/s/my-shop/product/codex-sms?source=friend')
   assert.equal(storefrontHref('orders', location), '/s/my-shop/orders?source=friend')
+  assert.equal(storefrontHref('check', location), '/s/my-shop/check?source=friend')
+  assert.equal(readStorefrontPage(current('/s/my-shop/check')), 'check')
+  assert.equal(readStorefrontPage(current('/r/ABC123/check')), 'check')
   assert.equal(canonicalStorefrontUrl(current('/s/my-shop/', '#product/chatgpt', '?source=friend')), '/s/my-shop/product/chatgpt?source=friend')
 })
 

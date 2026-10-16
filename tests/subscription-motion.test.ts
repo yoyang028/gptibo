@@ -44,3 +44,36 @@ test('expanded tiers fit without overlap inside the unchanged deck at narrow and
     assert.equal(deckFrame(0, 0, 174)[0].scale, 1, 'the resting stack retains its original size')
   }
 })
+
+test('three-tier Claude and two-tier subscriptions cycle without losing or duplicating cards', () => {
+  for (const count of [2, 3, 4]) {
+    for (let index = 0; index < count; index++) {
+      const end = deckFrame(index, 1, 174, 'hide', count)
+      const start = deckFrame((index + 1) % count, 0, 174, 'hold', count)
+      assert.equal(end.length, count)
+      assert.equal(start.filter(p => p.visible).length, 1)
+      end.forEach((pose, i) => {
+        pose.position.forEach((value, axis) => assert.ok(Math.abs(value - start[i].position[axis]) < 1e-6))
+        assert.equal(pose.visible, start[i].visible)
+      })
+    }
+    for (const width of [190, 254, 443]) {
+      const fan = fanFrame(width, 174, 185, count)
+      assert.equal(fan.length, count)
+      const bounds = fan.map(({ position: [x, y, angle], scale }) => {
+        const radians = angle * Math.PI / 180
+        const halfWidth = (174 * Math.abs(Math.cos(radians)) + 110 * Math.abs(Math.sin(radians))) * scale / 2
+        const halfHeight = (110 * Math.abs(Math.cos(radians)) + 174 * Math.abs(Math.sin(radians))) * scale / 2
+        const box = { left: width / 2 - 8 + x - halfWidth, right: width / 2 - 8 + x + halfWidth, top: 185 / 2 + y - halfHeight, bottom: 185 / 2 + y + halfHeight }
+        assert.ok(box.left >= 12 - 1e-6 && box.right <= width - 12 + 1e-6)
+        assert.ok(box.top >= 4 - 1e-6 && box.bottom <= 181 + 1e-6)
+        return box
+      })
+      for (let a = 0; a < bounds.length; a++) for (let b = a + 1; b < bounds.length; b++) {
+        const xGap = Math.max(bounds[a].left - bounds[b].right, bounds[b].left - bounds[a].right)
+        const yGap = Math.max(bounds[a].top - bounds[b].bottom, bounds[b].top - bounds[a].bottom)
+        assert.ok(xGap >= 11.9 || yGap >= 11.9, 'expanded cards cannot cover one another')
+      }
+    }
+  }
+})

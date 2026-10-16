@@ -63,3 +63,13 @@ test('90-day range includes older visits and keeps 30-day results separate', asy
   assert.equal(admin.partners[0].pageViews, 3)
   await assert.rejects(visitorSummary(env, url(91)), { status: 400 })
 })
+
+test('account-check page visits retain root and partner attribution without recording submitted account data', async t => {
+  const { db, env } = setup(); t.after(() => db.close())
+  for (const path of ['/check', '/r/ABCDEF/check', '/s/ABCDEF/check']) {
+    const r = await recordVisitor(new Request('https://shop.example.invalid/api/visitors', { method: 'POST', headers: { Origin: 'https://shop.example.invalid', 'Content-Type': 'application/json' }, body: JSON.stringify({ path, visitorId: crypto.randomUUID() }) }), env)
+    assert.equal(r.status, 200)
+  }
+  const rows = db.prepare('SELECT shop_id,SUM(page_views) n FROM visitor_days GROUP BY shop_id ORDER BY shop_id').all()
+  assert.deepEqual(rows.map(r => [r.shop_id, r.n]), [['partner-a', 2], ['platform', 1]])
+})

@@ -1,4 +1,7 @@
 import { ProductArtwork } from './product-artwork'
+import { ProductMark } from './brand'
+import { ProductServiceScene } from './product-service-scene'
+import { customerProductCopy, shopPresentation, variantLabel } from '@/lib/shop-presentation'
 import type {
   ProductArtworkConfig,
   ProductArtworkMap,
@@ -102,6 +105,9 @@ export function ShopProductPage({
     [error, setError] = useState('')
   const requestKey = useRef<{ identity: string; key: string } | null>(null)
   const displayOnly = product.status === 'listed'
+  const familyId = product.groupId ?? product.id
+  const familyName = displayName || product.name || '商品名称'
+  const presentation = shopPresentation(familyId, product)
   const [couponCode, setCouponCode] = useState(''),
     [coupon, setCoupon] = useState<{ code: string; priceCents: number } | null>(
       null,
@@ -128,7 +134,7 @@ export function ShopProductPage({
     }
   }
   async function purchase() {
-    if (busy || !accepted || preview) return
+    if (busy || !accepted || preview || !available) return
     if (couponCode.trim() && coupon?.code !== couponCode.trim().toUpperCase()) {
       setError('请先应用优惠码，或清空后继续。')
       return
@@ -164,13 +170,14 @@ export function ShopProductPage({
   }
   return (
     <>
-      <section className="detail-intro page-width">
+      <section className="detail-intro page-width shop-detail-intro reveal-in">
         <nav className="product-breadcrumb" aria-label="当前位置">
           <a
             href={storefrontHref('store')}
             onClick={
               onHome
                 ? (e) => {
+                    if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
                     e.preventDefault()
                     onHome()
                   }
@@ -180,55 +187,51 @@ export function ShopProductPage({
             全部商品
           </a>
           <ChevronRight size={13} />
-          <span>{product.name || '商品名称'}</span>
+          <span aria-current="page">{familyName}</span>
         </nav>
-        <h1>{product.name || '商品名称'}</h1>
-        <p>{product.tagline || '商品短介绍'}</p>
+        <h1>{familyName}<span>{presentation.tagline}</span></h1>
+        <p>{presentation.intro || product.tagline || '商品短介绍'}</p>
       </section>
       <section
-        className="purchase-workspace page-width shop-product-workspace"
+        className={`purchase-workspace page-width shop-product-workspace family-${familyId}`}
         aria-label={product.name + '商品详情'}
       >
         <div className="product-area">
           <div className="product-topline">
             <span className="section-kicker">
-              {product.category || '商品服务'}
+              {presentation.category || '商品服务'}
             </span>
             <span className="availability">
               {product.stock === 0
                 ? '暂时售罄'
                 : available
                   ? '可购买'
-                  : displayOnly
-                    ? '暂未开售'
-                    : '暂停售卖'}
+                  : '暂停售卖'}
             </span>
           </div>
           <div className="product-heading">
-            {product.image ? (
+            {product.groupId ? <ProductMark productId={product.groupId} /> : product.image ? (
               <img className="shop-product-icon" src={product.image} alt="" />
             ) : (
               <Package size={40} />
             )}
             <div>
-              <h2>{displayName || product.name || '商品名称'}</h2>
+              <h2>{familyName}</h2>
               <span className="personal-badge">
                 {product.badge || '自营商品'}
               </span>
             </div>
           </div>
-          <p className="product-pitch shop-product-copy">
-            {product.description || '在后台填写商品的详细介绍。'}
-          </p>
           <ProductArtwork
             config={artwork}
             name={product.name}
             caption={product.duration}
             detail
+            fallback={(!variants || variants.length === 1) ? <ProductServiceScene productId={familyId} name={familyName} duration={product.duration} /> : null}
           />
           {variants && variants.length > 1 && (
             <fieldset className="shop-product-variants">
-              <legend>选择规格</legend>
+              <legend>选择适合你的规格<span>{variants.length} 个规格 · 独立定价</span></legend>
               {variants.map((variant) => (
                 <label
                   key={variant.id}
@@ -237,6 +240,7 @@ export function ShopProductPage({
                 >
                   <input
                     type="radio"
+                    aria-label={variant.name}
                     name="product-variant"
                     value={variant.id}
                     checked={variant.id === product.id}
@@ -246,22 +250,21 @@ export function ShopProductPage({
                     }}
                   />
                   <span>
-                    <strong>{variant.name}</strong>
+                    <strong>{variantLabel(variant, familyName)}</strong>
                     <small>{variant.duration}</small>
                   </span>
-                  <strong>¥{(variant.priceCents / 100).toFixed(2)}</strong>
+                  <strong><small>¥</small>{(variant.priceCents / 100).toFixed(2)}</strong>
                 </label>
               ))}
             </fieldset>
           )}
           <div className="shop-product-option">
+            <span className="section-kicker">所选规格 / INCLUDED</span>
             <div className="plan-option-top">
-              <strong>{product.duration || '商品规格'}</strong>
-              <span className="plan-price">
-                ¥{(product.priceCents / 100).toFixed(2)}
-                <small>／{product.unit || '份'}</small>
-              </span>
+              <h3>{product.name || '商品规格'}</h3>
+              <span>{product.duration}</span>
             </div>
+            <p className="shop-product-description shop-product-copy">{customerProductCopy(product.description) || '在后台填写商品的详细介绍。'}</p>
             <ul className="plan-features">
               {product.features.map((feature, i) => (
                 <li key={i}>
@@ -278,25 +281,25 @@ export function ShopProductPage({
             </p>
           </div>
         </div>
-        <aside className="order-summary">
+        <aside className="order-summary" aria-label="商品价格与交付说明">
           <div className="summary-title">
             <h3>{displayOnly ? '商品信息' : '订单摘要'}</h3>
             <ShieldCheck size={18} />
           </div>
           <div className="summary-product">
-            <strong>{product.name || '商品名称'}</strong>
-            <span>{product.duration || '商品规格'}</span>
+            {product.groupId && <ProductMark small productId={product.groupId} />}
+            <div><strong>{product.name || '商品名称'}</strong><p>{product.duration || '商品规格'}</p></div>
           </div>
           <dl className="summary-details">
             <div>
-              <dt>购买数量</dt>
+              <dt>所选数量</dt>
               <dd>1 {product.unit || '份'}</dd>
             </div>
             <div>
               <dt>交付方式</dt>
-              <dd>{product.delivery === 'api' ? '自动供货' : '人工交付'}</dd>
+              <dd>{product.delivery === 'api' ? '卡密 / 兑换信息' : '按商品说明交付'}</dd>
             </div>
-            {!displayOnly && (
+            {!displayOnly && available && (
               <div>
                 <dt>收款方式</dt>
                 <dd>{product.payment.label || '待设置'}</dd>
@@ -317,26 +320,26 @@ export function ShopProductPage({
             {preview
               ? '商品预览'
               : !available
-                ? displayOnly
-                  ? '暂未开放购买'
-                  : '暂停售卖'
+                ? '暂停售卖'
                 : product.stock === 0
                   ? '暂时售罄'
                   : '立即购买'}
             <ArrowRight size={16} />
           </Button>
           <p className="summary-note">
-            {displayOnly
-              ? '该商品暂未开放购买，开售后可在此下单。'
+            {displayOnly || !available
+              ? '当前可查看商品与规格，恢复售卖后可在此下单。'
               : '付款后由店主核对收款，确认后按说明交付。'}
           </p>
           <p className="summary-footnote shop-product-copy">
-            {product.deliveryInstructions}
+            <strong>交付说明</strong>
+            {customerProductCopy(product.deliveryInstructions)}
           </p>
         </aside>
       </section>
+      <div className="shop-flow-heading page-width"><span className="section-kicker">HOW IT WORKS</span><h2>{displayOnly || !available ? '开售后的交付流程' : '从选购，到使用。'}</h2><p>按商品说明完成每一步，服务进度在订单中查看。</p></div>
       <section
-        className="delivery-guide page-width"
+        className="delivery-guide page-width shop-delivery-guide"
         aria-label="购买与交付流程"
       >
         {product.steps.map((step, i) => (

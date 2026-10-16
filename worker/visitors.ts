@@ -15,8 +15,8 @@ export async function recordVisitor(request: Request, env: Env) {
   if (typeof data.visitorId !== 'string' || !/^[a-f0-9-]{36}$/.test(data.visitorId)) throw new ApiError('访客标识无效。')
   if (typeof data.path !== 'string' || data.path.length > 120) throw new ApiError('页面路径无效。')
   const path = data.path.replace(/\/$/, '') || '/'
-  const match = path.match(/^\/(?:r|s)\/([^/]+)(?:\/(?:orders|product\/[a-z0-9-]+))?$/)
-  if (!match && path !== '/' && path !== '/orders' && !/^\/product\/[a-z0-9-]+$/.test(path)) throw new ApiError('页面路径无效。')
+  const match = path.match(/^\/(?:r|s)\/([^/]+)(?:\/(?:orders|check|product\/[a-z0-9-]+))?$/)
+  if (!match && path !== '/' && path !== '/orders' && path !== '/check' && !/^\/product\/[a-z0-9-]+$/.test(path)) throw new ApiError('页面路径无效。')
   let shopId = 'platform'
   if (match) {
     const partner = await env.INTEREST_DB.prepare('SELECT id FROM partners WHERE slug=? AND active=1').bind(match[1]).first<{ id: string }>()

@@ -6,6 +6,7 @@ export const englishMessages: Readonly<Record<string, string>> = {
   '全部商品': 'All products',
   '我的订单': 'My orders',
   '帮助中心': 'Help',
+  '账号检测': 'Account check',
   '联系支持': 'Contact support',
   '主导航': 'Main navigation',
   'GPTibo 首页': 'GPTibo home',

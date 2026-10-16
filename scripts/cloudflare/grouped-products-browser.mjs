@@ -13,6 +13,10 @@ fs.mkdirSync(evidence, { recursive: true })
 const runtime = await (await fetch(control + '/state')).json()
 assert.equal(runtime.localMock, true)
 assert.equal(runtime.origin, origin)
+const resetLimits = await fetch(control + '/reset-auth-limits', {
+  method: 'POST', headers: { Origin: control, 'X-Local-Control': fs.readFileSync(path.join(root, 'artifacts/local/.secrets/xiaojiu-cloudflare-mock/control-token'), 'utf8').trim() },
+})
+assert.equal(resetLimits.status, 204, 'Reset only the authenticated isolated synthetic login budget')
 const { chromium } = createRequire(import.meta.url)(
   'D:/ChatGPT/CodexCache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright',
 )
@@ -190,11 +194,33 @@ try {
   record(
     'Seven specifications appear as exactly one Claude card and one Codex credit card',
   )
+  for (const [group, count] of [['claude', 3], ['codex-credits', 4]]) {
+    const deck = page.locator(`[data-product-group="${group}"] .store-deck`)
+    assert.equal(await deck.locator('[data-tier]').count(), count)
+    await deck.hover()
+    await page.waitForTimeout(750)
+    assert.equal(await deck.getAttribute('data-phase'), 'inspect')
+    const bounds = await deck.evaluate(element => {
+      const deck = element.getBoundingClientRect()
+      return Array.from(element.querySelectorAll('[data-tier]')).map(card => {
+        const box = card.getBoundingClientRect()
+        return { left: box.left - deck.left, right: box.right - deck.left, top: box.top - deck.top, bottom: box.bottom - deck.top, width: deck.width, height: deck.height }
+      })
+    })
+    for (const box of bounds) assert(box.left >= 0 && box.right <= box.width + 1 && box.top >= 0 && box.bottom <= box.height + 1)
+  }
+  await page.mouse.move(5, 5)
+  await page.locator('[data-product-group="claude"] .store-deck').focus()
+  await page.waitForTimeout(700)
+  assert.equal(await page.locator('[data-product-group="claude"] .store-deck').getAttribute('data-phase'), 'inspect')
+  await page.screenshot({path:path.join(evidence,'animated-family-cards.png'),fullPage:true})
+  record('Three-tier and four-tier decks expand by pointer and keyboard without clipping their specifications')
   await page.locator('[data-product-group="claude"] a').click()
   assert.equal(await page.getByRole('radio').count(), 3)
   await page.getByRole('radio', { name: /Claude Max5x/ }).check()
   await page.locator('.total-price').filter({ hasText: '¥880.00' }).waitFor()
   assert.equal(await page.locator('.summary-cta').isDisabled(), true)
+  assert.match(await page.locator('.summary-cta').innerText(), /暂停售卖/)
   await page.screenshot({
     path: path.join(evidence, 'claude-specifications.png'),
     fullPage: true,

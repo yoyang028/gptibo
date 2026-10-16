@@ -39,6 +39,16 @@ const genericOrders = new Map()
 const xiaojiuFixture = createXiaojiuFixture()
 const outbound = async request => {
   const url = new URL(request.url)
+  if (url.origin === 'https://chatgpt.com') {
+    if (url.pathname !== '/backend-api/accounts/check/v4-2023-04-27' || request.method !== 'GET') throw new Error('Unexpected account-check fixture request')
+    const token = request.headers.get('Authorization')
+    if (token === 'Bearer fixture-account-expired') return Response.json({}, { status: 401 })
+    if (token === 'Bearer fixture-account-blocked') return Response.json({}, { status: 403 })
+    if (token === 'Bearer fixture-account-limited') return Response.json({}, { status: 429 })
+    if (!['Bearer fixture-account-free', 'Bearer fixture-account-plus', 'Bearer fixture-account-workspace'].includes(token)) throw new Error('Only synthetic account checks are allowed locally')
+    const plus = token === 'Bearer fixture-account-plus', workspace = token === 'Bearer fixture-account-workspace'
+    return Response.json({ accounts: { default: { account: { account_id: 'account-fixture', plan_type: workspace ? 'team' : plus ? 'plus' : 'free', structure: workspace ? 'workspace' : 'personal' }, entitlement: { has_active_subscription: plus, ...(plus ? { expires_at: '2026-12-31T00:00:00Z' } : {}) }, ...(plus ? { subscription: { subscription_source: 'ios', billing_country: 'PH', will_renew: false } } : {}) } } })
+  }
   if (url.origin === 'https://98-xj.com') return xiaojiuFixture.fetch(request)
   if(url.origin==='https://fixture-supplier.example.com') {
     // Isolated JSON v1 fixture for owner-published products. Never forwards to a network.
@@ -142,6 +152,13 @@ try {
     }
     if (request.method !== 'POST' || request.headers.origin !== 'http://127.0.0.1:' + controlPort || !authorized) { response.writeHead(403).end(); return }
     if (request.url === '/shutdown') { response.writeHead(204).end(); await shutdown(); return }
+    if (xiaojiuVariant && request.url === '/reset-auth-limits') {
+      // Repeatable acceptance against this isolated, synthetic D1 only. The
+      // control socket already requires loopback Host, Origin and its capability.
+      // Production auth limits and real login credentials are never changed.
+      await db.prepare('DELETE FROM admin_login_limits').run()
+      response.writeHead(204).end(); return
+    }
     if (request.url === '/scheduled') {
       try { await worker.scheduled({ scheduledTime: Math.floor(Date.now() / 300000) * 300000 }); response.writeHead(204).end() }
       catch { response.writeHead(503).end() }

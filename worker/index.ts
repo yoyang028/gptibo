@@ -16,6 +16,7 @@ import { invoiceNotification, reconcileInvoicePayments } from './invoices.ts'
 import { sendDueRechargeReminders } from './recharge-reminders.ts'
 import { reconcileGmail } from './account_supplier/service.ts'
 import { requireSecureTransport, secureResponse } from './security.ts'
+import { checkAccount } from './account-check.ts'
 const json = (value: unknown, status = 200) => Response.json(value, {
   status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 429 ? { 'Retry-After': '60' } : {}) },
 })
@@ -55,6 +56,7 @@ async function route(request: Request, env: Env): Promise<Response> {
       return error('请求保护服务暂时不可用，请稍后重试。', 503)
     }
     if (url.pathname === '/api/telegram/webhook') return telegramWebhook(request, env)
+    if (url.pathname === '/api/tools/account-check') return checkAccount(request, env)
     // This backend uses the edge request limits above. Advertise its actual
     // verification capability to the shared checkout and login forms.
     if (url.pathname === '/api/orders/verification') {

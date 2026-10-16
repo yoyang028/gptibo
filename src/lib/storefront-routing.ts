@@ -12,7 +12,7 @@ function basePath(pathname: string) {
 }
 
 export function storefrontHref(page: string, current: StorefrontLocation = location) {
-  const suffix = page === 'store' ? '/' : page === 'orders' ? '/orders' : `/product/${encodeURIComponent(page.slice('product/'.length))}`
+  const suffix = page === 'store' ? '/' : page === 'orders' ? '/orders' : page === 'check' ? '/check' : `/product/${encodeURIComponent(page.slice('product/'.length))}`
   const base = basePath(current.pathname)
   return (page === 'store' && base ? base : base + suffix) + current.search
 }
@@ -20,6 +20,7 @@ export function storefrontHref(page: string, current: StorefrontLocation = locat
 function pathPage(current: StorefrontLocation) {
   const path = current.pathname.slice(basePath(current.pathname).length).replace(/\/$/, '')
   if (path === '/orders') return 'orders'
+  if (path === '/check') return 'check'
   const product = path.match(/^\/product\/([^/]+)$/)
   if (product) {
     try { return `product/${decodeURIComponent(product[1])}` } catch { return `product/${product[1]}` }
