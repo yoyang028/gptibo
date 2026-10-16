@@ -1,0 +1,172 @@
+.product-artwork.membership-scene {
+  margin: 6px 0 0;
+  height: 200px;
+  flex: 0 0 200px;
+  background: radial-gradient(
+    ellipse at 50% 65%,
+    color-mix(in oklab, var(--primary) 8%, var(--background)),
+    var(--background) 75%
+  );
+}
+.product-artwork .artwork-visual {
+  display: grid;
+  place-items: center;
+}
+.artwork-image-wrap {
+  width: 150px;
+  height: 150px;
+  display: grid;
+  place-items: center;
+}
+.artwork-image {
+  width: 130px;
+  height: 130px;
+  border-radius: 24px;
+  object-fit: contain;
+}
+.artwork-static .artwork-visual {
+  animation: none;
+}
+.artwork-float .artwork-image-wrap {
+  animation: word-float 5.8s ease-in-out infinite;
+  filter: drop-shadow(0 12px 18px #24332b16);
+}
+.artwork-zoom .artwork-image-wrap {
+  animation: artwork-breathe 7s ease-in-out infinite;
+}
+.artwork-sheen {
+  position: absolute;
+  inset: -70% -30%;
+  width: 40%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, #ffffff80, transparent);
+  animation: artwork-sweep 5s ease-in-out infinite;
+}
+.artwork-card-back,
+.artwork-member-card.store-tier-face {
+  position: absolute;
+  width: min(310px, 84%);
+  height: 154px;
+  inset: auto;
+  border-radius: 15px;
+}
+.artwork-card-back {
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--primary) 8%, var(--background));
+}
+.artwork-back-one {
+  rotate: -9deg;
+  translate: -8px -2px;
+}
+.artwork-back-two {
+  rotate: 6deg;
+  translate: 8px -3px;
+}
+.artwork-member-card.store-tier-face {
+  padding: 23px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--primary) 9%, var(--background)),
+    var(--background)
+  );
+  color: var(--foreground);
+  animation: word-float 6.8s ease-in-out infinite;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.artwork-member-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.artwork-member-brand img {
+  width: 45px;
+  height: 45px;
+  object-fit: contain;
+  border-radius: 11px;
+  flex-shrink: 0;
+}
+.artwork-member-brand strong {
+  font-size: 17px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.artwork-member-caption {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  padding-right: 32px;
+  overflow-wrap: anywhere;
+}
+.artwork-card-chip {
+  position: absolute;
+  right: 23px;
+  bottom: 22px;
+  width: 25px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 18%, transparent);
+  background: linear-gradient(
+    120deg,
+    transparent,
+    color-mix(in oklab, var(--foreground) 8%, transparent)
+  );
+}
+.product-artwork.artwork-detail {
+  margin: 16px 0 22px;
+  height: 240px;
+  flex-basis: 240px;
+}
+.product-artwork[data-paused='true'] *,
+.product-artwork[data-paused='true'] *::before,
+.product-artwork[data-paused='true'] *::after {
+  animation-play-state: paused !important;
+}
+@keyframes artwork-breathe {
+  0%,
+  100% {
+    transform: scale(0.95);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+@keyframes artwork-sweep {
+  0%,
+  25% {
+    transform: translateX(-220%) rotate(25deg);
+    opacity: 0;
+  }
+  40% {
+    opacity: 0.7;
+  }
+  70%,
+  100% {
+    transform: translateX(620%) rotate(25deg);
+    opacity: 0;
+  }
+}
+@media (max-width: 640px) {
+  .product-artwork.artwork-detail {
+    height: 215px;
+    flex-basis: 215px;
+  }
+  .artwork-member-card.store-tier-face {
+    padding: 20px;
+  }
+  .artwork-member-brand strong {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-artwork *,
+  .product-artwork *::before,
+  .product-artwork *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .artwork-sheen {
+    display: none;
+  }
+}

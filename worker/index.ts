@@ -67,6 +67,7 @@ async function route(request: Request, env: Env): Promise<Response> {
         // Verify the active commerce schema as well as the D1 binding.
         await env.INTEREST_DB.prepare('SELECT paused,remote_attempt_no FROM recharge_redemptions LIMIT 1').all()
         await env.INTEREST_DB.prepare('SELECT lease_token FROM shop_order_details LIMIT 1').all()
+        await env.INTEREST_DB.prepare('SELECT version FROM product_artwork LIMIT 1').all()
         return json({ ok: true, backend: 'cloudflare-d1' })
       } catch { return error('数据库尚未就绪。', 503) }
     }

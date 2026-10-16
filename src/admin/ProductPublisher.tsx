@@ -1,3 +1,4 @@
+import { ProductArtworkSettingsButton } from './ProductArtworkSettings'
 import { useEffect, useRef, useState } from 'react'
 import {
   Eye,
@@ -868,6 +869,7 @@ export default function ProductPublisher({
                 {p.stock < 0 ? '不限量' : `剩余 ${p.stock}`}
               </small>
             </div>
+            <ProductArtworkSettingsButton productId={p.id} onSaved={reload} />
             <Button variant="outline" onClick={() => setEdit(p)}>
               编辑商品
             </Button>

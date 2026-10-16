@@ -1,3 +1,5 @@
+import { ProductArtwork } from './product-artwork'
+import type { ProductArtworkConfig } from '../../shared/product-artwork'
 import { useRef, useState } from 'react'
 import {
   ArrowRight,
@@ -30,12 +32,14 @@ import './shop-products.css'
 
 export function ShopProductPage({
   product,
+  artwork,
   available = true,
   preview = false,
   onCreated,
   onHome,
 }: {
   product: ShopProduct
+  artwork?: ProductArtworkConfig
   available?: boolean
   preview?: boolean
   onCreated?: (o: ServerOrder) => void
@@ -164,6 +168,7 @@ export function ShopProductPage({
           <p className="product-pitch shop-product-copy">
             {product.description || '在后台填写商品的详细介绍。'}
           </p>
+          <ProductArtwork config={artwork} name={product.name} caption={product.duration} detail />
           <div className="shop-product-option">
             <div className="plan-option-top">
               <strong>{product.duration || '商品规格'}</strong>

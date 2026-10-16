@@ -32,6 +32,7 @@ import { ownerPublicSettings, ownerShopRoutes, ownerShop } from './owner-shop.ts
 import { customOrderSummary, createCustomOrder, customBuyerAction, customAdminAction, shopProducts, shopProductRoutes, fulfillCustomOrder, customRetailFloor } from './shop-products.ts'
 import { customProductId } from '../shared/shop-products.ts'
 import { quefaPurchaseNote } from '../shared/quefa-gpt-products.ts'
+import { artworkRoute, publicArtwork } from './product-artwork.ts'
 import { couponQuote, couponReservation } from './shop-coupons.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
@@ -87,6 +88,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         const records=await Promise.all(rows.map(async o=>({...o,discount_cents:(await env.INTEREST_DB.prepare('SELECT discount_cents FROM shop_coupon_uses WHERE order_id=?').bind(o.id).first<{discount_cents:number}>())?.discount_cents??0,custom:await customOrderSummary(env,o)})))
         return json({page,total:(await env.INTEREST_DB.prepare('SELECT COUNT(*) total FROM orders WHERE partner_id IS NULL AND is_test=0').first<{total:number}>())?.total??0,orders:records,rows:records})
       }
+      if (path === '/api/admin/product-artwork') return await artworkRoute(request,env)
       if (path.startsWith('/api/admin/my-shop')) return await ownerShopRoutes(request,env,url)
       if (path === '/api/admin/tickets/notifications' && method === 'GET') return json({enabled: false, version: 0, pending: 0})
       if (path.startsWith('/api/admin/tickets')) throw new ApiError('Cloudflare 后端尚未启用代理工单。', 503)
@@ -126,12 +128,13 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       ])
       const owner = partner ? null : await ownerPublicSettings(env)
       const products = partner ? [] : (await shopProducts(env)).filter(p=>!owner?.hiddenProductIds.includes(p.id))
+      const productArtwork = partner ? {} : await publicArtwork(env, (catalog.plans as Plan[]).map(p=>p.product_id).filter(id=>!owner?.hiddenProductIds.includes(id) && (!customProductId.test(id) || products.some(p=>p.id===id))))
       const coupons=partner?[]:(await env.INTEREST_DB.prepare('SELECT settings FROM shop_coupons').all<{settings:string}>()).results.map(r=>JSON.parse(r.settings)).filter(c=>c.active&&Date.parse(c.starts_at)<=Date.now()&&Date.parse(c.ends_at)>Date.now())
       // Storefront prices are configured retail prices, independent of supplier latency.
       const offers = (catalog.plans as Plan[]).map(plan => ({ ...plan,purchase_note:quefaPurchaseNote(mapped[plan.id],plan.purchase_note),has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId==='platform'&&t.plan===plan.id)), enabled: plan.enabled && (
         customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.stock!==0) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
       ) ? 1 : 0 }))
-      return json({ ...catalog,...owner, products, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
+      return json({ ...catalog,...owner, products, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
     }
     if (path === '/api/orders/client' && method === 'POST') {
       await body(request)

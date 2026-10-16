@@ -10,6 +10,7 @@ import { sendOwnerOrderNotifications } from '../worker/owner-shop.ts'
 import type { ShopProduct } from '../shared/shop-products.ts'
 import { sendVerificationEmail } from '../worker/email.ts'
 import { fulfillCustomOrder } from '../worker/shop-products.ts'
+import { ARTWORK_TEMPLATES } from '../shared/product-artwork.ts'
 
 const credential = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
 const image =
@@ -1230,4 +1231,193 @@ test('invalid coupon expiry and duplicate codes are rejected before changing cou
     409,
   )
   assert.equal(s.db.prepare('SELECT COUNT(*) n FROM shop_coupons').get()!.n, 1)
+})
+
+test('product artwork persists all templates and restores the original without changing catalogue, supply or payments', async () => {
+  const s = await setup()
+  const before = s.db.prepare('SELECT * FROM catalog_plans ORDER BY id').all()
+  const configBefore = JSON.stringify(s.env.RECHARGE_PRODUCT_MAP)
+  let version = 0
+  for (const template of ARTWORK_TEMPLATES.filter((t) => t.id !== 'original')) {
+    const config = { template: template.id, image }
+    const saved = await s.request(
+      '/api/admin/product-artwork',
+      { productId: 'chatgpt', version, config },
+      s.admin,
+    )
+    assert.equal(saved.status, 200, await saved.clone().text())
+    const result = (await saved.json()).product
+    assert.deepEqual(result.config, config)
+    assert.equal(result.version, ++version)
+    const read = await (
+      await s.request('/api/admin/product-artwork', undefined, s.admin)
+    ).json()
+    assert.deepEqual(
+      read.products.find((p: { id: string }) => p.id === 'chatgpt'),
+      result,
+    )
+    const catalog = await (await s.request('/api/catalog')).json()
+    assert.deepEqual(catalog.productArtwork.chatgpt, config)
+    assert.equal(
+      (
+        await s.request(
+          '/api/admin/product-artwork',
+          {
+            productId: 'chatgpt',
+            version: version - 1,
+            config: { template: 'static', image },
+          },
+          s.admin,
+        )
+      ).status,
+      409,
+    )
+  }
+  const reset = await s.request(
+    '/api/admin/product-artwork',
+    { productId: 'chatgpt', version, config: { template: 'original', image } },
+    s.admin,
+  )
+  assert.equal(reset.status, 200)
+  assert.equal(
+    (await (await s.request('/api/catalog')).json()).productArtwork.chatgpt,
+    undefined,
+  )
+  assert.equal((await reset.json()).product.config.image, image)
+  assert.deepEqual(
+    s.db.prepare('SELECT * FROM catalog_plans ORDER BY id').all(),
+    before,
+  )
+  assert.equal(JSON.stringify(s.env.RECHARGE_PRODUCT_MAP), configBefore)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 0)
+  assert.equal(
+    s.db.prepare('SELECT COUNT(*) n FROM recharge_orders').get()!.n,
+    0,
+  )
+  assert.equal(
+    s.db
+      .prepare(
+        "SELECT COUNT(*) n FROM admin_audit WHERE action='product-artwork'",
+      )
+      .get()!.n,
+    6,
+  )
+})
+
+test('artwork administration rejects buyers, foreign origins, stale versions and unsupported image contents', async () => {
+  const s = await setup(),
+    buyer = await s.buyer()
+  const data = {
+    productId: 'chatgpt',
+    version: 0,
+    config: { template: 'float', image },
+  }
+  for (const cookie of ['', buyer]) {
+    assert.equal(
+      (await s.request('/api/admin/product-artwork', undefined, cookie)).status,
+      401,
+    )
+    assert.equal(
+      (await s.request('/api/admin/product-artwork', data, cookie)).status,
+      401,
+    )
+  }
+  assert.equal(
+    (
+      await s.request(
+        '/api/admin/product-artwork',
+        data,
+        s.admin,
+        'https://foreign.example.com',
+      )
+    ).status,
+    403,
+  )
+  for (const config of [
+    { template: 'unknown', image },
+    { template: 'static', image: '' },
+    { template: 'float', image: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' },
+    { template: 'shine', image: 'data:image/png;base64,PHN2Zz48L3N2Zz4=' },
+    { template: 'zoom', image: 'https://image.example.com/p.png' },
+    {
+      template: 'membership',
+      image: 'data:image/png;base64,' + 'A'.repeat(350000),
+    },
+  ])
+    assert.equal(
+      (
+        await s.request(
+          '/api/admin/product-artwork',
+          { ...data, config },
+          s.admin,
+        )
+      ).status,
+      400,
+    )
+  assert.equal(
+    (
+      await s.request(
+        '/api/admin/product-artwork',
+        { ...data, version: 1 },
+        s.admin,
+      )
+    ).status,
+    409,
+  )
+  assert.equal(
+    (
+      await s.request(
+        '/api/admin/product-artwork',
+        { ...data, productId: 'missing-product' },
+        s.admin,
+      )
+    ).status,
+    404,
+  )
+  assert.equal(
+    s.db.prepare('SELECT COUNT(*) n FROM product_artwork').get()!.n,
+    0,
+  )
+})
+
+test('custom artwork survives ordinary product edits and hides unpublished product images from the public catalogue', async () => {
+  const s = await setup()
+  let p = await s.saveProduct(product({ status: 'draft' }))
+  const config = { template: 'membership', image }
+  assert.equal(
+    (
+      await s.request(
+        '/api/admin/product-artwork',
+        { productId: p.id, version: 0, config },
+        s.admin,
+      )
+    ).status,
+    200,
+  )
+  assert.equal(
+    (await (await s.request('/api/catalog')).json()).productArtwork[p.id],
+    undefined,
+  )
+  p = await s.saveProduct({ ...p, status: 'published' })
+  assert.deepEqual(
+    (await (await s.request('/api/catalog')).json()).productArtwork[p.id],
+    config,
+  )
+  p = await s.saveProduct({ ...p, name: '更新后的商品名称' })
+  assert.deepEqual(
+    (await (await s.request('/api/catalog')).json()).productArtwork[p.id],
+    config,
+  )
+  p = await s.saveProduct({ ...p, status: 'archived' })
+  assert.equal(
+    (await (await s.request('/api/catalog')).json()).productArtwork[p.id],
+    undefined,
+  )
+  const read = await (
+    await s.request('/api/admin/product-artwork', undefined, s.admin)
+  ).json()
+  assert.deepEqual(
+    read.products.find((row: { id: string }) => row.id === p.id).config,
+    config,
+  )
 })
