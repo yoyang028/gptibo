@@ -36,6 +36,24 @@ import { groupShopProducts, type ShopProduct } from '../../shared/shop-products'
 import { RefundContent } from './order-services'
 import './shop-products.css'
 
+// Keep descriptions editable as text. Only standalone "### " headings are
+// formatted; all content is rendered as React text, never as HTML.
+function ProductDescription({ text }: { text: string }) {
+  const blocks = customerProductCopy(text).trim().split(/\r?\n\s*\r?\n/)
+  return <div className="shop-product-description">
+    {blocks.map((block, i) => {
+      const [firstLine, ...lines] = block.split(/\r?\n/)
+      if (firstLine.startsWith('### ') && lines.some(line => line.trim())) {
+        return <section className="shop-description-section" key={i}>
+          <h4>{firstLine.slice(4)}</h4>
+          <p className="shop-product-copy">{lines.join('\n')}</p>
+        </section>
+      }
+      return <p className="shop-product-copy" key={i}>{block || '在后台填写商品的详细介绍。'}</p>
+    })}
+  </div>
+}
+
 export function ShopProductGroupPage({
   group,
   offers,
@@ -190,7 +208,7 @@ export function ShopProductPage({
           <span aria-current="page">{familyName}</span>
         </nav>
         <h1>{familyName}<span>{presentation.tagline}</span></h1>
-        <p>{presentation.intro || product.tagline || '商品短介绍'}</p>
+        {presentation.intro && presentation.intro !== presentation.tagline && <p>{presentation.intro}</p>}
       </section>
       <section
         className={`purchase-workspace page-width shop-product-workspace family-${familyId}`}
@@ -264,7 +282,7 @@ export function ShopProductPage({
               <h3>{product.name || '商品规格'}</h3>
               <span>{product.duration}</span>
             </div>
-            <p className="shop-product-description shop-product-copy">{customerProductCopy(product.description) || '在后台填写商品的详细介绍。'}</p>
+            <ProductDescription text={product.description} />
             <ul className="plan-features">
               {product.features.map((feature, i) => (
                 <li key={i}>

@@ -113,6 +113,10 @@
 .shop-product-option h3 { font-size: 17px; letter-spacing: -.4px; font-weight: 550; }
 .shop-product-option .plan-option-top > span { font-size: 11px; color: var(--muted-foreground); }
 .shop-product-description { font-size: 12px; line-height: 1.9; color: var(--muted-foreground); margin-top: 12px; }
+.shop-product-description > p + p { margin-top: 10px; }
+.shop-description-section { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.shop-description-section:last-child { border-bottom: 0; padding-bottom: 0; }
+.shop-description-section h4 { color: var(--foreground); font-size: 12px; font-weight: 600; margin-bottom: 5px; }
 .shop-product-option .plan-features { display: grid; gap: 10px; padding-bottom: 0; font-size: 12px; }
 .shop-product-option .plan-features > li { display: flex; align-items: flex-start; gap: 7px; line-height: 1.7; }
 .shop-product-option .plan-features > li > svg { color: var(--family-accent); flex-shrink: 0; margin-top: 3px; }
