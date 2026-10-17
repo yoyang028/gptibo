@@ -11,6 +11,7 @@ import { GrizzlyClient } from '../worker/grizzly/client.ts'
 import {
   grizzlyCostCents,
   grizzlyProduct,
+  SMS_PRODUCT_IDS,
   type GrizzlyService,
 } from '../shared/grizzly-sms.ts'
 import type { ShopProduct } from '../shared/shop-products.ts'
@@ -25,7 +26,7 @@ const signature = (value: string) =>
   sign('RSA-SHA256', Buffer.from(value), keys.privateKey).toString('base64')
 const image =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg=='
-async function setup(t: Context, service: GrizzlyService = 'dr') {
+async function setup(t: Context, service: GrizzlyService = 'dr', auto = false) {
   const db = new DatabaseSync(':memory:')
   t.after(() => db.close())
   for (const file of readdirSync(new URL('../migrations/', import.meta.url))
@@ -102,6 +103,11 @@ async function setup(t: Context, service: GrizzlyService = 'dr') {
     cost: 0.13,
     currency: 840,
     country: '187',
+    numberByCountry: {} as Record<string, string>,
+    prices: {
+      '187': { cost: 0.13, count: 100 },
+      '12': { cost: 0.09, count: 100 },
+    } as Record<string, { cost: number; count: number }>,
     hold: undefined as Promise<void> | undefined,
   }
   t.mock.method(
@@ -139,29 +145,34 @@ async function setup(t: Context, service: GrizzlyService = 'dr') {
       if (action === 'getBalance') return new Response('ACCESS_BALANCE:100.00')
       if (action === 'getPrices')
         return Response.json({
-          187: {
-            [url.searchParams.get('service')!]: { cost: 0.13, count: 100 },
+          [url.searchParams.get('country')!]: {
+            [url.searchParams.get('service')!]:
+              controls.prices[url.searchParams.get('country')!],
           },
         })
       if (action === 'getNumberV2') {
         assert.equal(url.searchParams.get('service'), service)
-        assert.equal(url.searchParams.get('country'), '187')
+        const selectedCountry = url.searchParams.get('country')!
+        assert.ok(['187', '12'].includes(selectedCountry))
         assert.equal(url.searchParams.get('maxPrice'), '1')
         await controls.hold
-        if (controls.number === 'timeout')
-          throw new Error('Synthetic lost response')
-        if (controls.number === 'redirect')
+        const outcome =
+          controls.numberByCountry[selectedCountry] ?? controls.number
+        if (outcome === 'timeout') throw new Error('Synthetic lost response')
+        if (outcome === 'redirect')
           return new Response(null, {
             status: 302,
             headers: { Location: 'https://evil.example.test/' },
           })
-        if (controls.number !== 'ok') return new Response(controls.number)
+        if (outcome !== 'ok') return new Response(outcome)
         return Response.json({
           activationId: 1234567,
           phoneNumber: '12025550147',
-          activationCost: controls.cost,
+          activationCost: auto
+            ? controls.prices[selectedCountry].cost
+            : controls.cost,
           currency: controls.currency,
-          countryCode: controls.country,
+          countryCode: auto ? selectedCountry : controls.country,
         })
       }
       assert.equal(url.searchParams.get('id'), '1234567')
@@ -207,7 +218,11 @@ async function setup(t: Context, service: GrizzlyService = 'dr') {
     api: {
       ...grizzlyProduct(service).api!,
       maxCostCents: 750,
-      sms: { country: '187', maxPriceUsd: '1', cnyPerUsd: '7.5' },
+      sms: {
+        country: auto ? 'auto-us' : '187',
+        maxPriceUsd: '1',
+        cnyPerUsd: '7.5',
+      },
     },
     apiToken: apiKey,
   }
@@ -767,4 +782,317 @@ test('missing payment configuration permits read-only setup and display but neve
   assert.equal((await s.create()).status, 409)
   assert.equal((await s.pay()).status, 503)
   assert.equal(s.allocations(), 0)
+})
+
+for (const service of ['dr', 'acz', 'go'] as const)
+  test(
+    service +
+      ': compares both live US pools and chooses the cheaper in-stock capped pool',
+    async (t) => {
+      const s = await setup(t, service, true)
+      await s.pay()
+      await s.notify()
+      const purchases = s.calls.filter(
+        (u) => u.searchParams.get('action') === 'getNumberV2',
+      )
+      assert.equal(purchases.length, 1)
+      assert.equal(purchases[0].searchParams.get('country'), '12')
+      assert.equal(purchases[0].searchParams.get('maxPrice'), '1')
+      assert.deepEqual(
+        s.db
+          .prepare(
+            'SELECT country,state FROM sms_allocation_attempts WHERE order_id=?',
+          )
+          .all(s.id)
+          .map((r) => ({ ...r })),
+        [{ country: '12', state: 'received' }],
+      )
+      assert.equal((await s.order()).custom.sms.phone, '+12025550147')
+      assert.equal(
+        s.db
+          .prepare(
+            "SELECT amount_usd FROM sms_supplier_events WHERE order_id=? AND kind='purchase'",
+          )
+          .get(s.id)!.amount_usd,
+        '0.09',
+      )
+    },
+  )
+test('only explicit NO_NUMBERS falls back once; simultaneous queries cannot purchase either pool twice', async (t) => {
+  const s = await setup(t, 'dr', true)
+  s.controls.numberByCountry['12'] = 'NO_NUMBERS'
+  await s.pay()
+  await Promise.all([s.notify(), s.notify(), s.get(), s.get()])
+  assert.equal((await s.order()).custom.sms.state, 'waiting')
+  assert.deepEqual(
+    s.calls
+      .filter((u) => u.searchParams.get('action') === 'getNumberV2')
+      .map((u) => u.searchParams.get('country')),
+    ['12', '187'],
+  )
+  assert.deepEqual(
+    s.db
+      .prepare(
+        'SELECT country,state FROM sms_allocation_attempts WHERE order_id=? ORDER BY created_at,country',
+      )
+      .all(s.id)
+      .map((r) => ({ ...r })),
+    [
+      { country: '12', state: 'no_numbers' },
+      { country: '187', state: 'received' },
+    ],
+  )
+  await s.notify()
+  s.due()
+  await s.order()
+  assert.equal(s.allocations(), 2)
+})
+test('a lost cheaper-pool reply never buys from the alternative pool on retries or cron', async (t) => {
+  const s = await setup(t, 'dr', true)
+  s.controls.numberByCountry['12'] = 'timeout'
+  await s.pay()
+  await s.notify()
+  assert.equal((await s.order()).custom.sms.state, 'unknown')
+  for (let i = 0; i < 3; i++) {
+    s.due()
+    await s.notify()
+    await s.get()
+    await fulfillCustomOrder(s.env, s.id)
+  }
+  assert.equal(s.allocations(), 1)
+  assert.equal(
+    s.db
+      .prepare('SELECT state FROM sms_allocation_attempts WHERE order_id=?')
+      .get(s.id)!.state,
+    'unknown',
+  )
+})
+test('both pools sold out or above the cap cause no purchase and retain the paid order', async (t) => {
+  const s = await setup(t, 'dr', true)
+  s.controls.prices['12'].count = 0
+  s.controls.prices['187'].cost = 2
+  await s.pay()
+  await s.notify()
+  assert.equal(s.allocations(), 0)
+  const order = await s.order()
+  assert.equal(order.id, s.id)
+  assert.equal(order.paymentStatus, 'paid')
+  assert.equal(order.custom.sms.state, 'failed')
+})
+
+test('central SMS management is private, encrypted, read-only on checks and requires complete conditions to sell', async (t) => {
+  const s = await setup(t)
+  assert.equal((await s.request('/api/admin/sms')).status, 401)
+  let view = await (
+    await s.request('/api/admin/sms', undefined, s.admin)
+  ).json()
+  const save = async (patch: Record<string, unknown> = {}) =>
+    s.request(
+      '/api/admin/sms',
+      {
+        action: 'save',
+        version: view.version,
+        cnyPerUsd: '7.5',
+        projects: view.projects.map((p: any) => ({ ...p, maxPriceUsd: '1' })),
+        ...patch,
+      },
+      s.admin,
+    )
+  assert.equal(view.configured, false)
+  let catalog = await (await s.request('/api/catalog')).json()
+  assert.deepEqual(
+    catalog.sms.projects.map((p: any) => [p.name, p.priceCents, p.enabled]),
+    [
+      ['codex', 1580, false],
+      ['Claude', 1980, false],
+      ['Google/Gmail', 2580, false],
+    ],
+  )
+  assert.equal(
+    (
+      await save({
+        projects: view.projects.map((p: any) => ({
+          ...p,
+          maxPriceUsd: '1',
+          selling: true,
+        })),
+      })
+    ).status,
+    409,
+  )
+  const saved = await save({ apiKey })
+  assert.equal(saved.status, 200, await saved.clone().text())
+  view = await saved.json()
+  assert.equal(view.configured, true)
+  assert.equal(JSON.stringify(view).includes(apiKey), false)
+  assert.ok(
+    !String(
+      s.db
+        .prepare("SELECT api_secret FROM sms_settings WHERE id='grizzly'")
+        .get()!.api_secret,
+    ).includes(apiKey),
+  )
+  const checked = await s.request(
+    '/api/admin/sms',
+    { action: 'check', version: view.version },
+    s.admin,
+  )
+  assert.equal(checked.status, 200)
+  view = await checked.json()
+  assert.equal(view.credentialVerified, true)
+  assert.equal(
+    view.projects.every((p: any) => p.pools.length === 2),
+    true,
+  )
+  assert.equal(s.allocations(), 0)
+  const enabled = await save({
+    projects: view.projects.map((p: any) => ({
+      ...p,
+      maxPriceUsd: '1',
+      selling: true,
+    })),
+  })
+  assert.equal(enabled.status, 200, await enabled.clone().text())
+  view = await enabled.json()
+  catalog = await (await s.request('/api/catalog')).json()
+  assert.equal(
+    catalog.sms.projects.every((p: any) => p.enabled),
+    true,
+  )
+  const canonical = await s.request(
+    '/api/orders',
+    {
+      plan: SMS_PRODUCT_IDS.dr,
+      email: 'canonical@example.test',
+      key: crypto.randomUUID(),
+      expectedPrice: 1580,
+    },
+    s.owner,
+  )
+  assert.equal(canonical.status, 201, await canonical.clone().text())
+  const id = (await canonical.json()).order.id
+  assert.equal(s.allocations(), 0)
+  assert.equal(
+    (
+      await s.request(
+        '/api/orders/' + id + '/payment',
+        { action: 'create' },
+        s.owner,
+      )
+    ).status,
+    200,
+  )
+  // Capture the cap on this immutable order; fixture checks always require maxPrice=1.
+  assert.equal(
+    (await s.notify({ out_trade_no: id, total_amount: '15.80' })).status,
+    200,
+  )
+  assert.equal(s.allocations(), 1)
+  assert.equal(
+    (await s.request('/api/orders/' + id, undefined, await s.buyer())).status,
+    404,
+  )
+  const managed = await (
+    await s.request('/api/admin/sms?orders=1', undefined, s.admin)
+  ).json()
+  assert.ok(managed.orders.some((o: any) => o.id === id))
+  assert.equal(
+    (
+      await s.request(
+        '/api/admin/sms',
+        {
+          action: 'save',
+          version: 0,
+          cnyPerUsd: '7.5',
+          projects: view.projects,
+        },
+        s.admin,
+      )
+    ).status,
+    409,
+  )
+  const canonicalRow = await s.request(
+    '/api/admin/my-shop/products',
+    { ...grizzlyProduct('dr'), id: SMS_PRODUCT_IDS.dr, status: 'listed' },
+    s.admin,
+  )
+  assert.equal(canonicalRow.status, 409)
+  s.env.ALIPAY_APP_PRIVATE_KEY = ''
+  catalog = await (await s.request('/api/catalog')).json()
+  assert.equal(
+    catalog.sms.projects.every((p: any) => !p.enabled),
+    true,
+  )
+  assert.equal(
+    (
+      await s.request(
+        '/api/orders',
+        {
+          plan: SMS_PRODUCT_IDS.dr,
+          email: 'blocked@example.test',
+          key: crypto.randomUUID(),
+          expectedPrice: 1580,
+        },
+        s.owner,
+      )
+    ).status,
+    409,
+  )
+  assert.equal(s.allocations(), 1)
+})
+test('supplier wallet refund is evidence-gated and separate from the unchanged buyer payment ledger', async (t) => {
+  const s = await setup(t)
+  await s.pay()
+  await s.notify()
+  const action = (extra: Record<string, unknown> = {}) =>
+    s.request(
+      '/api/admin/my-shop/orders/' + s.id,
+      {
+        action: 'confirm-supplier-refund',
+        note: 'checked synthetic provider ledger',
+        reference: 'fixture-wallet-refund',
+        amountUsd: '0.13',
+        version: 0,
+        ...extra,
+      },
+      s.admin,
+    )
+  assert.equal((await action()).status, 409)
+  await s.request(
+    '/api/orders/' + s.id + '/custom-action',
+    { action: 'stop-sms', version: (await s.order()).version },
+    s.owner,
+  )
+  s.due()
+  await s.order()
+  assert.ok(
+    s.db
+      .prepare(
+        'SELECT supplier_cancelled_at FROM grizzly_activations WHERE order_id=?',
+      )
+      .get(s.id)!.supplier_cancelled_at,
+  )
+  assert.equal(
+    (await action({ amountUsd: '0.14', version: (await s.order()).version }))
+      .status,
+    400,
+  )
+  const version = (await s.order()).version
+  const results = await Promise.all([action({ version }), action({ version })])
+  assert.equal(results.filter((r) => r.status === 200).length, 1)
+  assert.equal(
+    s.db
+      .prepare(
+        "SELECT COUNT(*) n FROM sms_supplier_events WHERE order_id=? AND kind='refund-confirmed'",
+      )
+      .get(s.id)!.n,
+    1,
+  )
+  const order = await s.order()
+  assert.equal(order.paymentStatus, 'paid')
+  assert.equal(
+    s.db.prepare('SELECT refunded_cents FROM orders WHERE id=?').get(s.id)!
+      .refunded_cents,
+    0,
+  )
 })

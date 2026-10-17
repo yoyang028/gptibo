@@ -7,7 +7,7 @@ export const STOREFRONT_PRODUCTS = [
   { id: 'claude', name: 'Claude', upcoming: true },
   { id: 'codex-credits', name: 'Codex 额度' },
   { id: 'grok', name: 'Grok', upcoming: true },
-  { id: 'codex-sms', name: 'Codex 接码' },
+  { id: 'codex-sms', name: 'SMS接码' },
   { id: 'student-verification', name: 'Plus 学生认证' },
   { id: 'muse', name: 'Muse AI' },
 ] as const

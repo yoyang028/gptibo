@@ -1,3 +1,5 @@
+import { SmsFlowPreview } from './sms-flow-preview'
+import type { SmsPublicCatalog } from '../../shared/grizzly-sms'
 import { ProductArtwork } from './product-artwork'
 import { ProductServiceScene } from './product-service-scene'
 import type { ProductArtworkMap } from '../../shared/product-artwork'
@@ -39,14 +41,14 @@ function CatalogSkeleton() {
   </div>
 }
 
-export function ProductCatalog({ onHelp, onOrders, onNavigate, offers, catalogReady, error, productOrder = [], hiddenProductIds = [], products = [], productArtwork = {} }: { productArtwork?: ProductArtworkMap; products?: ShopProduct[]; catalogReady: boolean; error?: string; productOrder?: readonly string[]; hiddenProductIds?: readonly string[]; onHelp: () => void; onOrders: () => void; onNavigate: (page: string) => void; offers: CatalogPlan[] }) {
+export function ProductCatalog({ smsCatalog, onHelp, onOrders, onNavigate, offers, catalogReady, error, productOrder = [], hiddenProductIds = [], products = [], productArtwork = {} }: { smsCatalog?: SmsPublicCatalog; productArtwork?: ProductArtworkMap; products?: ShopProduct[]; catalogReady: boolean; error?: string; productOrder?: readonly string[]; hiddenProductIds?: readonly string[]; onHelp: () => void; onOrders: () => void; onNavigate: (page: string) => void; offers: CatalogPlan[] }) {
   const { t } = useStorefrontI18n()
   const [category, setCategory] = useState('all')
   const [query, setQuery] = useState('')
   const [interest, setInterest] = useState<InterestProduct>()
   const [interestOpen, setInterestOpen] = useState(false)
   const plans = catalogSubscriptionPlans(offers)
-  const productGroups = groupShopProducts(products)
+  const productGroups = groupShopProducts(products).filter(g => g.id !== 'codex-sms')
   const startingPrice = catalogStartingPrice(offers)
   const matches = (group: string, text: string) => (category === 'all' || category === group) && text.toLowerCase().includes(query.trim().toLowerCase())
   const chatgpt = matches('ai', 'ChatGPT Plus Pro')
@@ -57,8 +59,10 @@ export function ProductCatalog({ onHelp, onOrders, onNavigate, offers, catalogRe
   const xOffers = offers.filter(p => p.product_id === 'x-premium')
   const xAvailable = xOffers.some(p => p.enabled)
   const xOffer = [...xOffers].sort((a, b) => Number(Boolean(b.enabled)) - Number(Boolean(a.enabled)) || a.price_cents - b.price_cents)[0]
-  const sms = matches('tool', 'Codex 接码 SMS verification')
-  const smsOffer = offers.find(p => p.id === 'codex-sms-once')
+  const sms = matches('tool', 'SMS接码 codex Claude Google Gmail 美国 手机号 短信 verification')
+  const smsProjects = smsCatalog?.projects.filter(p => p.visible)
+  const smsAvailable = smsProjects?.some(p => p.enabled)
+  const smsPrice = smsProjects?.length ? Math.min(...smsProjects.map(p => p.priceCents)) : 1580
   const navigate = (event: MouseEvent<HTMLAnchorElement>, page: string) => {
     if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault(); onNavigate(page)
@@ -83,7 +87,7 @@ export function ProductCatalog({ onHelp, onOrders, onNavigate, offers, catalogRe
     { id: "x-premium", node: xgift && <article className="store-product membership-product x-product"><div className="store-product-heading"><h3>X Premium</h3><span>{t(offers.length > 0 && !xAvailable ? '暂停售卖' : '会员订阅')}</span></div><p className="store-spec">{t('3 / 6 个月 · 你的账号，继续精彩')}</p><ProductArtwork config={productArtwork['x-premium']} name="X Premium" caption="Premium" fallback={xOffers.length > 1 ? <SubscriptionDeck brand="X Premium" productId="x-premium" plans={xOffers.map(p => ({ id: p.id, name: p.id === 'x-premium-3m' ? '3 个月' : '6 个月', price: p.price_cents / 100, unit: '份' }))} /> : <XPremiumScene />} /><div className="store-product-bottom"><span className="store-starting-price">{xOffer ? <>¥{formatCatalogPrice(xOffer.price_cents / 100)}<small>{t(' 起')}</small></> : <small>{t('价格加载中')}</small>}</span><a className="store-action" href={storefrontHref('product/x-premium')} onClick={e => navigate(e, 'product/x-premium')}>{t(xAvailable ? '选择套餐' : '查看详情')}</a></div></article> },
     { id: "gmail", node: gmail && <article className="store-product"><div className="store-product-heading"><h3>{t('Gmail 账号')}</h3><span>{t('美国个人白号')}</span></div><p className="store-spec">{t('带 2FA · 账号资料自动邮件交付')}</p><ProductArtwork config={productArtwork.gmail} name="Gmail" fallback={<div className="store-mail-art" aria-hidden="true"><div className="store-envelope" /><span className="store-envelope-label"><Mail size={16} />Gmail</span></div>} /><div className="store-product-bottom"><span className="store-starting-price">{offers.find(p => p.id === 'gmail-account') ? <>¥{formatCatalogPrice(offers.find(p => p.id === 'gmail-account')!.price_cents / 100)}<small>{t(' / 个')}</small></> : <small>{t('价格加载中')}</small>}</span><a className="store-action" href={storefrontHref('product/gmail')} onClick={e => navigate(e, 'product/gmail')}>{t(offers.some(p => p.id === 'gmail-account' && p.enabled) ? '查看商品' : '查看详情')}</a></div></article> },
     ...upcoming.map(product => ({ id: product.id, compact: true, node: <Button key={product.id} variant="ghost" className="store-compact" onClick={() => { setInterest(product); setInterestOpen(true) }}><ProductMark small productId={product.id} /><span><strong>{product.name}</strong><small>{t('待上架')}</small></span><ChevronRight size={16} /></Button> })),
-    { id: 'codex-sms', node: sms && <article className="store-product"><div className="store-product-heading"><h3>{t('Codex 接码')}</h3>{smsOffer && !smsOffer.enabled && <span>{t('暂停售卖')}</span>}</div><p className="store-spec">{t('按次服务 · 在订单中查看接码结果')}</p><ProductArtwork config={productArtwork['codex-sms']} name="Codex 接码" fallback={<ProductServiceScene productId="codex-sms" name="Codex 接码" duration="单次接码" />} /><div className="store-product-bottom">{smsOffer && <span className="store-starting-price">¥{formatCatalogPrice(smsOffer.price_cents / 100)}<small> / 次</small></span>}<a className="store-action" href={storefrontHref('product/codex-sms')} onClick={e=>navigate(e,'product/codex-sms')}>{t('查看详情')}</a></div></article> },
+    { id: 'codex-sms', node: sms && smsProjects?.length !== 0 && <article className="store-product store-sms-product" data-product-group="codex-sms"><div className="store-product-heading"><h3>SMS接码</h3><span>{smsAvailable ? '单次短信' : '可浏览 · 未开售'}</span></div><p className="store-spec">codex · Claude · Google/Gmail · 美国单次短信</p><SmsFlowPreview compact/><div className="store-product-bottom"><span className="store-starting-price">¥{formatCatalogPrice(smsPrice / 100)}<small> 起 / 次</small></span><a className="store-action" href={storefrontHref('product/codex-sms')} onClick={e=>navigate(e,'product/codex-sms')}>选择项目</a></div></article> },
   ]
   const groups: typeof cards[] = []
   for (const id of [...new Set([...productOrder,...normalizeProductOrder(productOrder),...productGroups.map(g=>g.id)])]) {

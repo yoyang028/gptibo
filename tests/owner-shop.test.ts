@@ -617,7 +617,7 @@ test('publishing validates all detail fields and keeps drafts off the storefront
     }),
   )
   const publicDraftCatalog = await (await s.request('/api/catalog')).json()
-  assert.equal(publicDraftCatalog.products.length, 0)
+  assert.equal(publicDraftCatalog.products.some((p: {id:string}) => p.id === draft.id), false)
   assert.equal(
     publicDraftCatalog.plans.some((p: { id: string }) => p.id === draft.id),
     false,
@@ -684,7 +684,7 @@ test('listed product groups expose specifications without enabling collection or
     }),
   )
   const catalog = await (await s.request('/api/catalog')).json()
-  assert.equal(catalog.products.length, 3)
+  assert.equal(catalog.products.filter((p: {id:string}) => [first.id,second.id,codex.id].includes(p.id)).length, 3)
   assert.equal(catalog.checkoutEnabled, false)
   assert.deepEqual(
     catalog.plans

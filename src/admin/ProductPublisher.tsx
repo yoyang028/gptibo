@@ -32,8 +32,7 @@ import {
 import '@/components/shop-products.css'
 import { GrizzlyProductFields } from './GrizzlyProductFields'
 import {
-  grizzlyProduct,
-  GRIZZLY_SERVICES,
+  SMS_PRODUCT_IDS,
   GRIZZLY_ORIGIN,
   GRIZZLY_USA,
 } from '../../shared/grizzly-sms'
@@ -1192,24 +1191,11 @@ export default function ProductPublisher({
           发布新商品
         </Button>
       </div>
-      <div className="owner-publisher-toolbar" aria-label="美国接码商品模板">
-        <span>美国单次接码：</span>
-        {Object.entries(GRIZZLY_SERVICES).map(([code, name]) => (
-          <Button
-            key={code}
-            variant="outline"
-            onClick={() =>
-              setEdit(grizzlyProduct(code as keyof typeof GRIZZLY_SERVICES))
-            }
-          >
-            添加 {name}
-          </Button>
-        ))}
-      </div>
+      <p>美国单次短信项目请在 <a href="/admin?view=sms">接码管理</a> 集中配置与发布。</p>
       {error && <p role="alert">{error}</p>}
       {loading && !data && <p>正在读取商品…</p>}
       <div className="owner-product-list">
-        {data?.products.map((p) => (
+        {data?.products.filter(p => !(Object.values(SMS_PRODUCT_IDS) as string[]).includes(p.id)).map((p) => (
           <article
             className="owner-product-row"
             data-product-id={p.id}

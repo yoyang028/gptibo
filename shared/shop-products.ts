@@ -6,6 +6,7 @@ import {
 
 export type ShopDelivery = 'manual' | 'api'
 export const SHOP_PRODUCT_GROUPS = {
+  'codex-sms': 'SMS接码',
   claude: 'Claude',
   'codex-credits': 'Codex 额度',
   'student-verification': 'Plus 学生认证',
@@ -167,7 +168,7 @@ export function productProblems(
   if (
     product.api?.provider === 'grizzly' &&
     product.delivery === 'api' &&
-    product.status !== 'draft' &&
+    (requirePublished || product.status === 'published') &&
     (!validGrizzlyConfig(product.api) || product.payment?.provider !== 'alipay')
   )
     errors.push('灰熊美国接码项目、美元采购上限、成本汇率与支付宝自动收款')
@@ -280,7 +281,7 @@ export function productProblems(
       purchaseNote: '购买须知与售后范围',
       deliveryInstructions: '交付说明',
     }))
-      if (!String(product[key as keyof ShopProduct] ?? '').trim())
+      if (!(key === 'image' && product.api?.provider === 'grizzly') && !String(product[key as keyof ShopProduct] ?? '').trim())
         errors.push(label)
     if (!product.features?.length) errors.push('至少一项商品特点')
     if (!product.steps?.length) errors.push('至少一个交付步骤')

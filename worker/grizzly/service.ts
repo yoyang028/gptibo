@@ -10,6 +10,7 @@ import { getOrder, type Order } from '../order-state.ts'
 import { unseal } from '../product-secrets.ts'
 import { alipayConfigured } from '../payments/providers.ts'
 import { GrizzlyClient, GrizzlyError } from './client.ts'
+import { allocateFromPools, poolQuotes } from './pools.ts'
 
 type Activation = {
   order_id: string
@@ -17,6 +18,10 @@ type Activation = {
   phone: string | null
   code: string | null
   cost_usd: string | null
+  country: string | null
+  supplier_cancelled_at: number | null
+  supplier_refund_usd: string | null
+  supplier_refund_confirmed_at: number | null
   verified: number
   state: SmsView['state']
   attempted: number
@@ -92,7 +97,16 @@ export async function smsSummary(
 }
 export async function smsAdminInfo(env: Env, id: string) {
   const row = await find(env, id)
-  return row ? { activationId: row.activation_id, costUsd: row.cost_usd } : {}
+  return row
+    ? {
+        activationId: row.activation_id,
+        costUsd: row.cost_usd,
+        country: row.country,
+        supplierCancelledAt: row.supplier_cancelled_at,
+        supplierRefundUsd: row.supplier_refund_usd,
+        supplierRefundConfirmedAt: row.supplier_refund_confirmed_at,
+      }
+    : {}
 }
 // The administrator checks the provider ledger before releasing an uncertain
 // order for normal refund review. Known activations must first close upstream.
@@ -148,9 +162,20 @@ export async function confirmSmsClosed(
     await db.batch([
       db
         .prepare(
-          "UPDATE grizzly_activations SET state='cancelled',error=? WHERE order_id=? AND lease_token=?",
+          "UPDATE grizzly_activations SET state='cancelled',error=?,supplier_cancelled_at=CASE WHEN activation_id IS NOT NULL THEN COALESCE(supplier_cancelled_at,?) ELSE supplier_cancelled_at END WHERE order_id=? AND lease_token=?",
         )
-        .bind(message, order.id, token),
+        .bind(message, now, order.id, token),
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO sms_supplier_events(id,order_id,kind,reference,note,created_at) SELECT ?,order_id,'cancel',activation_id,?,? FROM grizzly_activations WHERE order_id=? AND lease_token=? AND activation_id IS NOT NULL",
+        )
+        .bind(
+          crypto.randomUUID(),
+          note + '；核对记录：' + reference.trim(),
+          now,
+          order.id,
+          token,
+        ),
       db
         .prepare(
           "UPDATE shop_order_details SET supplier_state='failed',supplier_error=? WHERE order_id=? AND EXISTS(SELECT 1 FROM grizzly_activations WHERE order_id=? AND lease_token=?)",
@@ -219,6 +244,12 @@ async function state(
       'UPDATE grizzly_activations SET state=?,error=?,next_poll_at=? WHERE order_id=? AND lease_token=?',
     ).bind(next, error, now + 5000, id, token),
     env.INTEREST_DB.prepare(
+      "UPDATE grizzly_activations SET supplier_cancelled_at=COALESCE(supplier_cancelled_at,?) WHERE order_id=? AND lease_token=? AND state='cancelled' AND activation_id IS NOT NULL",
+    ).bind(now, id, token),
+    env.INTEREST_DB.prepare(
+      "INSERT OR IGNORE INTO sms_supplier_events(id,order_id,kind,reference,note,created_at) SELECT ?,order_id,'cancel',activation_id,'上游确认取消；余额退款另行核对',? FROM grizzly_activations WHERE order_id=? AND lease_token=? AND state='cancelled' AND activation_id IS NOT NULL",
+    ).bind(crypto.randomUUID(), now, id, token),
+    env.INTEREST_DB.prepare(
       'UPDATE shop_order_details SET supplier_state=?,supplier_error=?,last_checked_at=? WHERE order_id=? AND EXISTS(SELECT 1 FROM grizzly_activations WHERE order_id=? AND lease_token=?)',
     ).bind(
       success
@@ -284,27 +315,110 @@ export async function fulfillGrizzly(
     const client = new GrizzlyClient(env, await unseal(env, sealed)),
       api = product.api!
     if (!row.activation_id) {
-      // This marker commits BEFORE the only non-idempotent supplier call.
-      if (row.attempted) {
+      const previous = (
+        await db
+          .prepare(
+            'SELECT country,state FROM sms_allocation_attempts WHERE order_id=?',
+          )
+          .bind(id)
+          .all<{ country: string; state: string }>()
+      ).results
+      if (
+        row.attempted &&
+        (!previous.length || previous.some((a) => a.state !== 'no_numbers'))
+      ) {
         await state(env, id, token, 'unknown')
         return
       }
       if (env.GRIZZLY_SMS_ENABLED !== 'true') return
+      const quotes =
+        api.sms!.country === 'auto-us'
+          ? await poolQuotes(client, api.productCode)
+          : [
+              {
+                country: api.sms!.country,
+                priceUsd: api.sms!.maxPriceUsd,
+                count: 1,
+                error: null,
+              },
+            ]
+      if (api.sms!.country === 'auto-us') {
+        const balance = await client.balance()
+        const cheapest = quotes
+          .filter((q) => q.priceUsd && q.count && q.count > 0)
+          .map((q) => decimalUnits(q.priceUsd))
+          .sort((a, b) => a - b)[0]
+        if (cheapest !== undefined && decimalUnits(balance) < cheapest)
+          throw new GrizzlyError('NO_BALANCE', true)
+      }
       await db
         .prepare(
-          "UPDATE grizzly_activations SET attempted=1,state='allocating' WHERE order_id=? AND lease_token=? AND attempted=0 AND EXISTS(SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND refund_hold=0 AND refunded_cents=0 AND redemption_blocked=0 AND status IN ('session','processing'))",
+          "UPDATE grizzly_activations SET attempted=1,state='allocating' WHERE order_id=? AND lease_token=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND refund_hold=0 AND refunded_cents=0 AND redemption_blocked=0 AND status IN ('session','processing'))",
         )
         .bind(id, token, id)
         .run()
-      if (
-        !(await find(env, id))?.attempted ||
-        !eligible(await getOrder(env, id))
-      )
-        return
-      const allocated = await client.allocate(
+      if (!eligible(await getOrder(env, id))) return
+      const allocated = await allocateFromPools(
+        client,
         api.productCode,
-        api.sms!.country,
         api.sms!.maxPriceUsd,
+        quotes,
+        {
+          attempt: async (country, quote) => {
+            if (
+              env.GRIZZLY_SMS_ENABLED !== 'true' ||
+              !eligible(await getOrder(env, id))
+            )
+              throw new GrizzlyError('DISABLED', true)
+            const now = Date.now()
+            await db
+              .prepare(
+                "INSERT INTO sms_allocation_attempts(order_id,country,state,quoted_usd,max_price_usd,created_at,updated_at) SELECT ?,?,'requested',?,?,?,? WHERE EXISTS(SELECT 1 FROM grizzly_activations WHERE order_id=? AND lease_token=?)",
+              )
+              .bind(
+                id,
+                country,
+                quote,
+                api.sms!.maxPriceUsd,
+                now,
+                now,
+                id,
+                token,
+              )
+              .run()
+            if (
+              !(await db
+                .prepare(
+                  'SELECT 1 FROM grizzly_activations WHERE order_id=? AND lease_token=?',
+                )
+                .bind(id, token)
+                .first())
+            )
+              throw new GrizzlyError('NETWORK')
+            await db
+              .prepare(
+                'UPDATE grizzly_activations SET country=? WHERE order_id=? AND lease_token=?',
+              )
+              .bind(country, id, token)
+              .run()
+          },
+          result: async (country, result, remoteId) => {
+            await db
+              .prepare(
+                'UPDATE sms_allocation_attempts SET state=?,activation_id=?,updated_at=? WHERE order_id=? AND country=?',
+              )
+              .bind(result, remoteId ?? null, Date.now(), id, country)
+              .run()
+            if (remoteId)
+              await db
+                .prepare(
+                  'UPDATE grizzly_activations SET activation_id=? WHERE order_id=? AND lease_token=?',
+                )
+                .bind(remoteId, id, token)
+                .run()
+          },
+        },
+        previous.map((a) => a.country),
       )
       // Persist the supplier identity even if its cost/country needs review.
       let reportedUsd: string | null = null
@@ -329,11 +443,24 @@ export async function fulfillGrizzly(
           token,
         )
         .run()
+      await db
+        .prepare(
+          "INSERT OR IGNORE INTO sms_supplier_events(id,order_id,kind,amount_usd,reference,note,created_at) VALUES (?,?,'purchase',?,?,?,?)",
+        )
+        .bind(
+          crypto.randomUUID(),
+          id,
+          reportedUsd,
+          allocated.id,
+          '号码池 ' + allocated.selectedCountry,
+          Date.now(),
+        )
+        .run()
       let cost: number
       try {
         if (
           allocated.currency !== 840 ||
-          allocated.country !== api.sms!.country ||
+          allocated.country !== allocated.selectedCountry ||
           !/^\+1\d{10}$/.test(allocated.phone) ||
           decimalUnits(allocated.cost) > decimalUnits(api.sms!.maxPriceUsd)
         )

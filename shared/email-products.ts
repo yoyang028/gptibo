@@ -10,11 +10,11 @@ export function emailProduct(plan: string) {
 }
 export function productNameForPlan(plan: string) {
   if(plan.startsWith('custom-'))return '自营商品'
-  return isXGiftPlan(plan) ? 'X Premium' : emailProduct(plan)?.name ?? (plan === 'codex-sms-once' ? 'Codex 接码' : 'ChatGPT')
+  return isXGiftPlan(plan) ? 'X Premium' : emailProduct(plan)?.name ?? (plan === 'codex-sms-once' ? 'SMS接码' : 'ChatGPT')
 }
 export function productNameForId(id: string) {
   if(id.startsWith('custom-'))return '自营商品'
-  return ({ 'x-premium': 'X Premium', chatgpt: 'ChatGPT', 'codex-sms': 'Codex 接码', 'codex-credits': 'Codex 额度', claude: 'Claude', grok: 'Grok', 'student-verification': 'Plus 学生认证', muse: 'Muse AI', gemini: 'Gemini Pro', duolingo: '多邻国', gmail: 'Gmail 账号' } as Record<string, string>)[id] ?? id
+  return ({ 'x-premium': 'X Premium', chatgpt: 'ChatGPT', 'codex-sms': 'SMS接码', 'codex-credits': 'Codex 额度', claude: 'Claude', grok: 'Grok', 'student-verification': 'Plus 学生认证', muse: 'Muse AI', gemini: 'Gemini Pro', duolingo: '多邻国', gmail: 'Gmail 账号' } as Record<string, string>)[id] ?? id
 }
 export type DeliverySummary = { automatic?: boolean; value?: string; instructions?: string; kind: 'link' | 'cdk'; status: 'waiting' | 'draft' | 'sending' | 'unknown' | 'sent'; sentAt: number | null }
 export type AdminDelivery = DeliverySummary & { value: string; instructions: string; version: number; firstAttemptAt: number | null; providerId: string | null; preview: { subject: string; html: string; text: string } | null }

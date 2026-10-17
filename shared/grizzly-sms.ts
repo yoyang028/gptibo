@@ -3,11 +3,41 @@ import type { ShopProduct } from './shop-products.ts'
 export const GRIZZLY_ORIGIN = 'https://api.grizzlysms.com'
 export const GRIZZLY_USA = '187'
 export const GRIZZLY_SERVICES = {
-  dr: 'AI 聊天',
+  dr: 'codex',
   acz: 'Claude',
-  go: 'Google / Gmail',
+  go: 'Google/Gmail',
 } as const
 export const GRIZZLY_RETAIL_CENTS = { dr: 1580, acz: 1980, go: 2580 } as const
+export const SMS_PRODUCT_IDS = {
+  dr: 'custom-53534d53000040008000000000000001',
+  acz: 'custom-53534d53000040008000000000000002',
+  go: 'custom-53534d53000040008000000000000003',
+} as const
+export const GRIZZLY_POOLS = { '187': '美国', '12': '美国（虚拟）' } as const
+export type SmsProjectSettings = {
+  service: GrizzlyService
+  priceCents: number
+  maxPriceUsd: string
+  visible: boolean
+  selling: boolean
+}
+export type SmsPoolQuote = {
+  country: string
+  priceUsd: string | null
+  count: number | null
+  error: string | null
+}
+export type SmsPublicCatalog = {
+  projects: {
+    service: GrizzlyService
+    name: string
+    planId: string
+    priceCents: number
+    visible: boolean
+    enabled: boolean
+    purchaseNote: string
+  }[]
+}
 export type GrizzlyService = keyof typeof GRIZZLY_SERVICES
 export type GrizzlyConfig = {
   country: string
@@ -18,6 +48,10 @@ export type SmsView = {
   /** Only populated by the authenticated administrator order response. */
   activationId?: string | null
   costUsd?: string | null
+  country?: string | null
+  supplierCancelledAt?: number | null
+  supplierRefundUsd?: string | null
+  supplierRefundConfirmedAt?: number | null
   state:
     | 'ready'
     | 'allocating'
@@ -62,7 +96,8 @@ export function validGrizzlyConfig(api: ShopProduct['api']): boolean {
       api &&
       api.baseUrl === GRIZZLY_ORIGIN &&
       Object.hasOwn(GRIZZLY_SERVICES, api.productCode) &&
-      api.sms?.country === GRIZZLY_USA &&
+      api.sms &&
+      ['187', '12', 'auto-us'].includes(api.sms?.country ?? '') &&
       grizzlyCostCents(api.sms.maxPriceUsd, api.sms.cnyPerUsd) ===
         api.maxCostCents,
     )
@@ -74,6 +109,7 @@ export function grizzlyProduct(service: GrizzlyService): ShopProduct {
   const name = GRIZZLY_SERVICES[service]
   return {
     id: '',
+    groupId: 'codex-sms',
     version: 0,
     status: 'draft',
     name: `${name} · 美国接码`,
@@ -135,7 +171,7 @@ export function grizzlyProduct(service: GrizzlyService): ShopProduct {
       productCode: service,
       configured: false,
       verified: false,
-      sms: { country: GRIZZLY_USA, maxPriceUsd: '', cnyPerUsd: '' },
+      sms: { country: 'auto-us', maxPriceUsd: '', cnyPerUsd: '' },
     },
   }
 }

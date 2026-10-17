@@ -1,4 +1,5 @@
 import test, { type TestContext } from 'node:test'
+import { SMS_PRODUCT_IDS } from '../shared/grizzly-sms.ts'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
@@ -180,7 +181,7 @@ test('confirmed application provisions once using current default prices, initia
   const partner = s.db.prepare('SELECT * FROM partners').get()!
   assert.equal(app.email, 'new@example.test'); assert.equal(app.wechat, 'Wechat_123'); assert.equal(app.qq, '12345678')
   assert.equal(app.partner_id, partner.id); assert.match(String(partner.slug), /^[A-Z0-9]{6}$/)
-  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM partner_prices').get()!.n, s.db.prepare('SELECT COUNT(*) n FROM catalog_plans').get()!.n)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM partner_prices').get()!.n, s.db.prepare('SELECT COUNT(*) n FROM catalog_plans WHERE id NOT IN (?,?,?)').get(...Object.values(SMS_PRODUCT_IDS))!.n)
   assert.equal(s.db.prepare("SELECT cost_cents FROM partner_prices WHERE plan='plus'").get()!.cost_cents, 10000)
   assert.equal(s.db.prepare('SELECT wechat FROM telegram_partner_sessions').get()!.wechat, '')
   const contacts = s.db.prepare('SELECT wechat,qq,email,version FROM support_contacts WHERE partner_id=?').get(partner.id)!

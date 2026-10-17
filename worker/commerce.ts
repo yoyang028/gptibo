@@ -1,3 +1,4 @@
+import { SMS_PRODUCT_IDS } from '../shared/grizzly-sms.ts'
 import { isDeliverySupplierPlan } from './delivery_supplier/client.ts'
 import { isXGiftPlan, xUsername } from '../shared/xgift-products.ts'
 import { recoverXGift, fulfillXGift, preflightXGift, xgiftCheckoutEnabled, xgiftSnapshot, xgiftSnapshotStatement, xgiftSummary } from './xgift/service.ts'
@@ -35,6 +36,7 @@ import { quefaPurchaseNote } from '../shared/quefa-gpt-products.ts'
 import { artworkRoute, publicArtwork } from './product-artwork.ts'
 import { couponQuote, couponReservation } from './shop-coupons.ts'
 import { smsAdminInfo, smsRefundProblem } from './grizzly/service.ts'
+import { smsManagement, smsPublicCatalog } from './grizzly/management.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
 type OrderPartnerSource = { id: string; slug: string; name: string; email: string; wechat: string; qq: string }
@@ -84,6 +86,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     if (path.startsWith('/api/partner/')) return await partnerRoutes(request, env, url)
     if (path.startsWith('/api/admin/')) {
       await requireAdmin(request, env)
+      if (path === '/api/admin/sms') return await smsManagement(request,env,url)
       if (path.startsWith('/api/admin/my-shop/products')) return await shopProductRoutes(request,env,url)
       if (path.startsWith('/api/admin/my-shop/orders')) {
         const customMatch=path.match(/^\/api\/admin\/my-shop\/orders\/([A-Z0-9-]+)$/)
@@ -133,13 +136,14 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       ])
       const owner = partner ? null : await ownerPublicSettings(env)
       const products = partner ? [] : (await shopProducts(env)).filter(p=>!owner?.hiddenProductIds.includes(p.id)&&!owner?.hiddenProductIds.includes(shopProductDisplayId(p)))
+      const sms = partner ? {projects:[]} : await smsPublicCatalog(env)
       const productArtwork = partner ? {} : await publicArtwork(env, (catalog.plans as Plan[]).map(p=>p.product_id).filter(id=>!owner?.hiddenProductIds.includes(id) && (!customProductId.test(id) || products.some(p=>p.id===id))))
       const coupons=partner?[]:(await env.INTEREST_DB.prepare('SELECT settings FROM shop_coupons').all<{settings:string}>()).results.map(r=>JSON.parse(r.settings)).filter(c=>c.active&&Date.parse(c.starts_at)<=Date.now()&&Date.parse(c.ends_at)>Date.now())
       // Storefront prices are configured retail prices, independent of supplier latency.
       const offers = (catalog.plans as Plan[]).filter(plan=>!customProductId.test(plan.id)||products.some(p=>p.id===plan.id)).map(plan => ({ ...plan,purchase_note:quefaPurchaseNote(mapped[plan.id],plan.purchase_note),has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId==='platform'&&t.plan===plan.id)), enabled: plan.enabled && (
         customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.status==='published'&&p.stock!==0) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
       ) ? 1 : 0 }))
-      return json({ ...catalog,...owner, products, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
+      return json({ ...catalog,...owner, products, sms: {...sms,projects:sms.projects.map(p=>({...p,enabled:owner?.active!==false && p.enabled && Boolean(offers.find(o=>o.id===p.planId)?.enabled)}))}, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
     }
     if (path === '/api/orders/client' && method === 'POST') {
       await body(request)
@@ -186,6 +190,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         return json({ order: await customerOrder(env, existing) })
       }
       const emailDelivery = Boolean(emailProduct(data.plan))
+      if (data.plan === 'codex-sms-once' && env.ORDER_TESTING_ENABLED !== 'true') throw new ApiError('请选择 SMS 接码中的当前项目；历史订单仍可查询。',409)
       if (!partner) {const owner=await ownerShop(env);if(!owner.active)throw new ApiError('店铺暂未营业。',409);const p=await env.INTEREST_DB.prepare('SELECT product_id FROM catalog_plans WHERE id=?').bind(data.plan).first<{product_id:string}>();if(p&&owner.hiddenProductIds.includes(p.product_id))throw new ApiError('该商品已下架。',409)}
       const live = isXGiftPlan(data.plan) ? xgiftCheckoutEnabled(env) : data.plan === 'gmail-account' ? gmailCheckoutEnabled(env) : isDeliverySupplierPlan(data.plan) ? delivery_supplierCheckoutEnabled(env) : emailDelivery ? emailCheckoutEnabled(env) : supplierCheckoutEnabled(env)
       if (emailDelivery && !live) throw new ApiError('邮件交付商品暂未开放购买。', 409)
@@ -368,9 +373,10 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
       return json({ order: await customerOrder(env, next) })
     }
   }
-  if (path === '/api/admin/plans' && method === 'GET') return json({ plans: await plans(env) })
+  if (path === '/api/admin/plans' && method === 'GET') return json({ plans: (await plans(env)).filter(p => !(Object.values(SMS_PRODUCT_IDS) as string[]).includes(p.id)) })
   const planMatch = path.match(/^\/api\/admin\/plans\/([a-z0-9-]+)$/)
   if (planMatch && method === 'POST') {
+    if ((Object.values(SMS_PRODUCT_IDS) as string[]).includes(planMatch[1])) throw new ApiError('请在接码管理中集中修改该项目。',409)
     const data = await body(request); const note = requiredNote(data)
     if (!Number.isSafeInteger(data.priceCents) || Number(data.priceCents) < 1 || Number(data.priceCents) > 10000000 || typeof data.enabled !== 'boolean' || !Number.isInteger(data.version)) throw new ApiError('价格或商品状态无效。')
     if (data.partnerEnabled !== undefined && typeof data.partnerEnabled !== 'boolean') throw new ApiError('代理销售设置无效。')

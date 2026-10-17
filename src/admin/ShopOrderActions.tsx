@@ -14,6 +14,7 @@ export default function ShopOrderActions({
   const [note, setNote] = useState(''),
     [reference, setReference] = useState(''),
     [content, setContent] = useState(''),
+    [amountUsd, setAmountUsd] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   if (!order.custom) return null
@@ -28,6 +29,7 @@ export default function ShopOrderActions({
         note,
         content,
         reference,
+        amountUsd,
         version: order.version,
       })
       setNote('')
@@ -76,6 +78,58 @@ export default function ShopOrderActions({
             <p>灰熊接码编号：{custom.sms.activationId}</p>
           )}
           {custom.sms.costUsd && <p>实际采购价：US$ {custom.sms.costUsd}</p>}
+          {custom.sms.country && (
+            <p>
+              本次号码池：
+              {custom.sms.country === '12' ? '美国（虚拟）12' : '美国 187'}
+            </p>
+          )}
+          <p>本站买家退款与灰熊余额退款分别核对，不会相互代替。</p>
+          {custom.sms.supplierCancelledAt && (
+            <p>
+              上游已确认停止：
+              {new Date(custom.sms.supplierCancelledAt).toLocaleString()}
+            </p>
+          )}
+          {custom.sms.supplierRefundConfirmedAt ? (
+            <p>已核对灰熊余额退款：US$ {custom.sms.supplierRefundUsd}</p>
+          ) : (
+            custom.sms.state === 'cancelled' &&
+            custom.sms.costUsd && (
+              <>
+                <label htmlFor="sms-refund-usd">灰熊实际退回余额 · 美元</label>
+                <Input
+                  id="sms-refund-usd"
+                  inputMode="decimal"
+                  value={amountUsd}
+                  onChange={(e) => setAmountUsd(e.target.value)}
+                  disabled={busy}
+                />
+                <label htmlFor="sms-refund-reference">
+                  上游余额退款记录编号
+                </label>
+                <Input
+                  id="sms-refund-reference"
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                  maxLength={200}
+                  disabled={busy}
+                />
+                <Button
+                  variant="outline"
+                  disabled={
+                    busy ||
+                    note.trim().length < 3 ||
+                    reference.trim().length < 3 ||
+                    !amountUsd
+                  }
+                  onClick={() => void action('confirm-supplier-refund')}
+                >
+                  已核对灰熊余额到账，登记上游退款
+                </Button>
+              </>
+            )
+          )}
           {['unknown', 'review'].includes(custom.sms.state) && (
             <>
               <p>

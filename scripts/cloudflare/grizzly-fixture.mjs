@@ -127,12 +127,20 @@ export function createGrizzlyFixture(origin) {
         service = params.get('service')
       if (action === 'getBalance') return new Response('ACCESS_BALANCE:100.00')
       if (action === 'getPrices')
-        return Response.json({ 187: { [service]: { cost: 0.13, count: 100 } } })
+        return Response.json({
+          [params.get('country')]: {
+            [service]: {
+              cost: params.get('country') === '12' ? 0.09 : 0.13,
+              count: 100,
+            },
+          },
+        })
       if (action === 'getNumberV2') {
         if (
-          params.get('country') !== '187' ||
+          !['187', '12'].includes(params.get('country')) ||
           !['dr', 'acz', 'go'].includes(service) ||
-          Number(params.get('maxPrice')) < 0.13
+          Number(params.get('maxPrice')) <
+            (params.get('country') === '12' ? 0.09 : 0.13)
         )
           throw new Error('Invalid synthetic US allocation')
         const id = String(idBase + ++allocations),
@@ -147,9 +155,9 @@ export function createGrizzlyFixture(origin) {
         return Response.json({
           activationId: Number(id),
           phoneNumber: phone,
-          activationCost: 0.13,
+          activationCost: params.get('country') === '12' ? 0.09 : 0.13,
           currency: 840,
-          countryCode: '187',
+          countryCode: params.get('country'),
         })
       }
       const a = activations.get(params.get('id'))

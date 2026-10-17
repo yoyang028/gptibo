@@ -1,0 +1,514 @@
+.sms-intro {
+  padding-top: 52px;
+  padding-bottom: 30px;
+}
+.sms-intro h1 {
+  margin: 12px 0;
+  font-size: clamp(36px, 4vw, 58px);
+  letter-spacing: -0.055em;
+}
+.sms-intro > p {
+  font-size: 17px;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+}
+.sms-mobile-break {
+  display: none;
+}
+.sms-detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+.sms-detail-tags span {
+  font-size: 12px;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--muted-foreground);
+}
+.sms-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 32px;
+  align-items: start;
+  padding-bottom: 64px;
+}
+.sms-selection {
+  min-width: 0;
+}
+.sms-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.sms-section-heading h2 {
+  font-size: 20px;
+  letter-spacing: -0.035em;
+  margin-top: 8px;
+}
+.sms-section-heading > span {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  padding-bottom: 4px;
+}
+.sms-project-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.sms-project-card {
+  display: flex;
+  text-align: left;
+  flex-direction: column;
+  gap: 7px;
+  padding: 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card, var(--background));
+  color: var(--foreground);
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+  min-width: 0;
+}
+.sms-project-card:hover {
+  transform: translateY(-3px);
+}
+.sms-project-card:focus-visible {
+  outline: 3px solid color-mix(in srgb, #007aff 35%, transparent);
+  outline-offset: 3px;
+}
+.sms-project-card[aria-checked='true'] {
+  border-color: #3185e8;
+  box-shadow:
+    0 0 0 1px #3185e8,
+    0 9px 30px #007aff0a;
+  background: color-mix(in srgb, #007aff 4%, var(--background));
+}
+.sms-project-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.sms-project-top .product-logo {
+  width: 30px;
+  height: 30px;
+}
+.sms-google-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: color-mix(in srgb, #4285f4 8%, var(--background));
+  color: #4285f4;
+  display: grid;
+  place-items: center;
+}
+.sms-radio-indicator {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: white;
+}
+[aria-checked='true'] .sms-radio-indicator {
+  border-color: #007aff;
+  background: #007aff;
+}
+.sms-project-card > strong {
+  font-size: 19px;
+  letter-spacing: -0.045em;
+}
+.sms-project-card > span {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.sms-project-price {
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.05em;
+  margin-top: 14px;
+}
+.sms-project-price small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  letter-spacing: 0;
+}
+.sms-project-card .sms-project-meta {
+  font-size: 10px;
+  margin-top: 6px;
+}
+.sms-flow-preview {
+  overflow: hidden;
+  padding: 20px;
+  margin-top: 24px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #007aff 4%, var(--background)),
+    var(--background)
+  );
+}
+.sms-flow-caption,
+.sms-flow-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.sms-flow-caption {
+  letter-spacing: 0.09em;
+}
+.sms-flow-caption > span:last-child {
+  letter-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 7px;
+}
+.sms-flow-track {
+  display: grid;
+  grid-template-columns: 1fr 16px 1fr 16px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 26px 0;
+}
+.sms-flow-step {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 5px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--background);
+  animation: sms-sequence 6s ease-in-out infinite;
+}
+.sms-flow-message {
+  animation-delay: 1s;
+}
+.sms-flow-code {
+  animation-delay: 2s;
+}
+.sms-flow-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: #3185e8;
+  background: color-mix(in srgb, #007aff 8%, var(--background));
+}
+.sms-flow-step strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.sms-flow-step > span:not(.sms-flow-icon) {
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+.sms-flow-step small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  margin-top: 3px;
+  color: #3185e8;
+  white-space: nowrap;
+}
+.sms-flow-arrow {
+  color: var(--muted-foreground);
+  opacity: 0.4;
+}
+.sms-flow-footer {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.sms-flow-preview.compact {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  padding: 14px 5px 12px;
+}
+.compact .sms-flow-track {
+  gap: 8px;
+  padding: 20px 0;
+}
+.compact .sms-flow-step {
+  padding: 12px 5px;
+}
+.compact .sms-flow-footer {
+  border: 0;
+  padding-top: 0;
+}
+.sms-explanation {
+  display: flex;
+  gap: 10px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.8;
+  margin-top: 20px;
+}
+.sms-explanation svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.sms-summary {
+  position: sticky;
+  top: 96px;
+}
+.sms-summary-project {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 22px 0;
+}
+.sms-summary-project > span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.sms-summary-project strong {
+  font-size: 25px;
+  letter-spacing: -0.05em;
+}
+.sms-summary .summary-details div {
+  align-items: start;
+  gap: 12px;
+}
+.sms-summary .summary-details dd {
+  max-width: 170px;
+  text-align: right;
+}
+.sms-price-total {
+  border-top: 1px solid var(--border);
+  padding-top: 23px;
+  margin: 22px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sms-price-total > span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.sms-price-total .total-price {
+  font-size: 35px;
+  letter-spacing: -0.05em;
+}
+.sms-price-total small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  letter-spacing: 0;
+}
+.sms-sale-note {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  line-height: 1.7;
+  margin: 12px 0 18px;
+}
+.sms-purchase-guide {
+  padding-top: 38px;
+  padding-bottom: 54px;
+  border-top: 1px solid var(--border);
+}
+.sms-purchase-guide h2 {
+  font-size: 28px;
+  letter-spacing: -0.045em;
+  margin: 10px 0;
+}
+.sms-purchase-guide > div > p {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.sms-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+  margin: 32px 0;
+}
+.sms-guide-grid article svg {
+  color: #3185e8;
+}
+.sms-guide-grid h3 {
+  font-size: 14px;
+  margin: 12px 0;
+}
+.sms-guide-grid p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--muted-foreground);
+}
+.sms-scope-note {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.sms-scope-note strong {
+  font-size: 13px;
+}
+.sms-scope-note p {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  line-height: 1.8;
+  margin-top: 10px;
+}
+@keyframes sms-sequence {
+  0%,
+  15%,
+  80%,
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 transparent;
+  }
+  30%,
+  55% {
+    transform: translateY(-5px);
+    border-color: color-mix(in srgb, #007aff 50%, var(--border));
+    box-shadow: 0 10px 24px #007aff10;
+  }
+}
+@media (max-width: 1000px) {
+  .sms-workspace {
+    grid-template-columns: minmax(0, 1fr) 290px;
+    gap: 20px;
+  }
+  .sms-project-grid {
+    gap: 8px;
+  }
+  .sms-project-card {
+    padding: 16px 12px;
+  }
+  .sms-section-heading {
+    display: block;
+  }
+  .sms-section-heading > span {
+    display: block;
+    margin-top: 8px;
+  }
+}
+@media (max-width: 760px) {
+  .sms-workspace {
+    grid-template-columns: 1fr;
+    padding-bottom: 35px;
+  }
+  .sms-intro {
+    padding-top: 30px;
+  }
+  .sms-intro h1 {
+    font-size: 38px;
+  }
+  .sms-summary {
+    position: static;
+  }
+  .sms-project-card > strong {
+    font-size: 16px;
+  }
+  .sms-project-card > span {
+    font-size: 10px;
+  }
+  .sms-project-price {
+    font-size: 21px;
+  }
+  .sms-project-card .sms-project-meta {
+    font-size: 9px;
+  }
+  .sms-flow-preview {
+    padding: 16px;
+  }
+  .sms-flow-track {
+    gap: 6px;
+    grid-template-columns: 1fr 12px 1fr 12px 1fr;
+  }
+  .sms-flow-arrow {
+    width: 12px;
+  }
+  .sms-guide-grid {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .sms-mobile-break {
+    display: block;
+  }
+  .sms-summary .summary-details dd {
+    max-width: 65%;
+  }
+}
+@media (max-width: 600px) {
+  .sms-project-grid {
+    grid-template-columns: 1fr;
+  }
+  .sms-project-card {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    column-gap: 10px;
+    align-items: center;
+  }
+  .sms-project-top {
+    grid-row: 1/4;
+    margin: 0;
+  }
+  .sms-project-top .product-mark,
+  .sms-google-mark {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+  .sms-project-card > span {
+    font-size: 10px;
+  }
+  .sms-project-price {
+    white-space: nowrap;
+  }
+  .sms-radio-indicator {
+    display: none;
+  }
+  .sms-project-card > strong {
+    grid-column: 2;
+  }
+  .sms-project-card > span {
+    grid-column: 2;
+  }
+  .sms-project-price {
+    grid-column: 3;
+    grid-row: 1/3;
+    margin: 0;
+  }
+  .sms-project-card .sms-project-meta {
+    display: none;
+  }
+  .sms-flow-step > span:not(.sms-flow-icon) {
+    display: none;
+  }
+  .sms-flow-step strong {
+    font-size: 11px;
+  }
+  .sms-flow-footer > span:last-child {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sms-flow-step {
+    animation: none;
+    transform: none;
+  }
+  .sms-project-card {
+    transition: none;
+  }
+  .sms-project-card:hover {
+    transform: none;
+  }
+}

@@ -21,7 +21,9 @@ import {
   grizzlyCheckoutEnabled,
   smsSummary,
 } from './grizzly/service.ts'
-import { decimalUnits, validGrizzlyConfig } from '../shared/grizzly-sms.ts'
+import { decimalUnits, validGrizzlyConfig, SMS_PRODUCT_IDS } from '../shared/grizzly-sms.ts'
+import { recordSupplierRefund } from './grizzly/management.ts'
+import { affordablePools, poolQuotes } from './grizzly/pools.ts'
 import {
   XiaojiuPurchaseClient,
   XiaojiuPurchaseError,
@@ -83,6 +85,7 @@ export async function shopProducts(env: Env, includeDrafts = false) {
           !(p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env))),
     )
     .map((p) => {
+      if (!includeDrafts && p.api?.provider === 'grizzly') p.groupId = 'codex-sms'
       if (!includeDrafts) delete p.api
       return p
     })
@@ -171,6 +174,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     return json({ products: await shopProducts(env, true) })
   if (request.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
   const data = await body(request, 1000000)
+  if (Object.values(SMS_PRODUCT_IDS).some(id=>id===data.id)) throw new ApiError('此商品由接码管理集中维护，请进入接码管理保存。',409)
   let supplierQuote:
     { balanceUsd: string; priceUsd: string; count: number } | undefined
   if (suffix === '/xiaojiu-catalog') {
@@ -332,7 +336,8 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
       try {
         const client = new GrizzlyClient(env, await unseal(env, sealed))
         const balanceUsd = await client.balance()
-        const quote = await client.price(api.productCode, api.sms!.country)
+        const quote = api.sms!.country==='auto-us' ? affordablePools(await poolQuotes(client,api.productCode),api.sms!.maxPriceUsd)[0] : await client.price(api.productCode, api.sms!.country)
+        if(!quote)throw new ApiError('美国两种号码池暂无上限内库存，可先保存草稿。',409)
         supplierQuote = { ...quote, balanceUsd }
         if (
           !quote.count ||
@@ -770,12 +775,13 @@ export async function customAdminAction(
   const custom = await customOrderSummary(env, order)
   if (
     custom?.sms &&
-    !['sync', 'stop-sms', 'confirm-sms-closed'].includes(String(data.action))
+    !['sync', 'stop-sms', 'confirm-sms-closed','confirm-supplier-refund'].includes(String(data.action))
   )
     throw new ApiError(
       '接码订单由支付渠道确认到账并自动交付，请使用同步或停止接码操作。',
       409,
     )
+  if (custom?.sms && data.action === 'confirm-supplier-refund') {await recordSupplierRefund(env,order.id,data);return getOrder(env,order.id)}
   if (custom?.sms && data.action === 'confirm-sms-closed') {
     await confirmSmsClosed(env, order, data.reference, data.note.trim())
     return getOrder(env, order.id)
