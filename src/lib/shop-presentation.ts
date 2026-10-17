@@ -1,8 +1,8 @@
 import type { ShopProduct } from '../../shared/shop-products'
 
 const families: Record<string, { tagline: string; intro: string; category: string }> = {
-  claude: { tagline: '从日常对话，到更深入的工作。', intro: 'Pro、Max 5× 与 Max 20×，按你的使用强度选择。', category: 'AI 订阅' },
-  'codex-credits': { tagline: '给下一段代码，留足空间。', intro: '250、500、1000、2500 四档额度，按需选择。', category: '编程额度' },
+  claude: { tagline: '写作、分析与编程，按用量选择。', intro: 'Claude 自用账号订阅充值。Pro、Max 5× 与 Max 20×，先核对 KYC、账号条件与兑换步骤。', category: 'AI 订阅' },
+  'codex-credits': { tagline: '给下一段代码，留足空间。', intro: '250、500、1000、2500 四档 Codex 额度；交付卡密，需到上游兑换站自行充值。', category: '编程额度' },
   grok: { tagline: '让好奇，走得更远。', intro: '成品账号与订阅兑换码，按使用方式和服务周期选择。', category: 'AI 订阅' },
   'student-verification': { tagline: '为学习，打开更多可能。', intro: '面向符合资格的学生，提供 Plus 四个月活动的认证服务。', category: '学生认证' },
   muse: { tagline: '一个账号，开始你的创作。', intro: '成品账号与多档词元规格，按交付说明完成首次登录。', category: 'AI 工具' },

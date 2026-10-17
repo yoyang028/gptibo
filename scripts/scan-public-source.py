@@ -21,7 +21,16 @@ PUBLIC_HOSTS = {
     'www.w3.org', 'www.apache.org', 'ui.shadcn.com', 'transitions.dev', 'vite.dev',
     'www.duolingo.com', 'www.duolingo.cn', 'd35aaqx5ub95lt.cloudfront.net',
     '98-xj.com',  # Reviewed public Xiaojiu upstream API and documentation.
+    '982xj.xyz',  # Redemption origin linked by the matched Xiaojiu products.
+    'claude.com', 'support.claude.com',  # Official plan explanations, not supplier guarantees.
+    'ai.hanfolk.xyz',  # Existing reviewed reseller catalog integration.
     'grizzlysms.com', 'api.grizzlysms.com',  # Reviewed public Grizzly SMS API.
+}
+PUBLIC_DOC_REFERENCES = {
+    # Existing public reference links are permitted only in their documentation;
+    # this does not permit application requests to these shop-specific origins.
+    'public/brands/README.md': {'muse.gptibo.com'},
+    'docs/GRIZZLY_SMS.md': {'shop.scholai.top'},
 }
 BINARY_ASSETS = {'public/email-logo.png', 'public/email-shop.png', 'src/assets/hero.png'}
 FORBIDDEN_PARTS = {'.git', '.secrets', '.imports', '.admin-auth', '.xgift-private',
@@ -92,7 +101,7 @@ def scan(root, files):
                 # Ignore templates and incomplete expression/regex fragments.
                 if '.' not in host or host.endswith('.'):
                     continue
-                if not allowed_host(host):
+                if not allowed_host(host) and host not in PUBLIC_DOC_REFERENCES.get(name, set()):
                     findings.append((name, line, 'unexpected external host'))
     return sorted(set(findings))
 

@@ -37,24 +37,8 @@ import { groupShopProducts, type ShopProduct } from '../../shared/shop-products'
 import { RefundContent } from './order-services'
 import './shop-products.css'
 import { GrizzlyOrderContent } from './grizzly-order-content'
-
-// Keep descriptions editable as text. Only standalone "### " headings are
-// formatted; all content is rendered as React text, never as HTML.
-function ProductDescription({ text }: { text: string }) {
-  const blocks = customerProductCopy(text).trim().split(/\r?\n\s*\r?\n/)
-  return <div className="shop-product-description">
-    {blocks.map((block, i) => {
-      const [firstLine, ...lines] = block.split(/\r?\n/)
-      if (firstLine.startsWith('### ') && lines.some(line => line.trim())) {
-        return <section className="shop-description-section" key={i}>
-          <h4>{firstLine.slice(4)}</h4>
-          <p className="shop-product-copy">{lines.join('\n')}</p>
-        </section>
-      }
-      return <p className="shop-product-copy" key={i}>{block || '在后台填写商品的详细介绍。'}</p>
-    })}
-  </div>
-}
+import { ProductCopyText, ProductDeliveryNotice, ProductDescription, ProductSpecComparison } from './product-buyer-details'
+import { DELIVERY_COPY_HEADING, productCopyBlocks } from '../../shared/product-copy'
 
 export function ShopProductGroupPage({
   group,
@@ -128,6 +112,8 @@ export function ShopProductPage({
   const familyId = product.groupId ?? product.id
   const familyName = displayName || product.name || '商品名称'
   const presentation = shopPresentation(familyId, product)
+  const descriptionBlocks = productCopyBlocks(customerProductCopy(product.description))
+  const deliveryNotice = descriptionBlocks.find(block => block.title === DELIVERY_COPY_HEADING)
   const [couponCode, setCouponCode] = useState(''),
     [coupon, setCoupon] = useState<{ code: string; priceCents: number } | null>(
       null,
@@ -242,6 +228,7 @@ export function ShopProductPage({
               </span>
             </div>
           </div>
+          {deliveryNotice && <ProductDeliveryNotice block={deliveryNotice} />}
           {familyId === 'muse' ? <MuseLogoMotion detail /> : <ProductArtwork
             config={artwork}
             name={product.name}
@@ -250,6 +237,7 @@ export function ShopProductPage({
             fallback={(!variants || variants.length === 1) ? <ProductServiceScene productId={familyId} name={familyName} duration={product.duration} /> : null}
           />
           }
+          {deliveryNotice && variants && variants.length > 1 && <ProductSpecComparison products={variants} selected={product.id} />}
           {variants && variants.length > 1 && (
             <fieldset className="shop-product-variants">
               <legend>选择适合你的规格<span>{variants.length} 个规格 · 独立定价</span></legend>
@@ -285,7 +273,7 @@ export function ShopProductPage({
               <h3>{product.name || '商品规格'}</h3>
               <span>{product.duration}</span>
             </div>
-            <ProductDescription text={product.description} />
+            <ProductDescription blocks={descriptionBlocks} />
             <ul className="plan-features">
               {product.features.map((feature, i) => (
                 <li key={i}>
@@ -298,7 +286,7 @@ export function ShopProductPage({
           <div className="membership-purchase-note">
             <strong>购买须知与售后范围</strong>
             <p className="shop-product-copy">
-              {product.purchaseNote || '请在后台补全购买须知与售后范围。'}
+              <ProductCopyText text={product.purchaseNote || '请在后台补全购买须知与售后范围。'} />
             </p>
           </div>
         </div>
@@ -354,20 +342,20 @@ export function ShopProductPage({
           </p>
           <p className="summary-footnote shop-product-copy">
             <strong>交付说明</strong>
-            {customerProductCopy(product.deliveryInstructions)}
+            <ProductCopyText text={customerProductCopy(product.deliveryInstructions)} />
           </p>
         </aside>
       </section>
       <div className="shop-flow-heading page-width"><span className="section-kicker">HOW IT WORKS</span><h2>{displayOnly || !available ? '开售后的交付流程' : '从选购，到使用。'}</h2><p>按商品说明完成每一步，服务进度在订单中查看。</p></div>
       <section
-        className="delivery-guide page-width shop-delivery-guide"
+        className={'delivery-guide page-width shop-delivery-guide' + (product.steps.length === 4 ? ' four-step-guide' : '')}
         aria-label="购买与交付流程"
       >
         {product.steps.map((step, i) => (
           <article key={i}>
             <small>{String(i + 1).padStart(2, '0')}</small>
             <h3>{step.title}</h3>
-            <p>{step.description}</p>
+            <p><ProductCopyText text={step.description} /></p>
           </article>
         ))}
       </section>
@@ -380,7 +368,7 @@ export function ShopProductPage({
           {product.faq.map((item, i) => (
             <AccordionItem key={i} value={String(i)}>
               <AccordionTrigger>{item.question}</AccordionTrigger>
-              <AccordionContent>{item.answer}</AccordionContent>
+              <AccordionContent><ProductCopyText text={item.answer} /></AccordionContent>
             </AccordionItem>
           ))}
         </Accordion>
