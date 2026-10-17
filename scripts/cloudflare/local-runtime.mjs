@@ -10,6 +10,7 @@ import { build } from 'esbuild'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 import { createXiaojiuFixture } from './xiaojiu-fixture.mjs'
 import { createGrizzlyFixture } from './grizzly-fixture.mjs'
+import { createHanfolkFixture } from './hanfolk-fixture.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 if (process.platform === 'win32' && !/^D:\\/i.test(root)) throw new Error('Local artifacts must stay on D:')
@@ -21,6 +22,7 @@ const tlsRoot = path.join(root, 'artifacts/local/.secrets/quefa-cloudflare-mock'
 const port = grizzlyVariant ? 8791 : xiaojiuVariant ? 8781 : 8771, controlPort = grizzlyVariant ? 8794 : xiaojiuVariant ? 8784 : 8774
 const origin = 'https://127.0.0.1:' + port
 const grizzlyFixture = createGrizzlyFixture(origin)
+const hanfolkFixture = createHanfolkFixture()
 fs.mkdirSync(privateRoot, { recursive: true })
 fs.mkdirSync(runtime, { recursive: true })
 process.env.XDG_CONFIG_HOME = path.join(runtime, 'config')
@@ -42,6 +44,7 @@ const genericOrders = new Map()
 const xiaojiuFixture = createXiaojiuFixture()
 const outbound = async request => {
   const url = new URL(request.url)
+  if(grizzlyVariant && url.origin==='https://ai.hanfolk.xyz') return hanfolkFixture.fetch(request)
   if (grizzlyVariant && ['https://api.grizzlysms.com','https://openapi.alipay.com'].includes(url.origin)) return grizzlyFixture.fetch(request)
   if (url.origin === 'https://chatgpt.com') {
     if (url.pathname !== '/backend-api/accounts/check/v4-2023-04-27' || request.method !== 'GET') throw new Error('Unexpected account-check fixture request')

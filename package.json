@@ -23,7 +23,8 @@
     "test:cloudflare:grouped-products": "node scripts/cloudflare/grouped-products-browser.mjs",
     "test:cloudflare:account-check": "node scripts/cloudflare/account-check-browser.mjs",
     "test:cloudflare:product-artwork": "node scripts/cloudflare/product-artwork-browser.mjs",
-    "test:cloudflare:grizzly-sms": "node scripts/cloudflare/grizzly-browser.mjs"
+    "test:cloudflare:grizzly-sms": "node scripts/cloudflare/grizzly-browser.mjs",
+    "test:cloudflare:hanfolk-catalog": "node scripts/cloudflare/hanfolk-browser.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

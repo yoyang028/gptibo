@@ -1,3 +1,4 @@
+import { MuseLogoMotion } from './muse-logo-motion'
 import { ProductArtwork } from './product-artwork'
 import { ProductMark } from './brand'
 import { ProductServiceScene } from './product-service-scene'
@@ -241,13 +242,14 @@ export function ShopProductPage({
               </span>
             </div>
           </div>
-          <ProductArtwork
+          {familyId === 'muse' ? <MuseLogoMotion detail /> : <ProductArtwork
             config={artwork}
             name={product.name}
             caption={product.duration}
             detail
             fallback={(!variants || variants.length === 1) ? <ProductServiceScene productId={familyId} name={familyName} duration={product.duration} /> : null}
           />
+          }
           {variants && variants.length > 1 && (
             <fieldset className="shop-product-variants">
               <legend>选择适合你的规格<span>{variants.length} 个规格 · 独立定价</span></legend>
@@ -272,7 +274,7 @@ export function ShopProductPage({
                     <strong>{variantLabel(variant, familyName)}</strong>
                     <small>{variant.duration}</small>
                   </span>
-                  <strong><small>¥</small>{(variant.priceCents / 100).toFixed(2)}</strong>
+                  <strong>{variant.pricePending ? '待定价' : <><small>¥</small>{(variant.priceCents / 100).toFixed(2)}</>}</strong>
                 </label>
               ))}
             </fieldset>
@@ -328,7 +330,7 @@ export function ShopProductPage({
           <div className="summary-total">
             <span>{displayOnly ? '商品价格' : '应付金额'}</span>
             <strong className="total-price">
-              ¥{(product.priceCents / 100).toFixed(2)}
+              {product.pricePending ? '待定价' : '¥'+(product.priceCents / 100).toFixed(2)}
             </strong>
           </div>
           <Button

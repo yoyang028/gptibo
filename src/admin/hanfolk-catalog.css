@@ -1,0 +1,210 @@
+.hanfolk-admin {
+  display: grid;
+  gap: 22px;
+}
+.hanfolk-admin > .admin-card {
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--background);
+}
+.hanfolk-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.hanfolk-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.hanfolk-heading h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 5px 0;
+}
+.hanfolk-heading p,
+.hanfolk-help {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--muted-foreground);
+}
+.hanfolk-heading > span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.hanfolk-connection > label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  max-width: 700px;
+}
+.hanfolk-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 18px 0;
+}
+.hanfolk-actions > span {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-right: auto;
+}
+.hanfolk-status {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  padding: 15px 0;
+  border-block: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.hanfolk-connection > a {
+  font-size: 12px;
+  color: #007aff;
+  display: inline-block;
+  margin-top: 8px;
+}
+.hanfolk-filter {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  min-width: 170px;
+}
+.hanfolk-filter select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--foreground);
+}
+.hanfolk-source {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.hanfolk-products {
+  display: grid;
+  gap: 16px;
+}
+.hanfolk-family {
+  font-size: 11px;
+  color: #3185e8;
+}
+.hanfolk-skus {
+  border-top: 1px solid var(--border);
+  display: grid;
+}
+.hanfolk-skus > label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.hanfolk-skus input {
+  accent-color: #007aff;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.hanfolk-skus > label > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.hanfolk-skus > label > span:last-child {
+  text-align: right;
+  flex: none;
+}
+.hanfolk-skus small,
+.hanfolk-admin td small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-top: 4px;
+}
+.hanfolk-source-copy {
+  font-size: 12px;
+  margin-top: 16px;
+}
+.hanfolk-source-copy summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+}
+.hanfolk-source-copy pre {
+  font-family: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.9;
+  max-height: 400px;
+  overflow: auto;
+  padding: 18px;
+  background: var(--accent);
+  border-radius: 8px;
+  margin-top: 12px;
+}
+.hanfolk-source-copy > p {
+  line-height: 1.8;
+  margin-top: 12px;
+  color: var(--muted-foreground);
+}
+.hanfolk-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.hanfolk-message {
+  padding: 14px 18px;
+  border: 1px solid #3b82f640;
+  border-radius: 9px;
+  background: #3b82f608;
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.hanfolk-admin > p[role='alert'] {
+  color: #dc2626;
+  font-size: 13px;
+}
+.hanfolk-admin .admin-table td {
+  vertical-align: top;
+}
+@media (max-width: 640px) {
+  .hanfolk-admin > .admin-card {
+    padding: 18px;
+  }
+  .hanfolk-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .hanfolk-source {
+    padding: 16px;
+  }
+  .hanfolk-skus > label {
+    flex-wrap: wrap;
+  }
+  .hanfolk-skus > label > span:last-child {
+    padding-left: 28px;
+    width: 100%;
+    text-align: left;
+  }
+  .hanfolk-filter {
+    width: 100%;
+  }
+  .hanfolk-actions {
+    gap: 9px;
+  }
+  .hanfolk-actions > span {
+    width: 100%;
+  }
+}

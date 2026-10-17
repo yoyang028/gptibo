@@ -21,7 +21,11 @@ import {
   grizzlyCheckoutEnabled,
   smsSummary,
 } from './grizzly/service.ts'
-import { decimalUnits, validGrizzlyConfig, SMS_PRODUCT_IDS } from '../shared/grizzly-sms.ts'
+import {
+  decimalUnits,
+  validGrizzlyConfig,
+  SMS_PRODUCT_IDS,
+} from '../shared/grizzly-sms.ts'
 import { recordSupplierRefund } from './grizzly/management.ts'
 import { affordablePools, poolQuotes } from './grizzly/pools.ts'
 import {
@@ -75,17 +79,21 @@ export async function shopProducts(env: Env, includeDrafts = false) {
     .filter(
       (p) =>
         includeDrafts ||
-        p.status === 'listed' ||
-        (p.status === 'published' &&
-          !(
-            p.delivery === 'api' &&
-            p.api?.provider === 'xiaojiu' &&
-            env.XIAOJIU_PURCHASE_ENABLED !== 'true'
-          ) &&
-          !(p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env))),
+        (!p.pricePending &&
+          (p.status === 'listed' ||
+            (p.status === 'published' &&
+              !(
+                p.delivery === 'api' &&
+                p.api?.provider === 'xiaojiu' &&
+                env.XIAOJIU_PURCHASE_ENABLED !== 'true'
+              ) &&
+              !(
+                p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env)
+              )))),
     )
     .map((p) => {
-      if (!includeDrafts && p.api?.provider === 'grizzly') p.groupId = 'codex-sms'
+      if (!includeDrafts && p.api?.provider === 'grizzly')
+        p.groupId = 'codex-sms'
       if (!includeDrafts) delete p.api
       return p
     })
@@ -174,7 +182,8 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     return json({ products: await shopProducts(env, true) })
   if (request.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
   const data = await body(request, 1000000)
-  if (Object.values(SMS_PRODUCT_IDS).some(id=>id===data.id)) throw new ApiError('此商品由接码管理集中维护，请进入接码管理保存。',409)
+  if (Object.values(SMS_PRODUCT_IDS).some((id) => id === data.id))
+    throw new ApiError('此商品由接码管理集中维护，请进入接码管理保存。', 409)
   let supplierQuote:
     { balanceUsd: string; priceUsd: string; count: number } | undefined
   if (suffix === '/xiaojiu-catalog') {
@@ -261,6 +270,9 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     unit: input.unit,
     duration: input.duration,
     priceCents: input.priceCents,
+    ...(input.pricePending !== undefined
+      ? { pricePending: input.pricePending }
+      : {}),
     stock: input.stock,
     features: input.features,
     purchaseNote: input.purchaseNote,
@@ -336,8 +348,18 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
       try {
         const client = new GrizzlyClient(env, await unseal(env, sealed))
         const balanceUsd = await client.balance()
-        const quote = api.sms!.country==='auto-us' ? affordablePools(await poolQuotes(client,api.productCode),api.sms!.maxPriceUsd)[0] : await client.price(api.productCode, api.sms!.country)
-        if(!quote)throw new ApiError('美国两种号码池暂无上限内库存，可先保存草稿。',409)
+        const quote =
+          api.sms!.country === 'auto-us'
+            ? affordablePools(
+                await poolQuotes(client, api.productCode),
+                api.sms!.maxPriceUsd,
+              )[0]
+            : await client.price(api.productCode, api.sms!.country)
+        if (!quote)
+          throw new ApiError(
+            '美国两种号码池暂无上限内库存，可先保存草稿。',
+            409,
+          )
         supplierQuote = { ...quote, balanceUsd }
         if (
           !quote.count ||
@@ -393,6 +415,18 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     api.verified = true
   } else if (suffix) throw new ApiError('未找到商品操作。', 404)
   const finalProblems = productProblems(product)
+  if (
+    product.status === 'published' &&
+    (await env.INTEREST_DB.prepare(
+      'SELECT local_id FROM hanfolk_product_links WHERE local_id=?',
+    )
+      .bind(product.id)
+      .first())
+  )
+    throw new ApiError(
+      '代理商品当前仅开放资料和定价管理，请先使用「仅展示，暂不开售」。',
+      409,
+    )
   if (
     product.status === 'published' &&
     api?.provider === 'grizzly' &&
@@ -556,7 +590,8 @@ export async function createCustomOrder(
     !shop.active ||
     shop.hiddenProductIds.includes(id) ||
     data.partner ||
-    rowProduct(row).status !== 'published'
+    rowProduct(row).status !== 'published' ||
+    rowProduct(row).pricePending
   )
     throw new ApiError('该商品暂未开放购买。', 409)
   const p = rowProduct(row)
@@ -775,13 +810,21 @@ export async function customAdminAction(
   const custom = await customOrderSummary(env, order)
   if (
     custom?.sms &&
-    !['sync', 'stop-sms', 'confirm-sms-closed','confirm-supplier-refund'].includes(String(data.action))
+    ![
+      'sync',
+      'stop-sms',
+      'confirm-sms-closed',
+      'confirm-supplier-refund',
+    ].includes(String(data.action))
   )
     throw new ApiError(
       '接码订单由支付渠道确认到账并自动交付，请使用同步或停止接码操作。',
       409,
     )
-  if (custom?.sms && data.action === 'confirm-supplier-refund') {await recordSupplierRefund(env,order.id,data);return getOrder(env,order.id)}
+  if (custom?.sms && data.action === 'confirm-supplier-refund') {
+    await recordSupplierRefund(env, order.id, data)
+    return getOrder(env, order.id)
+  }
   if (custom?.sms && data.action === 'confirm-sms-closed') {
     await confirmSmsClosed(env, order, data.reference, data.note.trim())
     return getOrder(env, order.id)

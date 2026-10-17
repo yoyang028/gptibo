@@ -82,20 +82,24 @@ type XiaojiuCatalog = {
   pageSize: number
   total: number
 }
-function ProductEditor({
+export function ProductEditor({
   initial,
   onClose,
   onSaved,
+  listingOnly = false,
 }: {
   initial: ShopProduct
   onClose: () => void
   onSaved: () => void
+  listingOnly?: boolean
 }) {
   const [product, setProduct] = useState(initial),
     [apiToken, setApiToken] = useState(''),
     [apiKey, setApiKey] = useState(''),
     [features, setFeatures] = useState(initial.features.join('\n')),
-    [price, setPrice] = useState((initial.priceCents / 100).toFixed(2)),
+    [price, setPrice] = useState(
+      initial.pricePending ? '' : (initial.priceCents / 100).toFixed(2),
+    ),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [message, setMessage] = useState(''),
@@ -110,7 +114,17 @@ function ProductEditor({
     submitting = useRef(false)
   const value = {
     ...product,
-    priceCents: Math.round(Number(price) * 100),
+    priceCents:
+      product.pricePending && !price.trim()
+        ? product.priceCents
+        : Math.round(Number(price) * 100),
+    ...(product.pricePending !== undefined
+      ? { pricePending: product.pricePending && !price.trim() }
+      : {}),
+    badge:
+      product.pricePending && price.trim() && product.badge === '待定价草稿'
+        ? '规格可选'
+        : product.badge,
     features: features
       .split('\n')
       .map((s) => s.trim())
@@ -149,7 +163,14 @@ function ProductEditor({
     action: 'draft' | 'listed' | 'published' | 'archived' | 'verify',
   ) {
     if (busy || submitting.current) return
-    if (!/^\d+(\.\d{1,2})?$/.test(price)) {
+    if (
+      !(
+        product.pricePending &&
+        !price.trim() &&
+        ['draft', 'archived'].includes(action)
+      ) &&
+      !/^\d+(\.\d{1,2})?$/.test(price)
+    ) {
       setError('售价最多保留两位小数。')
       return
     }
@@ -186,7 +207,11 @@ function ProductEditor({
       )
       setProduct(result.product)
       setFeatures(result.product.features.join('\n'))
-      setPrice((result.product.priceCents / 100).toFixed(2))
+      setPrice(
+        result.product.pricePending
+          ? ''
+          : (result.product.priceCents / 100).toFixed(2),
+      )
       setApiToken('')
       setApiKey('')
       setBaseline(JSON.stringify(result.product))
@@ -253,7 +278,9 @@ function ProductEditor({
           <DialogHeader>
             <DialogTitle>{product.id ? '编辑商品' : '发布新商品'}</DialogTitle>
             <DialogDescription>
-              保存草稿后可继续编辑；发布前必须补全商品展示、购买须知、收款和交付信息。
+              {listingOnly
+                ? '先确认零售价并核对源商品条件、使用步骤与售后规则，再选择仅展示；代理采购和收款暂未开放。'
+                : '保存草稿后可继续编辑；发布前必须补全商品展示、购买须知、收款和交付信息。'}
             </DialogDescription>
           </DialogHeader>
           <form
@@ -329,7 +356,12 @@ function ProductEditor({
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                     inputMode="decimal"
-                    required
+                    required={!product.pricePending}
+                    placeholder={
+                      product.pricePending
+                        ? '待定价，留空可保存草稿'
+                        : undefined
+                    }
                     pattern="[0-9]+(\.[0-9]{1,2})?"
                   />
                 </label>
@@ -1112,8 +1144,13 @@ function ProductEditor({
               </Button>
               <Button
                 type="button"
-                disabled={busy}
+                disabled={busy || listingOnly}
                 onClick={() => void save('published')}
+                title={
+                  listingOnly
+                    ? '代理采购和收款暂未开放，请先选择仅展示'
+                    : undefined
+                }
               >
                 {busy ? '正在保存…' : '发布商品'}
               </Button>
@@ -1191,42 +1228,51 @@ export default function ProductPublisher({
           发布新商品
         </Button>
       </div>
-      <p>美国单次短信项目请在 <a href="/admin?view=sms">接码管理</a> 集中配置与发布。</p>
+      <p>
+        美国单次短信项目请在 <a href="/admin?view=sms">接码管理</a>{' '}
+        集中配置与发布。
+      </p>
       {error && <p role="alert">{error}</p>}
       {loading && !data && <p>正在读取商品…</p>}
       <div className="owner-product-list">
-        {data?.products.filter(p => !(Object.values(SMS_PRODUCT_IDS) as string[]).includes(p.id)).map((p) => (
-          <article
-            className="owner-product-row"
-            data-product-id={p.id}
-            key={p.id}
-          >
-            {p.image ? <img src={p.image} alt="" /> : <Package size={26} />}
-            <div className="owner-product-info">
-              <strong>{p.name}</strong>
-              <small>
-                {statuses[p.status]} ·{' '}
-                {p.groupId && <>{SHOP_PRODUCT_GROUPS[p.groupId]} 分组 · </>}
-                {p.delivery === 'api' ? 'API 自动供货' : '人工交付'} · ¥
-                {(p.priceCents / 100).toFixed(2)} ·{' '}
-                {p.stock < 0 ? '不限量' : `剩余 ${p.stock}`}
-              </small>
-            </div>
-            <ProductArtworkSettingsButton productId={p.id} onSaved={reload} />
-            <Button variant="outline" onClick={() => setEdit(p)}>
-              编辑商品
-            </Button>
-            {['listed', 'published'].includes(p.status) && (
-              <a
-                href={'/product/' + (p.groupId ?? p.id)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                查看前台 ↗
-              </a>
-            )}
-          </article>
-        ))}
+        {data?.products
+          .filter(
+            (p) => !(Object.values(SMS_PRODUCT_IDS) as string[]).includes(p.id),
+          )
+          .map((p) => (
+            <article
+              className="owner-product-row"
+              data-product-id={p.id}
+              key={p.id}
+            >
+              {p.image ? <img src={p.image} alt="" /> : <Package size={26} />}
+              <div className="owner-product-info">
+                <strong>{p.name}</strong>
+                <small>
+                  {statuses[p.status]} ·{' '}
+                  {p.groupId && <>{SHOP_PRODUCT_GROUPS[p.groupId]} 分组 · </>}
+                  {p.delivery === 'api' ? 'API 自动供货' : '人工交付'} ·{' '}
+                  {p.pricePending
+                    ? '待定价'
+                    : '¥' + (p.priceCents / 100).toFixed(2)}{' '}
+                  · {p.stock < 0 ? '不限量' : `剩余 ${p.stock}`}
+                </small>
+              </div>
+              <ProductArtworkSettingsButton productId={p.id} onSaved={reload} />
+              <Button variant="outline" onClick={() => setEdit(p)}>
+                编辑商品
+              </Button>
+              {['listed', 'published'].includes(p.status) && (
+                <a
+                  href={'/product/' + (p.groupId ?? p.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  查看前台 ↗
+                </a>
+              )}
+            </article>
+          ))}
       </div>
       {data && !data.products.length && (
         <p className="stores-help">

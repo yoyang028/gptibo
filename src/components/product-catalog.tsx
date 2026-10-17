@@ -1,5 +1,6 @@
 import { SmsFlowPreview } from './sms-flow-preview'
 import type { SmsPublicCatalog } from '../../shared/grizzly-sms'
+import { MuseLogoMotion } from './muse-logo-motion'
 import { ProductArtwork } from './product-artwork'
 import { ProductServiceScene } from './product-service-scene'
 import type { ProductArtworkMap } from '../../shared/product-artwork'
@@ -52,7 +53,7 @@ export function ProductCatalog({ smsCatalog, onHelp, onOrders, onNavigate, offer
   const startingPrice = catalogStartingPrice(offers)
   const matches = (group: string, text: string) => (category === 'all' || category === group) && text.toLowerCase().includes(query.trim().toLowerCase())
   const chatgpt = matches('ai', 'ChatGPT Plus Pro')
-  const gmail = matches('mail', 'Gmail 邮箱账号 email accounts 2FA')
+  const gmail = !productGroups.some(g => g.id === 'gmail') && matches('mail', 'Gmail 邮箱账号 email accounts 2FA')
   const upcoming = UPCOMING_PRODUCTS.filter(p => !productGroups.some(g => g.id === p.id) && matches('ai', p.name))
   const memberships = Object.entries(EMAIL_PRODUCTS).filter(([, p]) => !productGroups.some(g => g.id === p.productId) && p.productId !== 'gmail' && matches(p.productId === 'gemini' ? 'ai' : 'learning', p.name + (p.productId === 'duolingo' ? ' Duolingo' : '')))
   const xgift = matches('tool', 'X Premium 推特 Twitter 会员赠送')
@@ -78,7 +79,7 @@ export function ProductCatalog({ smsCatalog, onHelp, onOrders, onNavigate, offer
       return { id: g.id, node: <article className={`store-product service-${g.id}`} data-product-group={g.id}>
         <div className="store-product-heading"><h3>{g.name}</h3><span>{available ? p.badge : '暂停售卖'}</span></div>
         <p className="store-spec">{multiple ? `${g.products.length} 个规格可选` : p.duration} · {presentation.tagline}</p>
-        {multiple ? <SubscriptionDeck brand={g.name} productId={g.id} plans={g.products.map(p => ({ id: p.id, name: variantLabel(p, g.name), price: p.priceCents / 100, unit: p.unit }))} /> : <ProductArtwork config={productArtwork[g.id] ?? productArtwork[p.id]} name={g.name} caption={p.duration} fallback={<ProductServiceScene productId={g.id} name={g.name} duration={p.duration} />} />}
+        {g.id === 'muse' ? <MuseLogoMotion /> : multiple ? <SubscriptionDeck brand={g.name} productId={g.id} plans={g.products.map(p => ({ id: p.id, name: variantLabel(p, g.name), price: p.priceCents / 100, unit: p.unit }))} /> : <ProductArtwork config={productArtwork[g.id] ?? productArtwork[p.id]} name={g.name} caption={p.duration} fallback={<ProductServiceScene productId={g.id} name={g.name} duration={p.duration} />} />}
         <div className="store-product-bottom"><span className="store-starting-price">¥{formatCatalogPrice(p.priceCents / 100)}<small>{multiple ? ' 起' : '／' + p.unit}</small></span><a className="store-action" href={storefrontHref('product/' + g.id)} onClick={e => navigate(e, 'product/' + g.id)}>{multiple ? '选择规格' : '查看商品'}</a></div>
       </article> }
     }),

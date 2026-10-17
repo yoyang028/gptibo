@@ -37,6 +37,7 @@ import { artworkRoute, publicArtwork } from './product-artwork.ts'
 import { couponQuote, couponReservation } from './shop-coupons.ts'
 import { smsAdminInfo, smsRefundProblem } from './grizzly/service.ts'
 import { smsManagement, smsPublicCatalog } from './grizzly/management.ts'
+import { hanfolkManagement } from './hanfolk/management.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
 type OrderPartnerSource = { id: string; slug: string; name: string; email: string; wechat: string; qq: string }
@@ -87,6 +88,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     if (path.startsWith('/api/admin/')) {
       await requireAdmin(request, env)
       if (path === '/api/admin/sms') return await smsManagement(request,env,url)
+      if (path === '/api/admin/hanfolk') return await hanfolkManagement(request,env)
       if (path.startsWith('/api/admin/my-shop/products')) return await shopProductRoutes(request,env,url)
       if (path.startsWith('/api/admin/my-shop/orders')) {
         const customMatch=path.match(/^\/api\/admin\/my-shop\/orders\/([A-Z0-9-]+)$/)
@@ -373,9 +375,11 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
       return json({ order: await customerOrder(env, next) })
     }
   }
-  if (path === '/api/admin/plans' && method === 'GET') return json({ plans: (await plans(env)).filter(p => !(Object.values(SMS_PRODUCT_IDS) as string[]).includes(p.id)) })
+  const hanfolkIds = new Set((path === '/api/admin/plans' || path.startsWith('/api/admin/plans/')) ? (await db.prepare('SELECT local_id FROM hanfolk_product_links').all<{local_id:string}>()).results.map(r=>r.local_id) : [])
+  if (path === '/api/admin/plans' && method === 'GET') return json({ plans: (await plans(env)).filter(p => !(Object.values(SMS_PRODUCT_IDS) as string[]).includes(p.id) && !hanfolkIds.has(p.id)) })
   const planMatch = path.match(/^\/api\/admin\/plans\/([a-z0-9-]+)$/)
   if (planMatch && method === 'POST') {
+    if(hanfolkIds.has(planMatch[1]))throw new ApiError('请在代理商品中确认售价与展示状态。',409)
     if ((Object.values(SMS_PRODUCT_IDS) as string[]).includes(planMatch[1])) throw new ApiError('请在接码管理中集中修改该项目。',409)
     const data = await body(request); const note = requiredNote(data)
     if (!Number.isSafeInteger(data.priceCents) || Number(data.priceCents) < 1 || Number(data.priceCents) > 10000000 || typeof data.enabled !== 'boolean' || !Number.isInteger(data.version)) throw new ApiError('价格或商品状态无效。')

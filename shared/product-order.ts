@@ -9,7 +9,11 @@ export const STOREFRONT_PRODUCTS = [
   { id: 'grok', name: 'Grok', upcoming: true },
   { id: 'codex-sms', name: 'SMS接码' },
   { id: 'student-verification', name: 'Plus 学生认证' },
-  { id: 'muse', name: 'Muse AI' },
+  { id: 'muse', name: 'Muse' },
+  { id: 'adobe-express', name: 'Adobe Express' },
+  { id: 'apple-music', name: 'Apple Music' },
+  { id: 'apple-id', name: 'Apple ID' },
+  { id: 'capcut-pro', name: 'CapCut Pro' },
 ] as const
 
 export type StorefrontProductId =

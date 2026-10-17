@@ -1,5 +1,5 @@
 import { DuoMark, GeminiMark } from './membership-scene'
-import { Mail, Package, GraduationCap } from 'lucide-react'
+import { Mail, Package, GraduationCap, Palette, Music2, Apple, Clapperboard } from 'lucide-react'
 
 export function BrandMark({ className = '' }: { className?: string }) {
   return <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
@@ -13,6 +13,9 @@ export function XLogoPath() {
   return <path fill="currentColor" d="M18.9 2H22l-6.77 7.74L23.2 22h-6.24l-4.89-7.4L5.6 22H2.47l7.15-8.17L1.2 2h6.4l4.43 6.77L18.9 2ZM17.8 20h1.73L6.65 3.9H4.8L17.8 20Z" />
 }
 export function ProductLogo({ productId }: { productId: string }) {
+  const familyIcons:Record<string,typeof Mail>={'adobe-express':Palette,'apple-music':Music2,'apple-id':Apple,'capcut-pro':Clapperboard}
+  const Icon=familyIcons[productId]
+  if(Icon)return <Icon className="product-logo" style={{background:'none'}} aria-hidden="true"/>
   if(productId.startsWith('custom-'))return <Package className="product-logo" style={{background:'none'}} aria-hidden="true"/>
   if (productId === 'x-premium') return <svg className="product-logo" style={{ background: 'none' }} viewBox="0 0 24 24" aria-hidden="true"><XLogoPath /></svg>
   if (productId === 'duolingo') return <DuoMark />

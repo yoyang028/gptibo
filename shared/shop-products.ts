@@ -10,8 +10,15 @@ export const SHOP_PRODUCT_GROUPS = {
   claude: 'Claude',
   'codex-credits': 'Codex 额度',
   'student-verification': 'Plus 学生认证',
-  muse: 'Muse AI',
+  muse: 'Muse',
   grok: 'Grok',
+  gemini: 'Google Gemini',
+  duolingo: '多邻国',
+  'adobe-express': 'Adobe Express',
+  'apple-music': 'Apple Music',
+  'apple-id': 'Apple ID',
+  gmail: 'Google Gmail',
+  'capcut-pro': 'CapCut Pro',
 } as const
 export type ShopProductGroupId = keyof typeof SHOP_PRODUCT_GROUPS
 export type ShopPayment = {
@@ -33,6 +40,8 @@ export type ShopProduct = {
   unit: string
   duration: string
   priceCents: number
+  /** Supplier imports stay private until the owner confirms a retail price. */
+  pricePending?: boolean
   stock: number
   features: string[]
   purchaseNote: string
@@ -147,6 +156,13 @@ export function productProblems(
   if (!text(product.name, 80)) errors.push('商品名称（1–80 字）')
   if (!['draft', 'listed', 'published', 'archived'].includes(product.status))
     errors.push('发布状态')
+  if (
+    product.pricePending !== undefined &&
+    typeof product.pricePending !== 'boolean'
+  )
+    errors.push('售价确认状态')
+  if (product.pricePending && !['draft', 'archived'].includes(product.status))
+    errors.push('请先设置并确认零售价，再展示或开售')
   if (
     product.groupId !== undefined &&
     !Object.hasOwn(SHOP_PRODUCT_GROUPS, product.groupId)
@@ -281,7 +297,10 @@ export function productProblems(
       purchaseNote: '购买须知与售后范围',
       deliveryInstructions: '交付说明',
     }))
-      if (!(key === 'image' && product.api?.provider === 'grizzly') && !String(product[key as keyof ShopProduct] ?? '').trim())
+      if (
+        !(key === 'image' && product.api?.provider === 'grizzly') &&
+        !String(product[key as keyof ShopProduct] ?? '').trim()
+      )
         errors.push(label)
     if (!product.features?.length) errors.push('至少一项商品特点')
     if (!product.steps?.length) errors.push('至少一个交付步骤')

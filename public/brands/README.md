@@ -1,5 +1,7 @@
 # Brand marks
 
+The Muse blue mark uses the original path and color stops shown in the hero at https://muse.gptibo.com/muse-logo.svg (checked 2026-10-17). The catalog reuses this local vector with a seven-second float inspired by that hero. It contains no inner label, frame or orbit, and pauses offscreen or with reduced motion enabled.
+
 OpenAI, Codex, Claude and Grok SVG marks are sourced from [Lobe Icons](https://github.com/lobehub/lobe-icons), package `@lobehub/icons-static-svg`, retrieved 2026-09-26. The original SVG paths are retained and rendered as CSS masks to support light/dark themes. The upstream MIT license is included in this directory. Brand names and marks belong to their respective owners.
 
 

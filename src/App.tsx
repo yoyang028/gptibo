@@ -90,7 +90,7 @@ function App() {
   const customGroup = groupShopProducts(store.products).find(g => page === 'product/' + g.id || g.products.some(p => page === 'product/' + p.id))
   const smsAlias = (Object.keys(SMS_PRODUCT_IDS) as GrizzlyService[]).find(s => page === 'product/' + SMS_PRODUCT_IDS[s])
   const unifiedSms = page === 'product/codex-sms' || Boolean(smsAlias) || customGroup?.id === 'codex-sms'
-  const customDetail = Boolean(customGroup) || page.startsWith('product/custom-') || Object.keys(SHOP_PRODUCT_GROUPS).some(id => id !== 'gemini' && page === 'product/' + id)
+  const customDetail = Boolean(customGroup) || page.startsWith('product/custom-') || Object.keys(SHOP_PRODUCT_GROUPS).some(id => !PRODUCTS.some(p => p.id === id) && page === 'product/' + id)
   const productHidden = store.hiddenProductIds.includes(product.id)
   const isDetail = page === 'product/' + product.id
   const plans = productPlans(product.id).map(p => { const offer = store.catalog.find(item => item.id === p.id); return { ...p, price: offer ? offer.price_cents / 100 : p.price, enabled: Boolean(offer?.enabled) } })

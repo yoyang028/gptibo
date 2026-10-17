@@ -1,0 +1,59 @@
+.muse-logo-motion {
+  display: grid;
+  place-items: center;
+  height: 195px;
+  margin-top: 6px;
+  overflow: visible;
+}
+.muse-logo-motion img {
+  display: block;
+  width: 145px;
+  height: 145px;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 25px #0064e020);
+  animation: muse-emblem-float 7s ease-in-out infinite;
+  animation-play-state: paused;
+  user-select: none;
+}
+.muse-logo-motion[data-active='true'] img {
+  animation-play-state: running;
+}
+.muse-logo-detail {
+  height: 225px;
+  margin: 10px 0 20px;
+}
+.muse-logo-detail img {
+  width: 174px;
+  height: 174px;
+}
+@keyframes muse-emblem-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(2deg);
+  }
+}
+@media (max-width: 600px) {
+  .muse-logo-motion {
+    height: 175px;
+  }
+  .muse-logo-motion img {
+    width: 135px;
+    height: 135px;
+  }
+  .muse-logo-detail {
+    height: 195px;
+  }
+  .muse-logo-detail img {
+    width: 155px;
+    height: 155px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .muse-logo-motion img {
+    animation: none;
+    transform: none;
+  }
+}
