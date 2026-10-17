@@ -38,6 +38,7 @@ import { couponQuote, couponReservation } from './shop-coupons.ts'
 import { smsAdminInfo, smsRefundProblem } from './grizzly/service.ts'
 import { smsManagement, smsPublicCatalog } from './grizzly/management.ts'
 import { hanfolkManagement } from './hanfolk/management.ts'
+import { concealRedemptionLinks } from '../shared/redemption-copy.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
 type OrderPartnerSource = { id: string; slug: string; name: string; email: string; wechat: string; qq: string }
@@ -57,7 +58,8 @@ const customerOrder = async (env: Env, o: Order, contacts = new Map<string, Prom
   contacts.set(owner, settings)
   const [support, fulfillment] = await Promise.all([settings, rechargeSummary(env, o)])
   if (fulfillment) Object.assign(fulfillment, { syncError })
-  return { ...publicOrder(o), custom: await customOrderSummary(env,o), xgift: await xgiftSummary(env, o), manualFulfillment: isLegacyManualOrder(o, Boolean(fulfillment)) || Boolean(emailProduct(o.plan)), delivery: await emailDeliverySummary(env, o), supportContacts: support.contacts, refundHold: !!o.refund_hold || !!fulfillment?.financialHold, fulfillment }
+  const custom = await customOrderSummary(env,o)
+  return { ...publicOrder(o), ...(custom?.requiresRedemption ? { purchaseNote: concealRedemptionLinks(o.purchase_note ?? '') } : {}), custom, xgift: await xgiftSummary(env, o), manualFulfillment: isLegacyManualOrder(o, Boolean(fulfillment)) || Boolean(emailProduct(o.plan)), delivery: await emailDeliverySummary(env, o), supportContacts: support.contacts, refundHold: !!o.refund_hold || !!fulfillment?.financialHold, fulfillment }
 }
 async function orderPartnerSource(env: Env, order: Order): Promise<OrderPartnerSource | null> {
   if (!order.partner_id) return null
@@ -142,9 +144,9 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       const productArtwork = partner ? {} : await publicArtwork(env, (catalog.plans as Plan[]).map(p=>p.product_id).filter(id=>!owner?.hiddenProductIds.includes(id) && (!customProductId.test(id) || products.some(p=>p.id===id))))
       const coupons=partner?[]:(await env.INTEREST_DB.prepare('SELECT settings FROM shop_coupons').all<{settings:string}>()).results.map(r=>JSON.parse(r.settings)).filter(c=>c.active&&Date.parse(c.starts_at)<=Date.now()&&Date.parse(c.ends_at)>Date.now())
       // Storefront prices are configured retail prices, independent of supplier latency.
-      const offers = (catalog.plans as Plan[]).filter(plan=>!customProductId.test(plan.id)||products.some(p=>p.id===plan.id&&!p.pricePending)).map(plan => ({ ...plan,purchase_note:quefaPurchaseNote(mapped[plan.id],plan.purchase_note),has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId==='platform'&&t.plan===plan.id)), enabled: plan.enabled && (
+      const offers = (catalog.plans as Plan[]).filter(plan=>!customProductId.test(plan.id)||products.some(p=>p.id===plan.id&&!p.pricePending)).map(plan => { const product=products.find(p=>p.id===plan.id); return ({ ...plan,purchase_note:product?.purchaseNote??quefaPurchaseNote(mapped[plan.id],plan.purchase_note),delivery_instructions:product?.deliveryInstructions??plan.delivery_instructions,has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId==='platform'&&t.plan===plan.id)), enabled: plan.enabled && (
         customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.status==='published'&&p.stock!==0) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
-      ) ? 1 : 0 }))
+      ) ? 1 : 0 }) })
       return json({ ...catalog,...owner, products, sms: {...sms,projects:sms.projects.map(p=>({...p,enabled:owner?.active!==false && p.enabled && Boolean(offers.find(o=>o.id===p.planId)?.enabled)}))}, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
     }
     if (path === '/api/orders/client' && method === 'POST') {

@@ -46,6 +46,7 @@ export type ShopProduct = {
   catalogPreview?: boolean
   buyerHighlights?: string[]
   buyerWarnings?: string[]
+  requiresRedemption?: boolean
   stock: number
   features: string[]
   purchaseNote: string
@@ -69,6 +70,8 @@ export type ShopProduct = {
   }
 }
 export type ShopProductInput = ShopProduct & {
+  /** Owner-only field; encrypted separately and released only with paid delivery. */
+  redemptionGuide?: string
   apiToken?: string
   apiKey?: string
 }
@@ -105,6 +108,7 @@ export function groupShopProducts(products: readonly ShopProduct[]) {
   return [...groups.values()]
 }
 export type CustomOrderView = {
+  requiresRedemption?: boolean
   groupId?: ShopProductGroupId
   sms?: SmsView
   productId: string
@@ -115,6 +119,7 @@ export type CustomOrderView = {
   delivery: ShopDelivery
   deliveryInstructions: string
   deliveryContent: string | null
+  redemptionGuide?: string
   paymentClaimed: boolean
   paymentReference: string
   fields: Record<string, string>
@@ -164,6 +169,7 @@ export function productProblems(
   if (!text(product.name, 80)) errors.push('商品名称（1–80 字）')
   if (!['draft', 'listed', 'published', 'archived'].includes(product.status))
     errors.push('发布状态')
+  if (product.requiresRedemption !== undefined && typeof product.requiresRedemption !== 'boolean') errors.push('站外兑换设置')
   if (
     product.pricePending !== undefined &&
     typeof product.pricePending !== 'boolean'

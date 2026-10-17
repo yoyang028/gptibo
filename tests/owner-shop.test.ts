@@ -15,7 +15,9 @@ import { sendOwnerOrderNotifications } from '../worker/owner-shop.ts'
 import type { ShopProduct } from '../shared/shop-products.ts'
 import { sendVerificationEmail } from '../worker/email.ts'
 import { fulfillCustomOrder } from '../worker/shop-products.ts'
-import { reconcileShopProducts } from '../worker/shop-products.ts'
+import { reconcileShopProducts, customOrderSummary } from '../worker/shop-products.ts'
+import { applyPaymentResult, findPayment } from '../worker/payments/service.ts'
+import { getOrder } from '../worker/order-state.ts'
 import {
   ARTWORK_TEMPLATES,
   defaultLayout,
@@ -391,6 +393,75 @@ test('Xiaojiu durable uncertain-creation recovery reuses the same business numbe
   ).order
   assert.equal(recovered.status, 'success')
   assert.equal(recovered.custom.deliveryContent, 'XIAOJIU-PRIVATE-FIXTURE-CARD')
+})
+
+test('redemption guides stay encrypted and private until verified payment and code delivery, including callback fulfillment', async t => {
+  const s = await xiaojiuFixture(t)
+  const firstGuide = '[本单兑换入口](https://redeem.example.com/original)\n按指引输入兑换码。'
+  const input = { ...s.p, requiresRedemption: true, redemptionGuide: firstGuide }
+  const saved = await s.saveProduct(input)
+  const stored = s.db.prepare('SELECT encrypted_content FROM shop_redemption_guides WHERE product_id=?').get(saved.id)!.encrypted_content as string
+  assert.ok(stored.length > 40)
+  assert.ok(!stored.includes('redeem.example.com'))
+  assert.ok(!s.db.prepare('SELECT public_json FROM shop_products WHERE id=?').get(saved.id)!.public_json.toString().includes('redeem.example.com'))
+  const editable = await (await s.request('/api/admin/my-shop/products', undefined, s.admin)).json()
+  assert.equal(editable.products.find((p: {id:string}) => p.id === saved.id).redemptionGuide, firstGuide)
+  const publicCatalog = await (await s.request('/api/catalog')).text()
+  assert.doesNotMatch(publicCatalog, /redeem\.example\.com|redemptionGuide/)
+
+  const order = await s.createXiaojiu()
+  assert.equal(order.custom.redemptionGuide, undefined)
+  assert.doesNotMatch(JSON.stringify(order), /redeem\.example\.com/)
+  const snapshot = s.db.prepare('SELECT redemption_guide FROM shop_order_details WHERE order_id=?').get(order.id)!.redemption_guide as string
+  assert.equal(snapshot, stored)
+  const claimed = await s.request('/api/orders/' + order.id + '/custom-action', { action: 'claim-payment', reference: 'fixture-only-payment', version: order.version }, s.buyerCookie)
+  assert.equal(claimed.status, 200)
+  assert.doesNotMatch(await claimed.text(), /redeem\.example\.com|redemptionGuide/)
+  assert.equal(s.calls.filter(c=>c.path.endsWith('/orders')).length, 0)
+
+  // Edits to the current catalog must not redirect a previously placed order.
+  await s.saveProduct({ ...input, version: Number(s.db.prepare('SELECT version FROM shop_products WHERE id=?').get(saved.id)!.version), redemptionGuide: '[新版入口](https://redeem.example.com/new)' })
+  s.db.prepare("INSERT INTO payments(order_id,provider,account,amount_cents,expires_at,created_at,updated_at) VALUES (?,'alipay','fixture-account',?,?,?,?)").run(order.id, saved.priceCents, Date.now()+60000, Date.now(), Date.now())
+  const payment = (await findPayment(s.env, order.id))!
+  await assert.rejects(applyPaymentResult(s.env, payment, { orderId: order.id, amountCents: 1, status: 'paid', tradeNo: 'fixture-trade' }))
+  assert.equal(s.calls.filter(c=>c.path.endsWith('/orders')).length, 0)
+  await applyPaymentResult(s.env, payment, { orderId: order.id, amountCents: saved.priceCents, status: 'paid', tradeNo: 'fixture-trade' })
+  const delivered = (await (await s.request('/api/orders/' + order.id, undefined, s.buyerCookie)).json()).order
+  assert.equal(delivered.paymentStatus, 'paid')
+  assert.equal(delivered.status, 'success')
+  assert.equal(delivered.custom.deliveryContent, 'XIAOJIU-PRIVATE-FIXTURE-CARD')
+  assert.equal(delivered.custom.redemptionGuide, firstGuide)
+  await applyPaymentResult(s.env, payment, { orderId: order.id, amountCents: saved.priceCents, status: 'paid', tradeNo: 'fixture-trade' })
+  assert.equal(s.calls.filter(c=>c.path.endsWith('/orders')).length, 1)
+  assert.equal((await s.request('/api/orders/' + order.id, undefined, await s.buyer())).status, 404)
+
+  for (const patch of ["payment_status='unpaid'", "status='processing'", "status='failed'", "status='cancelled'", 'refund_hold=1', 'refunded_cents=1', 'redemption_blocked=1', 'is_test=1', "mode='demo',payment_status='simulated'"]) {
+    s.db.prepare("UPDATE orders SET payment_status='paid',status='success',refund_hold=0,refunded_cents=0,redemption_blocked=0,is_test=0,mode='live' WHERE id=?").run(order.id)
+    s.db.prepare('UPDATE orders SET '+patch+' WHERE id=?').run(order.id)
+    const summary = await customOrderSummary(s.env, await getOrder(s.env, order.id))
+    assert.equal(summary?.redemptionGuide, undefined, patch)
+  }
+})
+
+test('legacy order notes and snapshots cannot disclose redemption URLs before payment or before a code is delivered', async t => {
+  const s = await setup()
+  t.after(()=>s.db.close())
+  const legacyGuide = '前往 [兑换页面](https://redeem.example.com/private) 操作。'
+  const saved = await s.saveProduct(product({ groupId: 'claude', deliveryInstructions: legacyGuide, purchaseNote: legacyGuide }))
+  const buyer = await s.buyer()
+  const response = await s.create(saved, buyer)
+  assert.equal(response.status, 201)
+  const order = (await response.json()).order
+  const row = s.db.prepare('SELECT snapshot FROM shop_order_details WHERE order_id=?').get(order.id)!
+  const oldSnapshot = { ...JSON.parse(String(row.snapshot)), deliveryInstructions: legacyGuide }
+  s.db.prepare('UPDATE shop_order_details SET snapshot=?,redemption_guide=\'\' WHERE order_id=?').run(JSON.stringify(oldSnapshot), order.id)
+  s.db.prepare('UPDATE orders SET purchase_note=? WHERE id=?').run(legacyGuide, order.id)
+  for (const status of ['unpaid', 'paid']) {
+    s.db.prepare("UPDATE orders SET payment_status=?,status='processing' WHERE id=?").run(status, order.id)
+    const detail = await (await s.request('/api/orders/' + order.id, undefined, buyer)).text()
+    assert.doesNotMatch(detail, /redeem\.example\.com|redemptionGuide/)
+    assert.doesNotMatch(await (await s.request('/api/orders', undefined, buyer)).text(), /redeem\.example\.com|redemptionGuide/)
+  }
 })
 
 test('Xiaojiu actual over-limit charges retain cost and remote ID without delivering, repurchasing, or hiding the issue from admin', async (t) => {

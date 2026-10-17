@@ -27,6 +27,7 @@ import {
   productProblems,
   SHOP_PRODUCT_GROUPS,
   type ShopProduct,
+  type ShopProductInput,
   type ShopProductGroupId,
 } from '../../shared/shop-products'
 import '@/components/shop-products.css'
@@ -90,7 +91,7 @@ export function ProductEditor({
   onSaved,
   listingOnly = false,
 }: {
-  initial: ShopProduct
+  initial: ShopProductInput
   onClose: () => void
   onSaved: () => void
   listingOnly?: boolean
@@ -101,6 +102,7 @@ export function ProductEditor({
     [features, setFeatures] = useState(initial.features.join('\n')),
     [buyerHighlights, setBuyerHighlights] = useState((initial.buyerHighlights ?? []).join('\n')),
     [buyerWarnings, setBuyerWarnings] = useState((initial.buyerWarnings ?? []).join('\n')),
+    [redemptionGuide, setRedemptionGuide] = useState(initial.redemptionGuide ?? ''),
     [price, setPrice] = useState(
       initial.pricePending ? '' : (initial.priceCents / 100).toFixed(2),
     ),
@@ -118,6 +120,7 @@ export function ProductEditor({
     submitting = useRef(false)
   const value = {
     ...product,
+    ...(product.redemptionGuide !== undefined || redemptionGuide.trim() ? { redemptionGuide } : {}),
     priceCents:
       product.pricePending && !price.trim()
         ? product.priceCents
@@ -219,6 +222,7 @@ export function ProductEditor({
         },
       )
       setProduct(result.product)
+      setRedemptionGuide((result.product as ShopProductInput).redemptionGuide ?? '')
       setFeatures(result.product.features.join('\n'))
       setPrice(
         result.product.pricePending
@@ -498,6 +502,11 @@ export function ProductEditor({
                   }
                   maxLength={4000}
                 />
+              </label>
+              <label>
+                付款后兑换入口与完整指引（私有）
+                <textarea rows={8} maxLength={12000} value={redemptionGuide} onChange={e=>setRedemptionGuide(e.target.value)} />
+                <small>仅在服务端确认到账且订单已交付兑换码后提供给该买家；不会出现在公开商品资料或未付款订单中。</small>
               </label>
               <label>
                 交付方式

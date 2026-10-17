@@ -29,6 +29,8 @@ import {
 import { recordSupplierRefund } from './grizzly/management.ts'
 import { affordablePools, poolQuotes } from './grizzly/pools.ts'
 import { withExistingFamilyOffers } from './hanfolk/matches.ts'
+import { publicBuyerProduct } from '../shared/redemption-copy.ts'
+import { editableProducts, guideSaveStatement, deliveredRedemptionGuide, privateProductGuide } from './redemption-guides.ts'
 import {
   XiaojiuPurchaseClient,
   XiaojiuPurchaseError,
@@ -62,6 +64,7 @@ type Detail = {
   api_secret: string
   supplier_error: string
   supplier_attempted: number
+  redemption_guide: string
 }
 const rowProduct = (r: Row): ShopProduct => ({
   ...JSON.parse(r.public_json),
@@ -97,7 +100,7 @@ export async function shopProducts(env: Env, includeDrafts = false) {
       if (!includeDrafts) delete p.api
       return p
     })
-  return includeDrafts ? products : withExistingFamilyOffers(env, products)
+  return includeDrafts ? products : (await withExistingFamilyOffers(env, products)).map(publicBuyerProduct)
 }
 async function productRow(env: Env, id: string) {
   return env.INTEREST_DB.prepare(
@@ -180,7 +183,7 @@ export async function customRetailFloor(env: Env, id: string) {
 export async function shopProductRoutes(request: Request, env: Env, url: URL) {
   const suffix = url.pathname.slice('/api/admin/my-shop/products'.length)
   if (!suffix && request.method === 'GET')
-    return json({ products: await shopProducts(env, true) })
+    return json({ products: await editableProducts(env, await shopProducts(env, true)) })
   if (request.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
   const data = await body(request, 1000000)
   if (Object.values(SMS_PRODUCT_IDS).some((id) => id === data.id))
@@ -259,7 +262,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     throw new ApiError(
       '供货 API 请使用无账号、密码或查询参数的公开 HTTPS 基础地址。',
     )
-  const product: ShopProduct = {
+  const rawProduct: ShopProduct = {
     id,
     ...(input.groupId !== undefined ? { groupId: input.groupId } : {}),
     name: input.name,
@@ -283,6 +286,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     ...(input.buyerWarnings !== undefined
       ? { buyerWarnings: input.buyerWarnings }
       : {}),
+    ...(input.requiresRedemption !== undefined ? { requiresRedemption: input.requiresRedemption } : {}),
     stock: input.stock,
     features: input.features,
     purchaseNote: input.purchaseNote,
@@ -296,6 +300,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     version: input.version,
     ...(api ? { api } : {}),
   }
+  const product = publicBuyerProduct(rawProduct)
   if (
     input.apiToken != null &&
     (typeof input.apiToken !== 'string' ||
@@ -462,6 +467,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     changeId = crypto.randomUUID(),
     now = Date.now(),
     db = env.INTEREST_DB
+  const guide = await guideSaveStatement(env, rawProduct, changeId, input.redemptionGuide)
   await db.batch([
     db
       .prepare(
@@ -506,6 +512,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
         id,
         changeId,
       ),
+    ...(guide ? [guide] : []),
   ])
   if (
     !(await db
@@ -516,7 +523,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     throw new ApiError('商品已更新，请刷新后重试。', 409)
   return json(
     {
-      product: rowProduct((await productRow(env, id))!),
+      product: { ...rowProduct((await productRow(env, id))!), redemptionGuide: await privateProductGuide(env, id) },
       apiVerified: api?.verified ?? false,
       ...(supplierQuote ? { supplierQuote } : {}),
     },
@@ -534,12 +541,16 @@ export async function customOrderSummary(
     .bind(order.id)
     .first<Detail>()
   if (!d) return null
-  const p = JSON.parse(d.snapshot) as ShopProduct
+  const p = publicBuyerProduct(JSON.parse(d.snapshot) as ShopProduct)
+  const visible = order.payment_status === 'paid' && !order.refund_hold && order.refunded_cents < order.price_cents
+  const redemptionGuide = await deliveredRedemptionGuide(env, order, Boolean(visible && d.delivery_content), d.redemption_guide)
   return {
     ...(p.api?.provider === 'grizzly'
       ? { sms: await smsSummary(env, order) }
       : {}),
     ...(p.groupId ? { groupId: p.groupId } : {}),
+    ...(p.requiresRedemption ? { requiresRedemption: true } : {}),
+    ...(redemptionGuide ? { redemptionGuide } : {}),
     productId: p.id,
     productName: p.name,
     image: p.image,
@@ -663,13 +674,14 @@ export async function createCustomOrder(
     ...(coupon ? [couponReservation(env, coupon, orderId, email)] : []),
     db
       .prepare(
-        'INSERT INTO shop_order_details(order_id,product_id,snapshot,fields,api_secret) SELECT id,?,?,?,? FROM orders WHERE id=?',
+        "INSERT INTO shop_order_details(order_id,product_id,snapshot,fields,api_secret,redemption_guide) SELECT id,?,?,?,?,COALESCE((SELECT encrypted_content FROM shop_redemption_guides WHERE product_id=?),'') FROM orders WHERE id=?",
       )
       .bind(
         id,
         JSON.stringify(p),
         JSON.stringify(fields),
         row.api_secret,
+        id,
         orderId,
       ),
     ...(p.api?.provider === 'grizzly'
@@ -930,8 +942,8 @@ export async function fulfillCustomOrder(
   id: string,
   forceQuery = false,
 ) {
-  const order = await getOrder(env, id),
-    db = env.INTEREST_DB
+  let order = await getOrder(env, id)
+  const db = env.INTEREST_DB
   const smsDetail = await db
     .prepare(
       'SELECT snapshot,api_secret FROM shop_order_details WHERE order_id=?',
@@ -946,6 +958,8 @@ export async function fulfillCustomOrder(
     }
   }
   if (
+    order.mode !== 'live' ||
+    order.is_test ||
     order.payment_status !== 'paid' ||
     order.status === 'success' ||
     order.status === 'cancelled' ||
@@ -954,6 +968,17 @@ export async function fulfillCustomOrder(
     order.refunded_cents > 0
   )
     return
+  // Payment callbacks use the common paid/session state. Custom products have
+  // no account-input step; move them into the same fulfillment state as a
+  // verified manual receipt before acquiring the durable supplier lease.
+  if (order.status === 'session') {
+    try {
+      order = await change(env, order, { status: 'processing', started_at: order.started_at ?? Date.now() }, 'system', 'custom-fulfillment-start', '确认到账，开始处理商品交付')
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 409) throw e
+      order = await getOrder(env, id)
+    }
+  }
   const detail = await db
     .prepare('SELECT * FROM shop_order_details WHERE order_id=?')
     .bind(id)
@@ -1162,7 +1187,7 @@ export async function fulfillCustomOrder(
 }
 export async function reconcileShopProducts(env: Env) {
   const rows = await env.INTEREST_DB.prepare(
-    "SELECT d.order_id FROM shop_order_details d JOIN orders o ON o.id=d.order_id WHERE o.payment_status='paid' AND o.status IN ('processing','failed') AND o.refund_hold=0 AND o.refunded_cents=0 AND COALESCE(d.supplier_state,'') NOT IN ('failed','review') AND json_extract(d.snapshot,'$.delivery')='api' AND COALESCE(json_extract(d.snapshot,'$.api.provider'),'')<>'grizzly' AND d.last_checked_at<? ORDER BY d.last_checked_at LIMIT 10",
+    "SELECT d.order_id FROM shop_order_details d JOIN orders o ON o.id=d.order_id WHERE o.payment_status='paid' AND o.status IN ('session','processing','failed') AND o.refund_hold=0 AND o.refunded_cents=0 AND COALESCE(d.supplier_state,'') NOT IN ('failed','review') AND json_extract(d.snapshot,'$.delivery')='api' AND COALESCE(json_extract(d.snapshot,'$.api.provider'),'')<>'grizzly' AND d.last_checked_at<? ORDER BY d.last_checked_at LIMIT 10",
   )
     .bind(Date.now() - 60000)
     .all<{ order_id: string }>()

@@ -1,0 +1,55 @@
+import type { ShopProduct, ShopProductInput } from './shop-products.ts'
+
+export const REDEMPTION_FLOW = '付款确认并完成交付后，在原订单领取兑换码、兑换入口和操作指引，按指引自行完成兑换。'
+
+export function needsRedemption(product: Pick<ShopProduct, 'name' | 'groupId'> & { requiresRedemption?: boolean }) {
+  return product.requiresRedemption === true ||
+    ['claude', 'codex-credits', 'duolingo', 'adobe-express', 'apple-music'].includes(product.groupId ?? '') ||
+    (!/成品|账户|账号/.test(product.name) && /CDK|兑换码|激活链接/i.test(product.name))
+}
+
+/** Public editorial text never contains an external redemption address. */
+export function concealRedemptionLinks(text: string) {
+  return text
+    .replace(/\[([^\]\n]+)\]\(https?:\/\/[^\s)]+\)/g, '$1（入口于付款并交付后在原订单提供）')
+    .replace(/https?:\/\/[^\s<>"')，。；]+/gi, '（入口于付款并交付后提供）')
+    .replace(/(?:www\.)?(?:vip\.dajuai\.us|owlduo\.com|982xj\.xyz)(?:\/[^\s<>"')，。；]*)?/gi, '订单内兑换入口')
+    .replace(/OwlDuo|大桔兑换站|大橘兑换站|小久自助兑换站|小久兑换站/gi, '随单兑换入口')
+}
+
+export function publicBuyerProduct<T extends ShopProduct>(product: T): T {
+  product = { ...product }
+  delete (product as ShopProductInput).redemptionGuide
+  if (!needsRedemption(product)) return product
+  const description = product.description.replace(/(### (?:卡密交付与站外兑换|交付内容与使用方式|交付与使用)\n)[\s\S]*?(?=\n\n### |$)/g, '$1' + REDEMPTION_FLOW)
+  return {
+    ...product,
+    requiresRedemption: true,
+    description: concealRedemptionLinks(description),
+    tagline: concealRedemptionLinks(product.tagline),
+    features: product.features.map(concealRedemptionLinks),
+    purchaseNote: concealRedemptionLinks(product.purchaseNote),
+    deliveryInstructions: REDEMPTION_FLOW,
+    buyerHighlights: product.buyerHighlights?.map(concealRedemptionLinks),
+    buyerWarnings: product.buyerWarnings?.map(concealRedemptionLinks),
+    steps: [
+      { title: '选择规格', description: '根据使用需求选择档位，先阅读账号条件与购买须知，再核对订单信息。' },
+      { title: '付款后领取', description: '付款确认后处理交付，兑换码、兑换入口和完整操作指引统一保存在原订单中。' },
+      { title: '兑换并使用', description: '按随单指引核对目标账号，完成兑换后检查权益到账情况；遇到异常可凭原订单联系售后。' },
+    ],
+    faq: product.faq.map(item => ({ ...item, answer: concealRedemptionLinks(item.answer) })),
+  }
+}
+
+/** Used only by server import/edit paths, before sanitizing public copy. */
+export function redemptionGuideFromProduct(product: ShopProduct) {
+  if (!needsRedemption(product)) return ''
+  const instructions = [product.deliveryInstructions, ...product.steps.map(s => s.description)].join('\n')
+  if (!/https?:\/\//i.test(instructions)) return ''
+  return [
+    product.name,
+    product.deliveryInstructions,
+    ...product.steps.map(s => '### ' + s.title + '\n' + s.description),
+    ...product.faq.filter(f => /https?:\/\//i.test(f.answer)).map(f => '### ' + f.question + '\n' + f.answer),
+  ].join('\n\n')
+}

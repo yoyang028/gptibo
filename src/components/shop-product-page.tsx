@@ -38,8 +38,8 @@ import { RefundContent } from './order-services'
 import './shop-products.css'
 import { GrizzlyOrderContent } from './grizzly-order-content'
 import { ProductKeyFacts } from './product-key-facts'
-import { ProductCopyText, ProductDeliveryNotice, ProductDescription, ProductSpecComparison } from './product-buyer-details'
-import { DELIVERY_COPY_HEADING, productCopyBlocks } from '../../shared/product-copy'
+import { ProductCopyText, ProductDescription } from './product-buyer-details'
+import { productCopyBlocks } from '../../shared/product-copy'
 
 export function ShopProductGroupPage({
   group,
@@ -114,7 +114,6 @@ export function ShopProductPage({
   const familyName = displayName || product.name || '商品名称'
   const presentation = shopPresentation(familyId, product)
   const descriptionBlocks = productCopyBlocks(customerProductCopy(product.description))
-  const deliveryNotice = descriptionBlocks.find(block => block.title === DELIVERY_COPY_HEADING)
   const [couponCode, setCouponCode] = useState(''),
     [coupon, setCoupon] = useState<{ code: string; priceCents: number } | null>(
       null,
@@ -230,7 +229,6 @@ export function ShopProductPage({
             </div>
           </div>
           <ProductKeyFacts highlights={product.buyerHighlights} warnings={product.buyerWarnings}/>
-          {deliveryNotice && <ProductDeliveryNotice block={deliveryNotice} />}
           {familyId === 'muse' ? <MuseLogoMotion detail /> : <ProductArtwork
             config={artwork}
             name={product.name}
@@ -239,10 +237,13 @@ export function ShopProductPage({
             fallback={(!variants || variants.length === 1) ? <ProductServiceScene productId={familyId} name={familyName} duration={product.duration} /> : null}
           />
           }
-          {deliveryNotice && variants && variants.length > 1 && <ProductSpecComparison products={variants} selected={product.id} />}
+          <div className="product-pitch">
+            <h3>{familyId === 'claude' ? '找到适合你的用量。' : familyId === 'codex-credits' ? '按需补充，继续创造。' : product.name}</h3>
+            <p>{product.tagline}</p>
+          </div>
           {variants && variants.length > 1 && (
             <fieldset className="shop-product-variants">
-              <legend>选择适合你的规格<span>{variants.length} 个规格 · 独立定价</span></legend>
+              <legend>选择适合你的规格<span>{variants.length} 个规格可选</span></legend>
               {variants.map((variant) => (
                 <label
                   key={variant.id}
@@ -262,7 +263,7 @@ export function ShopProductPage({
                   />
                   <span>
                     <strong>{variantLabel(variant, familyName)}</strong>
-                    <small>{variant.duration}</small>
+                    <small>{variant.features[0] || variant.duration}</small>
                   </span>
                   <strong>{variant.pricePending ? '待定价' : <><small>¥</small>{(variant.priceCents / 100).toFixed(2)}</>}</strong>
                 </label>
@@ -270,12 +271,11 @@ export function ShopProductPage({
             </fieldset>
           )}
           <div className="shop-product-option">
-            <span className="section-kicker">所选规格 / INCLUDED</span>
+            <span className="section-kicker">商品详情</span>
             <div className="plan-option-top">
               <h3>{product.name || '商品规格'}</h3>
               <span>{product.duration}</span>
             </div>
-            <ProductDescription blocks={descriptionBlocks} />
             <ul className="plan-features">
               {product.features.map((feature, i) => (
                 <li key={i}>
@@ -284,12 +284,7 @@ export function ShopProductPage({
                 </li>
               ))}
             </ul>
-          </div>
-          <div className="membership-purchase-note">
-            <strong>购买须知与售后范围</strong>
-            <p className="shop-product-copy">
-              <ProductCopyText text={product.purchaseNote || '请在后台补全购买须知与售后范围。'} />
-            </p>
+            <a className="shop-details-link" href="#product-details">查看权益、账号条件与购买须知<ArrowRight size={13} aria-hidden="true" /></a>
           </div>
         </div>
         <aside className="order-summary" aria-label="商品价格与交付说明">
@@ -308,7 +303,7 @@ export function ShopProductPage({
             </div>
             <div>
               <dt>交付方式</dt>
-              <dd>{product.delivery === 'api' ? '卡密 / 兑换信息' : '按商品说明交付'}</dd>
+              <dd>{product.requiresRedemption ? '兑换码 + 使用指引' : product.delivery === 'api' ? '卡密 / 兑换信息' : '按商品说明交付'}</dd>
             </div>
             {!displayOnly && available && (
               <div>
@@ -341,7 +336,7 @@ export function ShopProductPage({
           <p className="summary-note">
             {product.pricePending ? '资料已公开，售价尚未确认，当前不能下单。' : displayOnly || !available
               ? '当前可查看商品与规格，恢复售卖后可在此下单。'
-              : '付款后由店主核对收款，确认后按说明交付。'}
+              : '付款确认后，交付内容可在原订单中查看。'}
           </p>
           <p className="summary-footnote shop-product-copy">
             <strong>交付说明</strong>
@@ -349,7 +344,21 @@ export function ShopProductPage({
           </p>
         </aside>
       </section>
-      <div className="shop-flow-heading page-width"><span className="section-kicker">HOW IT WORKS</span><h2>{displayOnly || !available ? '开售后的交付流程' : '从选购，到使用。'}</h2><p>按商品说明完成每一步，服务进度在订单中查看。</p></div>
+      <section className="shop-buyer-details page-width" id="product-details" aria-label="商品介绍与购买须知">
+        <div className="shop-buyer-heading">
+          <span className="section-kicker">PRODUCT DETAILS</span>
+          <h2>了解你的选择。</h2>
+          <p>{product.name}</p>
+        </div>
+        <div className="shop-buyer-body">
+          <ProductDescription blocks={descriptionBlocks} />
+          <div className="membership-purchase-note">
+            <strong>购买须知与售后范围</strong>
+            <p className="shop-product-copy"><ProductCopyText text={product.purchaseNote} /></p>
+          </div>
+        </div>
+      </section>
+      <div className="shop-flow-heading page-width"><span className="section-kicker">HOW IT WORKS</span><h2>从选购，到使用。</h2><p>交付内容与操作指引在原订单中查看。</p></div>
       <section
         className={'delivery-guide page-width shop-delivery-guide' + (product.steps.length === 4 ? ' four-step-guide' : '')}
         aria-label="购买与交付流程"
@@ -616,9 +625,13 @@ export function ShopOrderDialog({
                     {view.deliveryInstructions}
                   </p>
                   {view.deliveryContent && (
-                    <pre className="shop-delivery-content">
-                      {view.deliveryContent}
-                    </pre>
+                    <DeliveredCode key={order.id} value={view.deliveryContent} />
+                  )}
+                  {order.paymentStatus === 'paid' && order.status === 'success' && !order.refundHold && view.deliveryContent && view.redemptionGuide && (
+                    <section className="paid-redemption-guide" aria-label="本单兑换入口与指引">
+                      <h3>兑换入口与操作指引</h3>
+                      <ProductDescription blocks={productCopyBlocks(view.redemptionGuide)} />
+                    </section>
                   )}
                   {order.refundHold && <p>售后处理中，请联系店主。</p>}
                   {view.supplierError && (
@@ -651,4 +664,23 @@ export function ShopOrderDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+function DeliveredCode({ value }: { value: string }) {
+  const [copiedValue, setCopiedValue] = useState('')
+  const [copyError, setCopyError] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopiedValue(value)
+      setCopyError(false)
+    } catch {
+      setCopyError(true)
+    }
+  }
+  return <div className="delivered-code">
+    <pre className="shop-delivery-content">{value}</pre>
+    <Button variant="outline" onClick={() => void copy()}>{copiedValue === value ? '已复制交付内容' : '复制交付内容'}</Button>
+    {copyError && <p role="status">复制未成功，请选中上方内容手动复制。</p>}
+  </div>
 }
