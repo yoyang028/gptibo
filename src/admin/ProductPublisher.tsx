@@ -30,6 +30,13 @@ import {
   type ShopProductGroupId,
 } from '../../shared/shop-products'
 import '@/components/shop-products.css'
+import { GrizzlyProductFields } from './GrizzlyProductFields'
+import {
+  grizzlyProduct,
+  GRIZZLY_SERVICES,
+  GRIZZLY_ORIGIN,
+  GRIZZLY_USA,
+} from '../../shared/grizzly-sms'
 
 const freshProduct = (): ShopProduct => ({
   id: '',
@@ -166,7 +173,10 @@ function ProductEditor({
     setError('')
     setMessage('')
     try {
-      const result = await api<{ product: ShopProduct }>(
+      const result = await api<{
+        product: ShopProduct
+        supplierQuote?: { balanceUsd: string; priceUsd: string; count: number }
+      }>(
         '/api/admin/my-shop/products' +
           (action === 'verify' ? '/verify-api' : ''),
         {
@@ -183,7 +193,9 @@ function ProductEditor({
       setBaseline(JSON.stringify(result.product))
       setMessage(
         action === 'verify'
-          ? '供货目录只读检查通过，配置已保存。'
+          ? result.supplierQuote
+            ? `只读检查通过并已保存：供货报价 US$ ${result.supplierQuote.priceUsd}，可用 ${result.supplierQuote.count} 个，账户余额 US$ ${result.supplierQuote.balanceUsd}。`
+            : '供货目录只读检查通过，配置已保存。'
           : action === 'published'
             ? '商品已发布，前台目录与详情已更新。'
             : '商品已保存。',
@@ -425,12 +437,19 @@ function ProductEditor({
                 交付方式
                 <select
                   value={product.delivery}
-                  onChange={(e) =>
-                    update(
-                      'delivery',
-                      e.target.value as ShopProduct['delivery'],
-                    )
-                  }
+                  onChange={(e) => {
+                    const delivery = e.target.value as ShopProduct['delivery']
+                    setProduct((p) => ({
+                      ...p,
+                      delivery,
+                      ...(delivery === 'manual'
+                        ? {
+                            api: undefined,
+                            payment: { ...p.payment, provider: undefined },
+                          }
+                        : {}),
+                    }))
+                  }}
                 >
                   <option value="manual">
                     自有商品 · 人工交付账号／卡密／链接／服务
@@ -439,8 +458,9 @@ function ProductEditor({
                 </select>
               </label>
               <p className="owner-editor-notice">
-                已接入的 ChatGPT
-                使用原有平台代收与直充流程。这里新增的商品使用下方自行配置的收款方式，店主确认到账后才进入交付。
+                {product.api?.provider === 'grizzly'
+                  ? '灰熊接码使用订单专属支付宝付款码，服务端确认到账后自动分配号码。'
+                  : '已接入的 ChatGPT 使用原有平台代收与直充流程。其他新增商品使用下方配置的收款方式，店主确认到账后进入交付。'}
               </p>
               {product.delivery === 'api' && (
                 <>
@@ -449,29 +469,55 @@ function ProductEditor({
                     <select
                       value={product.api?.provider ?? 'json-v1'}
                       onChange={(e) => {
-                        const provider = e.target.value as 'json-v1' | 'xiaojiu'
+                        const provider = e.target.value as
+                          'json-v1' | 'xiaojiu' | 'grizzly'
                         setApiToken('')
                         setApiKey('')
                         setSupplierCatalog(null)
-                        update('api', {
+                        const nextApi: NonNullable<ShopProduct['api']> = {
                           provider,
                           baseUrl:
-                            provider === 'xiaojiu' ? 'https://98-xj.com' : '',
+                            provider === 'xiaojiu'
+                              ? 'https://98-xj.com'
+                              : provider === 'grizzly'
+                                ? GRIZZLY_ORIGIN
+                                : '',
                           productCode: '',
                           configured: false,
                           verified: false,
-                        })
+                          ...(provider === 'grizzly'
+                            ? {
+                                sms: {
+                                  country: GRIZZLY_USA,
+                                  maxPriceUsd: '',
+                                  cnyPerUsd: '',
+                                },
+                              }
+                            : {}),
+                        }
+                        setProduct((p) => ({
+                          ...p,
+                          api: nextApi,
+                          payment: {
+                            ...p.payment,
+                            provider:
+                              provider === 'grizzly' ? 'alipay' : undefined,
+                          },
+                        }))
                       }}
                     >
                       <option value="json-v1">通用 JSON v1 供货</option>
                       <option value="xiaojiu">小久 · 钱包余额采购</option>
+                      <option value="grizzly">灰熊 SMS · 美国单次接码</option>
                     </select>
                   </label>
                   <label>
                     供货 API 基础地址
                     <Input
                       type="url"
-                      readOnly={product.api?.provider === 'xiaojiu'}
+                      readOnly={['xiaojiu', 'grizzly'].includes(
+                        product.api?.provider ?? '',
+                      )}
                       placeholder="https://supplier.example.com/v1"
                       value={product.api?.baseUrl ?? ''}
                       onChange={(e) =>
@@ -503,30 +549,38 @@ function ProductEditor({
                       />
                     </label>
                   )}
-                  <label>
-                    {product.api?.provider === 'xiaojiu'
-                      ? '小久 SKU ID（规格编号）'
-                      : '上游商品编码'}
-                    <Input
-                      value={product.api?.productCode ?? ''}
-                      maxLength={100}
-                      onChange={(e) =>
-                        update('api', {
-                          ...product.api,
-                          baseUrl: product.api?.baseUrl ?? '',
-                          productCode: e.target.value,
-                          configured: product.api?.configured ?? false,
-                          verified: false,
-                        })
-                      }
+                  {product.api?.provider === 'grizzly' ? (
+                    <GrizzlyProductFields
+                      api={product.api}
+                      onChange={(value) => update('api', value)}
                     />
-                  </label>
+                  ) : (
+                    <label>
+                      {product.api?.provider === 'xiaojiu'
+                        ? '小久 SKU ID（规格编号）'
+                        : '上游商品编码'}
+                      <Input
+                        value={product.api?.productCode ?? ''}
+                        maxLength={100}
+                        onChange={(e) =>
+                          update('api', {
+                            ...product.api,
+                            baseUrl: product.api?.baseUrl ?? '',
+                            productCode: e.target.value,
+                            configured: product.api?.configured ?? false,
+                            verified: false,
+                          })
+                        }
+                      />
+                    </label>
+                  )}
                   <label>
                     {product.api?.provider === 'xiaojiu'
                       ? '采购参考上限（元）'
                       : '最高采购成本（元）'}
                     <Input
                       type="number"
+                      readOnly={product.api?.provider === 'grizzly'}
                       step="0.01"
                       min="0.01"
                       max="100000"
@@ -704,7 +758,9 @@ function ProductEditor({
                       )}
                     </>
                   )}
-                  {product.api?.provider !== 'xiaojiu' && (
+                  {!['xiaojiu', 'grizzly'].includes(
+                    product.api?.provider ?? '',
+                  ) && (
                     <details className="owner-editor-notice">
                       <summary>JSON v1 供货接口格式</summary>
                       <p>
@@ -828,6 +884,11 @@ function ProductEditor({
             </fieldset>
             <fieldset disabled={busy} className="owner-editor-section">
               <legend>收款方式</legend>
+              {product.api?.provider === 'grizzly' && (
+                <p className="owner-editor-notice">
+                  支付宝自动收款：付款码按订单生成，无需上传个人收款码。正式开放前须在服务端配置商户、验签公钥、回调域名与收款开关。
+                </p>
+              )}
               <label>
                 收款名称
                 <Input
@@ -857,48 +918,52 @@ function ProductEditor({
                   placeholder="填写收款方、金额核对要求和付款备注规则"
                 />
               </label>
-              <label>
-                收款链接（与二维码至少填一项）
-                <Input
-                  type="url"
-                  value={product.payment.url}
-                  onChange={(e) =>
-                    update('payment', {
-                      ...product.payment,
-                      url: e.target.value,
-                    })
-                  }
-                  placeholder="https://…"
-                />
-              </label>
-              <div>
-                {product.payment.qr && (
-                  <img
-                    className="shop-product-icon"
-                    src={product.payment.qr}
-                    alt="收款码预览"
-                  />
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => qrInput.current?.click()}
-                >
-                  <Upload size={14} />
-                  上传收款二维码
-                </Button>
-                <input
-                  ref={qrInput}
-                  type="file"
-                  hidden
-                  accept="image/png,image/jpeg"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    e.target.value = ''
-                    if (f) void image(f, 'qr')
-                  }}
-                />
-              </div>
+              {product.api?.provider !== 'grizzly' && (
+                <>
+                  <label>
+                    收款链接（与二维码至少填一项）
+                    <Input
+                      type="url"
+                      value={product.payment.url}
+                      onChange={(e) =>
+                        update('payment', {
+                          ...product.payment,
+                          url: e.target.value,
+                        })
+                      }
+                      placeholder="https://…"
+                    />
+                  </label>
+                  <div>
+                    {product.payment.qr && (
+                      <img
+                        className="shop-product-icon"
+                        src={product.payment.qr}
+                        alt="收款码预览"
+                      />
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => qrInput.current?.click()}
+                    >
+                      <Upload size={14} />
+                      上传收款二维码
+                    </Button>
+                    <input
+                      ref={qrInput}
+                      type="file"
+                      hidden
+                      accept="image/png,image/jpeg"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        e.target.value = ''
+                        if (f) void image(f, 'qr')
+                      }}
+                    />
+                  </div>
+                </>
+              )}
             </fieldset>
             <fieldset disabled={busy} className="owner-editor-section">
               <legend>交付流程与常见问题</legend>
@@ -1126,6 +1191,20 @@ export default function ProductPublisher({
           <Plus size={15} />
           发布新商品
         </Button>
+      </div>
+      <div className="owner-publisher-toolbar" aria-label="美国接码商品模板">
+        <span>美国单次接码：</span>
+        {Object.entries(GRIZZLY_SERVICES).map(([code, name]) => (
+          <Button
+            key={code}
+            variant="outline"
+            onClick={() =>
+              setEdit(grizzlyProduct(code as keyof typeof GRIZZLY_SERVICES))
+            }
+          >
+            添加 {name}
+          </Button>
+        ))}
       </div>
       {error && <p role="alert">{error}</p>}
       {loading && !data && <p>正在读取商品…</p>}

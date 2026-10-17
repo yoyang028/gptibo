@@ -12,6 +12,7 @@ export default function ShopOrderActions({
   onUpdated: () => void
 }) {
   const [note, setNote] = useState(''),
+    [reference, setReference] = useState(''),
     [content, setContent] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
@@ -26,10 +27,12 @@ export default function ShopOrderActions({
         action: name,
         note,
         content,
+        reference,
         version: order.version,
       })
       setNote('')
       setContent('')
+      setReference('')
       onUpdated()
     } catch (e) {
       setError(errorMessage(e))
@@ -48,7 +51,9 @@ export default function ShopOrderActions({
           {key}：{value}
         </p>
       ))}
-      <p>客户付款声明：{custom.paymentClaimed ? '已提交' : '未提交'}</p>
+      {!custom.sms && (
+        <p>客户付款声明：{custom.paymentClaimed ? '已提交' : '未提交'}</p>
+      )}
       {custom.paymentReference && (
         <p>付款交易号／备注：{custom.paymentReference}</p>
       )}
@@ -62,7 +67,61 @@ export default function ShopOrderActions({
         maxLength={500}
         disabled={busy}
       />
-      {order.paymentStatus === 'unpaid' && order.status === 'pending' ? (
+      {custom.sms ? (
+        <>
+          <p>支付渠道确认到账后自动发号。{custom.sms.message}</p>
+          {custom.sms.phone && <p>本次手机号：{custom.sms.phone}</p>}
+          {custom.sms.code && <p>验证码：{custom.sms.code}</p>}
+          {custom.sms.activationId && (
+            <p>灰熊接码编号：{custom.sms.activationId}</p>
+          )}
+          {custom.sms.costUsd && <p>实际采购价：US$ {custom.sms.costUsd}</p>}
+          {['unknown', 'review'].includes(custom.sms.state) && (
+            <>
+              <p>
+                先到灰熊核对账单、活动号码及退款记录。填写核对记录后关闭此接码任务，客户才可进入原订单退款审核；这里不会重新采购或自动退款。
+              </p>
+              <label htmlFor="sms-admin-reference">
+                上游账单／客服核对记录
+              </label>
+              <Input
+                id="sms-admin-reference"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                maxLength={200}
+                disabled={busy}
+              />
+              <Button
+                variant="outline"
+                disabled={
+                  busy || note.trim().length < 3 || reference.trim().length < 3
+                }
+                onClick={() => void action('confirm-sms-closed')}
+              >
+                已核对上游记录，关闭接码任务
+              </Button>
+            </>
+          )}
+          {order.paymentStatus === 'paid' && (
+            <Button
+              variant="outline"
+              disabled={busy || note.trim().length < 3}
+              onClick={() => void action('sync')}
+            >
+              同步原接码订单
+            </Button>
+          )}
+          {custom.sms.state === 'waiting' && (
+            <Button
+              variant="outline"
+              disabled={busy || note.trim().length < 3}
+              onClick={() => void action('stop-sms')}
+            >
+              停止本次接码
+            </Button>
+          )}
+        </>
+      ) : order.paymentStatus === 'unpaid' && order.status === 'pending' ? (
         <>
           <p>
             请先在自己的收款账户核对金额、交易号与到账情况。客户点击“已付款”不会自动确认收款。

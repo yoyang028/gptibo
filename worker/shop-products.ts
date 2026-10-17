@@ -12,6 +12,16 @@ import { boundedResponseText } from './bounded-response.ts'
 import { change, getOrder, type Order } from './order-state.ts'
 import { ownerShop } from './owner-shop.ts'
 import { couponQuote, couponReservation } from './shop-coupons.ts'
+import { seal, unseal } from './product-secrets.ts'
+import { GrizzlyClient, GrizzlyError, grizzlyKey } from './grizzly/client.ts'
+import {
+  cancelSms,
+  confirmSmsClosed,
+  fulfillGrizzly,
+  grizzlyCheckoutEnabled,
+  smsSummary,
+} from './grizzly/service.ts'
+import { decimalUnits, validGrizzlyConfig } from '../shared/grizzly-sms.ts'
 import {
   XiaojiuPurchaseClient,
   XiaojiuPurchaseError,
@@ -46,40 +56,6 @@ type Detail = {
   supplier_error: string
   supplier_attempted: number
 }
-const encoder = new TextEncoder()
-async function secretKey(env: Env) {
-  if (!env.PARTNER_AUTH_SECRET || env.PARTNER_AUTH_SECRET.length < 32)
-    throw new ApiError('商品 API 凭据加密尚未配置。', 503)
-  return crypto.subtle.importKey(
-    'raw',
-    await crypto.subtle.digest(
-      'SHA-256',
-      encoder.encode('shop-product-v1:' + env.PARTNER_AUTH_SECRET),
-    ),
-    { name: 'AES-GCM' },
-    false,
-    ['encrypt', 'decrypt'],
-  )
-}
-async function seal(env: Env, value: string) {
-  const iv = crypto.getRandomValues(new Uint8Array(12)),
-    result = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      await secretKey(env),
-      encoder.encode(value),
-    )
-  return btoa(String.fromCharCode(...iv, ...new Uint8Array(result)))
-}
-async function unseal(env: Env, value: string) {
-  const raw = Uint8Array.from(atob(value), (c) => c.charCodeAt(0))
-  return new TextDecoder().decode(
-    await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: raw.slice(0, 12) },
-      await secretKey(env),
-      raw.slice(12),
-    ),
-  )
-}
 const rowProduct = (r: Row): ShopProduct => ({
   ...JSON.parse(r.public_json),
   version: r.version,
@@ -103,7 +79,8 @@ export async function shopProducts(env: Env, includeDrafts = false) {
             p.delivery === 'api' &&
             p.api?.provider === 'xiaojiu' &&
             env.XIAOJIU_PURCHASE_ENABLED !== 'true'
-          )),
+          ) &&
+          !(p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env))),
     )
     .map((p) => {
       if (!includeDrafts) delete p.api
@@ -172,6 +149,7 @@ const fingerprint = (p: ShopProduct, sealed: string) =>
       p.api?.maxCostCents,
       p.api?.provider ?? 'json-v1',
       p.api?.supplierProductId ?? null,
+      ...(p.api?.provider === 'grizzly' ? [p.api.sms ?? null] : []),
       sealed,
     ]),
   )
@@ -193,6 +171,8 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     return json({ products: await shopProducts(env, true) })
   if (request.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
   const data = await body(request, 1000000)
+  let supplierQuote:
+    { balanceUsd: string; priceUsd: string; count: number } | undefined
   if (suffix === '/xiaojiu-catalog') {
     try {
       let credential: string
@@ -247,6 +227,15 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
         ...(input.api.supplierProductId !== undefined
           ? { supplierProductId: input.api.supplierProductId }
           : {}),
+        ...(input.api.sms
+          ? {
+              sms: {
+                country: String(input.api.sms.country),
+                maxPriceUsd: String(input.api.sms.maxPriceUsd),
+                cnyPerUsd: String(input.api.sms.cnyPerUsd),
+              },
+            }
+          : {}),
         maxCostCents: input.api.maxCostCents,
         configured: false,
         verified: false,
@@ -293,6 +282,13 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     (previousProduct?.api?.provider ?? 'json-v1') ===
     (api?.provider ?? 'json-v1')
   let credential = input.apiToken ?? ''
+  if (api?.provider === 'grizzly' && credential) {
+    try {
+      credential = grizzlyKey(credential)
+    } catch {
+      throw new ApiError('请填写有效的灰熊 API Key。')
+    }
+  }
   if (api?.provider === 'xiaojiu' && (input.apiToken || input.apiKey)) {
     try {
       const pair = purchaseCredentials(
@@ -328,7 +324,34 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
       Number(api.maxCostCents) > 10000000
     )
       throw new ApiError('请填写 API 地址、商品编码、最高采购成本及密钥。')
-    if (api.provider === 'xiaojiu') {
+    if (api.provider === 'grizzly') {
+      if (!validGrizzlyConfig(api))
+        throw new ApiError(
+          '请配置灰熊接码项目、美国地区、美元采购上限及人民币成本汇率。',
+        )
+      try {
+        const client = new GrizzlyClient(env, await unseal(env, sealed))
+        const balanceUsd = await client.balance()
+        const quote = await client.price(api.productCode, api.sms!.country)
+        supplierQuote = { ...quote, balanceUsd }
+        if (
+          !quote.count ||
+          decimalUnits(quote.priceUsd) > decimalUnits(api.sms!.maxPriceUsd)
+        )
+          throw new ApiError(
+            '当前美国项目缺货或供货价超过上限，可先保存草稿。',
+            409,
+          )
+        if (decimalUnits(balanceUsd) < decimalUnits(quote.priceUsd))
+          throw new ApiError(
+            '灰熊可用余额不足以购买当前号码，可先保存草稿。',
+            409,
+          )
+      } catch (e) {
+        if (e instanceof GrizzlyError) throw new ApiError(e.message, 409)
+        throw e
+      }
+    } else if (api.provider === 'xiaojiu') {
       try {
         const client = new XiaojiuPurchaseClient(
           env,
@@ -365,6 +388,15 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     api.verified = true
   } else if (suffix) throw new ApiError('未找到商品操作。', 404)
   const finalProblems = productProblems(product)
+  if (
+    product.status === 'published' &&
+    api?.provider === 'grizzly' &&
+    !grizzlyCheckoutEnabled(env)
+  )
+    throw new ApiError(
+      '接码自动采购或支付宝收款尚未配置并启用，可先保存草稿、展示及只读检查。',
+      409,
+    )
   if (
     product.status === 'published' &&
     product.delivery === 'api' &&
@@ -437,6 +469,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     {
       product: rowProduct((await productRow(env, id))!),
       apiVerified: api?.verified ?? false,
+      ...(supplierQuote ? { supplierQuote } : {}),
     },
     previous ? 200 : 201,
   )
@@ -454,6 +487,9 @@ export async function customOrderSummary(
   if (!d) return null
   const p = JSON.parse(d.snapshot) as ShopProduct
   return {
+    ...(p.api?.provider === 'grizzly'
+      ? { sms: await smsSummary(env, order) }
+      : {}),
     productId: p.id,
     productName: p.name,
     image: p.image,
@@ -519,6 +555,8 @@ export async function createCustomOrder(
   )
     throw new ApiError('该商品暂未开放购买。', 409)
   const p = rowProduct(row)
+  if (p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env))
+    throw new ApiError('接码服务暂未开放购买。', 409)
   if (shop.hiddenProductIds.includes(shopProductDisplayId(p)))
     throw new ApiError('该商品暂未开放购买。', 409)
   if (
@@ -583,6 +621,15 @@ export async function createCustomOrder(
         row.api_secret,
         orderId,
       ),
+    ...(p.api?.provider === 'grizzly'
+      ? [
+          db
+            .prepare(
+              'INSERT INTO grizzly_activations(order_id) SELECT id FROM orders WHERE id=?',
+            )
+            .bind(orderId),
+        ]
+      : []),
     db
       .prepare(
         'UPDATE shop_products SET stock_remaining=CASE WHEN stock_remaining>0 THEN stock_remaining-1 ELSE stock_remaining END,version=version+1 WHERE id=? AND EXISTS(SELECT 1 FROM orders WHERE id=?)',
@@ -623,6 +670,14 @@ export async function customBuyerAction(
     order.refunded_cents >= order.price_cents
   )
     throw new ApiError('订单售后处理中，暂不能继续。', 409)
+  const view = await customOrderSummary(env, order)
+  if (view?.sms) {
+    if (data.action !== 'stop-sms')
+      throw new ApiError('此订单使用自动付款核验，请在原订单付款或查询。', 409)
+    await cancelSms(env, order)
+    await fulfillCustomOrder(env, order.id)
+    return getOrder(env, order.id)
+  }
   if (
     data.action === 'claim-payment' &&
     order.status === 'pending' &&
@@ -712,6 +767,24 @@ export async function customAdminAction(
     data.note.length > 500
   )
     throw new ApiError('请填写至少 3 字的核对／交付说明。')
+  const custom = await customOrderSummary(env, order)
+  if (
+    custom?.sms &&
+    !['sync', 'stop-sms', 'confirm-sms-closed'].includes(String(data.action))
+  )
+    throw new ApiError(
+      '接码订单由支付渠道确认到账并自动交付，请使用同步或停止接码操作。',
+      409,
+    )
+  if (custom?.sms && data.action === 'confirm-sms-closed') {
+    await confirmSmsClosed(env, order, data.reference, data.note.trim())
+    return getOrder(env, order.id)
+  }
+  if (custom?.sms && data.action === 'stop-sms') {
+    await cancelSms(env, order)
+    await fulfillCustomOrder(env, order.id)
+    return getOrder(env, order.id)
+  }
   if (data.action === 'close-unpaid')
     return cancelUnpaidCustom(env, order, 'admin', data.note.trim())
   if (
@@ -799,6 +872,19 @@ export async function fulfillCustomOrder(
 ) {
   const order = await getOrder(env, id),
     db = env.INTEREST_DB
+  const smsDetail = await db
+    .prepare(
+      'SELECT snapshot,api_secret FROM shop_order_details WHERE order_id=?',
+    )
+    .bind(id)
+    .first<{ snapshot: string; api_secret: string }>()
+  if (smsDetail) {
+    const product = JSON.parse(smsDetail.snapshot) as ShopProduct
+    if (product.api?.provider === 'grizzly') {
+      await fulfillGrizzly(env, id, product, smsDetail.api_secret)
+      return
+    }
+  }
   if (
     order.payment_status !== 'paid' ||
     order.status === 'success' ||
@@ -1016,7 +1102,7 @@ export async function fulfillCustomOrder(
 }
 export async function reconcileShopProducts(env: Env) {
   const rows = await env.INTEREST_DB.prepare(
-    "SELECT d.order_id FROM shop_order_details d JOIN orders o ON o.id=d.order_id WHERE o.payment_status='paid' AND o.status IN ('processing','failed') AND o.refund_hold=0 AND o.refunded_cents=0 AND COALESCE(d.supplier_state,'') NOT IN ('failed','review') AND json_extract(d.snapshot,'$.delivery')='api' AND d.last_checked_at<? ORDER BY d.last_checked_at LIMIT 10",
+    "SELECT d.order_id FROM shop_order_details d JOIN orders o ON o.id=d.order_id WHERE o.payment_status='paid' AND o.status IN ('processing','failed') AND o.refund_hold=0 AND o.refunded_cents=0 AND COALESCE(d.supplier_state,'') NOT IN ('failed','review') AND json_extract(d.snapshot,'$.delivery')='api' AND COALESCE(json_extract(d.snapshot,'$.api.provider'),'')<>'grizzly' AND d.last_checked_at<? ORDER BY d.last_checked_at LIMIT 10",
   )
     .bind(Date.now() - 60000)
     .all<{ order_id: string }>()

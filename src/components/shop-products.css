@@ -305,6 +305,14 @@
   color: var(--muted-foreground);
   line-height: 1.6;
 }
+.grizzly-order {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.grizzly-code .sms-code {
+  overflow-wrap: anywhere;
+}
 .owner-order-action {
   display: grid;
   gap: 10px;

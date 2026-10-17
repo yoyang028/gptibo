@@ -9,15 +9,18 @@ import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { build } from 'esbuild'
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare'
 import { createXiaojiuFixture } from './xiaojiu-fixture.mjs'
+import { createGrizzlyFixture } from './grizzly-fixture.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 if (process.platform === 'win32' && !/^D:\\/i.test(root)) throw new Error('Local artifacts must stay on D:')
 const xiaojiuVariant = process.env.GPTIBO_LOCAL_VARIANT === 'xiaojiu'
-const runtime = path.join(root, xiaojiuVariant ? 'artifacts/local/cloudflare-xiaojiu' : 'artifacts/local/cloudflare')
-const privateRoot = path.join(root, xiaojiuVariant ? 'artifacts/local/.secrets/xiaojiu-cloudflare-mock' : 'artifacts/local/.secrets/quefa-cloudflare-mock')
+const grizzlyVariant = process.env.GPTIBO_LOCAL_VARIANT === 'grizzly'
+const runtime = path.join(root, grizzlyVariant ? 'artifacts/local/cloudflare-grizzly' : xiaojiuVariant ? 'artifacts/local/cloudflare-xiaojiu' : 'artifacts/local/cloudflare')
+const privateRoot = path.join(root, grizzlyVariant ? 'artifacts/local/.secrets/grizzly-cloudflare-mock' : xiaojiuVariant ? 'artifacts/local/.secrets/xiaojiu-cloudflare-mock' : 'artifacts/local/.secrets/quefa-cloudflare-mock')
 const tlsRoot = path.join(root, 'artifacts/local/.secrets/quefa-cloudflare-mock')
-const port = xiaojiuVariant ? 8781 : 8771, controlPort = xiaojiuVariant ? 8784 : 8774
+const port = grizzlyVariant ? 8791 : xiaojiuVariant ? 8781 : 8771, controlPort = grizzlyVariant ? 8794 : xiaojiuVariant ? 8784 : 8774
 const origin = 'https://127.0.0.1:' + port
+const grizzlyFixture = createGrizzlyFixture(origin)
 fs.mkdirSync(privateRoot, { recursive: true })
 fs.mkdirSync(runtime, { recursive: true })
 process.env.XDG_CONFIG_HOME = path.join(runtime, 'config')
@@ -39,6 +42,7 @@ const genericOrders = new Map()
 const xiaojiuFixture = createXiaojiuFixture()
 const outbound = async request => {
   const url = new URL(request.url)
+  if (grizzlyVariant && ['https://api.grizzlysms.com','https://openapi.alipay.com'].includes(url.origin)) return grizzlyFixture.fetch(request)
   if (url.origin === 'https://chatgpt.com') {
     if (url.pathname !== '/backend-api/accounts/check/v4-2023-04-27' || request.method !== 'GET') throw new Error('Unexpected account-check fixture request')
     const token = request.headers.get('Authorization')
@@ -98,7 +102,7 @@ for (const line of fs.readFileSync(path.join(root, 'public/_headers'), 'utf8').s
 const config = {
   host: '127.0.0.1', port, https: true, httpsCert: ca.toString(), httpsKey: key,
   modules: true, scriptPath: path.join(runtime, 'worker.mjs'), compatibilityDate: '2026-09-26', compatibilityFlags: ['nodejs_compat', 'service_binding_extra_handlers'],
-  d1Databases: { INTEREST_DB: xiaojiuVariant ? 'gptibo-cloudflare-xiaojiu-local' : 'gptibo-cloudflare-local' },
+  d1Databases: { INTEREST_DB: grizzlyVariant ? 'gptibo-cloudflare-grizzly-local' : xiaojiuVariant ? 'gptibo-cloudflare-xiaojiu-local' : 'gptibo-cloudflare-local' },
   ratelimits: {
     INTEREST_LIMITER: { namespace_id: '2001', simple: { limit: 30, period: 60 } },
     API_LIMITER: { namespace_id: '2002', simple: { limit: 120, period: 60 } },
@@ -113,6 +117,7 @@ const config = {
     RECHARGE_API_BASE: 'https://127.0.0.1:8773/v1', RECHARGE_PARTNER_ID: 'pt_local_mock', RECHARGE_KEY_ID: 'key_local_mock',
     RECHARGE_CLIENT_SECRET: 'local_mock_signing_not_a_real_credential', RECHARGE_WEBHOOK_SECRET: 'local_mock_webhook_not_a_real_credential',
     RECHARGE_NOTIFY_URL: origin + '/api/recharge/webhook', RECHARGE_PRODUCT_MAP: '{"plus":"chatgpt_plus_cdk_1m"}', RECHARGE_COLLECTION_MODE: 'platform_collect', RECHARGE_CHECKOUT_ENABLED: 'true', RECHARGE_READ_ONLY: 'false',
+    ...(grizzlyVariant ? grizzlyFixture.bindings : {}),
   }, outboundService: outbound,
 }
 const mf = new Miniflare({ ...convertV4MiniflareOptions({ ...config, cf: false }), telemetry: { enabled: false }, resourcePersistencePath: path.join(runtime, 'state'), resourceTmpPath: path.join(runtime, 'tmp') })
@@ -148,16 +153,21 @@ try {
     if (request.headers.host !== '127.0.0.1:' + controlPort) { response.writeHead(403).end(); return }
     if (request.url === '/state' && request.method === 'GET') {
       response.setHeader('Content-Type', 'application/json'); response.setHeader('Cache-Control', 'no-store')
-      response.end(JSON.stringify({ localMock: true, origin, supplierRequests, xiaojiu: xiaojiuFixture.stats() })); return
+      response.end(JSON.stringify({ localMock: true, origin, supplierRequests, xiaojiu: xiaojiuFixture.stats(), ...(grizzlyVariant ? { grizzly: grizzlyFixture.stats() } : {}) })); return
     }
     if (request.method !== 'POST' || request.headers.origin !== 'http://127.0.0.1:' + controlPort || !authorized) { response.writeHead(403).end(); return }
     if (request.url === '/shutdown') { response.writeHead(204).end(); await shutdown(); return }
-    if (xiaojiuVariant && request.url === '/reset-auth-limits') {
+    if ((xiaojiuVariant || grizzlyVariant) && request.url === '/reset-auth-limits') {
       // Repeatable acceptance against this isolated, synthetic D1 only. The
       // control socket already requires loopback Host, Origin and its capability.
       // Production auth limits and real login credentials are never changed.
       await db.prepare('DELETE FROM admin_login_limits').run()
       response.writeHead(204).end(); return
+    }
+    if (grizzlyVariant && ['/grizzly/pay','/grizzly/receive'].includes(request.url)) {
+      let raw='';for await(const chunk of request){raw+=chunk;if(raw.length>500){response.writeHead(413).end();return}}
+      try {const data=JSON.parse(raw);if(request.url==='/grizzly/pay')grizzlyFixture.pay(data.id);else grizzlyFixture.receive(data.id,data.code);response.writeHead(204).end()} catch {response.writeHead(400).end()}
+      return
     }
     if (request.url === '/scheduled') {
       try { await worker.scheduled({ scheduledTime: Math.floor(Date.now() / 300000) * 300000 }); response.writeHead(204).end() }

@@ -35,6 +35,7 @@ import type { ServerOrder } from '@/lib/use-store'
 import { groupShopProducts, type ShopProduct } from '../../shared/shop-products'
 import { RefundContent } from './order-services'
 import './shop-products.css'
+import { GrizzlyOrderContent } from './grizzly-order-content'
 
 // Keep descriptions editable as text. Only standalone "### " headings are
 // formatted; all content is rendered as React text, never as HTML.
@@ -548,7 +549,7 @@ export function ShopOrderDialog({
             />
           ) : (
             <>
-              {order.status === 'cancelled' ? (
+              {view.sms ? <GrizzlyOrderContent key={order.id} order={order} open={open} onUpdated={onUpdated} /> : order.status === 'cancelled' ? (
                 <p>订单已关闭。</p>
               ) : order.paymentStatus === 'unpaid' ? (
                 <>
@@ -635,13 +636,13 @@ export function ShopOrderDialog({
                 </>
               )}
               {error && <p role="alert">{error}</p>}
-              <Button
+              {!view.sms && <Button
                 variant="outline"
                 disabled={busy}
                 onClick={() => void refresh()}
               >
                 {busy ? '正在查询…' : '刷新原订单进度'}
-              </Button>
+              </Button>}
               {order.paymentStatus === 'paid' && (
                 <Button
                   variant="ghost"

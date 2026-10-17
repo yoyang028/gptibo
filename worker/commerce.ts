@@ -34,13 +34,18 @@ import { customProductId, shopProductDisplayId } from '../shared/shop-products.t
 import { quefaPurchaseNote } from '../shared/quefa-gpt-products.ts'
 import { artworkRoute, publicArtwork } from './product-artwork.ts'
 import { couponQuote, couponReservation } from './shop-coupons.ts'
+import { smsAdminInfo, smsRefundProblem } from './grizzly/service.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
 type OrderPartnerSource = { id: string; slug: string; name: string; email: string; wechat: string; qq: string }
 const statuses: Status[] = ['pending', 'session', 'processing', 'success', 'failed', 'cancelled']
 const publicOrder = (o: Order) => ({ purchaseNote: o.purchase_note ?? '', isTest: Boolean(o.is_test), customerEmail: o.customer_email, refundedCents: o.refunded_cents, refundHold: Boolean(o.refund_hold), redemptionBlocked: Boolean(o.redemption_blocked), id: o.id, plan: o.plan, planName: o.plan_name, partnerName: o.partner_name ?? undefined, price: o.price_cents / 100, mode: o.mode, paymentStatus: o.payment_status, status: o.status, createdAt: o.created_at, updatedAt: o.updated_at, startedAt: o.started_at ?? undefined, smsPhone: o.sms_phone ?? undefined, version: o.version })
 type AdminOrder = Order & { settlement_status: 'pending' | 'paid' | null }
-const adminOrder = async (env: Env, o: AdminOrder) => ({ ...(await customerOrder(env, o)), platformStatus: await platformOrderStatus(env, o), settlementStatus: o.settlement_status })
+const adminOrder = async (env: Env, o: AdminOrder) => {
+  const view = await customerOrder(env, o)
+  if (view.custom?.sms) Object.assign(view.custom.sms, await smsAdminInfo(env,o.id))
+  return { ...view, platformStatus:await platformOrderStatus(env,o),settlementStatus:o.settlement_status }
+}
 const plans = async (env: Env) => (await env.INTEREST_DB.prepare('SELECT * FROM catalog_plans ORDER BY rowid').all<Plan>()).results
 const customerOrder = async (env: Env, o: Order, contacts = new Map<string, Promise<SupportContactsSettings>>(), syncError = false) => {
   o = await expireRechargeOrder(env, o)
@@ -233,7 +238,10 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         await rechargeAction(request, env, o)
         return json({ order: await customerOrder(env, await getOrder(env, o.id)) })
       }
-      if (match[2] === '/refunds') return await customerRefunds(request, env, o)
+      if (match[2] === '/refunds') {
+        if (method === 'POST') { const problem = await smsRefundProblem(env,o.id); if (problem) throw new ApiError(problem,409) }
+        return await customerRefunds(request, env, o)
+      }
       if (!match[2] && method === 'GET') {
         o = await settle(env, o)
         if (isXGiftPlan(o.plan)) { await fulfillXGift(env, o.id); o = await getOrder(env, o.id) }
@@ -263,6 +271,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     }
     throw new ApiError('未找到接口或请求方法不支持。', 404)
   } catch (e) {
+    if (e instanceof Error && /sms activation requires reconciliation/.test(e.message)) return json({error:'接码状态需要核对，请先停止接码或联系店主处理原订单。'},409)
     if(e instanceof Error && /coupon unavailable/.test(e.message))return json({error:'优惠码已被使用或已更新，请重新核对。'},409)
     if (e instanceof RechargeError) return json({ error: e.message, code: e.code, retryable: e.retryable, retryAfter: e.retryAfter }, e.status, e.retryAfter === null ? {} : { 'Retry-After': String(e.retryAfter) })
     return json({ error: e instanceof ApiError ? e.message : '服务暂时不可用，请稍后重试。' }, e instanceof ApiError ? e.status : 503)
@@ -323,7 +332,7 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
     if (!orderMatch[2] && method === 'GET') {
       const events = (await db.prepare('SELECT id,actor,action,from_status,to_status,note,created_at FROM order_events WHERE order_id=? ORDER BY order_version').bind(o.id).all()).results
       const settlement = await db.prepare('SELECT ps.status settlement_status FROM orders o LEFT JOIN partner_payouts ps ON ps.id=o.payout_id WHERE o.id=?').bind(o.id).first<{ settlement_status: 'pending' | 'paid' | null }>()
-      return json({ order: { ...(await customerOrder(env, o)), platformStatus: await platformOrderStatus(env, o), settlementStatus: settlement?.settlement_status ?? null, partnerSource: await orderPartnerSource(env, o) }, events })
+      return json({ order: { ...(await adminOrder(env, { ...o, settlement_status:settlement?.settlement_status ?? null })), partnerSource: await orderPartnerSource(env, o) }, events })
     }
     if (orderMatch[2] === '/platform-status' && method === 'POST') {
       await body(request)

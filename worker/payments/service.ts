@@ -9,10 +9,13 @@ import { ApiError, body, json, type Env } from '../platform.ts'
 import { getOrder, type Order } from '../order-state.ts'
 import { paymentProvider } from './providers.ts'
 import type { PaymentOrder, PaymentResult, PaymentProvider } from './types.ts'
+import { customProductId } from '../../shared/shop-products.ts'
+import { customOrderSummary, fulfillCustomOrder } from '../shop-products.ts'
+import { grizzlyCheckoutEnabled } from '../grizzly/service.ts'
 
 export type Payment = { order_id: string; provider: string; account: string; amount_cents: number; state: 'pending' | 'paid' | 'closed'; trade_no: string | null; qr: string | null; expires_at: number; lease_token: string | null; lease_until: number; notified_at: number | null }
 export const findPayment = (env: Env, id: string) => env.INTEREST_DB.prepare('SELECT * FROM payments WHERE order_id=?').bind(id).first<Payment>()
-const details = (p: Payment, o: Order): PaymentOrder => ({ id: p.order_id, amountCents: p.amount_cents, subject: o.is_test ? 'GPTibo · 支付联调测试（不交付商品）' : `GPTibo · ${emailProduct(o.plan)?.name ?? (isXGiftPlan(o.plan) ? o.plan_name : o.plan === 'codex-sms-once' ? 'Codex 接码' : 'ChatGPT ' + o.plan_name)}`, expiresAt: p.expires_at })
+const details = (p: Payment, o: Order): PaymentOrder => ({ id: p.order_id, amountCents: p.amount_cents, subject: o.is_test ? 'GPTibo · 支付联调测试（不交付商品）' : `GPTibo · ${emailProduct(o.plan)?.name ?? (isXGiftPlan(o.plan) || customProductId.test(o.plan) ? o.plan_name : o.plan === 'codex-sms-once' ? 'Codex 接码' : 'ChatGPT ' + o.plan_name)}`, expiresAt: p.expires_at })
 function providerFor(env: Env, p: Payment) {
   const provider = paymentProvider(env, p.provider)
   if (provider.account !== p.account) throw new ApiError('支付商户配置已变化，请恢复该订单原渠道配置后处理。', 503)
@@ -51,6 +54,9 @@ export async function applyPaymentResult(env: Env, p: Payment, result: PaymentRe
   }
   if (paid && order.plan === 'gmail-account') {
     try { await fulfillGmail(env, order.id) } catch { /* Payment stays confirmed; cron reconciles the original purchase. */ }
+  }
+  if (paid && customProductId.test(order.plan)) {
+    try { await fulfillCustomOrder(env,order.id) } catch { /* Confirmed payment remains durable; cron reconciles the original SMS allocation. */ }
   }
 }
 async function locked<T>(env: Env, p: Payment, work: () => Promise<T>) {
@@ -92,12 +98,14 @@ export async function paymentAction(request: Request, env: Env, order: Order, ad
   if (!['create', 'query', 'close'].includes(String(data.action))) throw new ApiError('支付操作无效。')
   if (order.redemption_blocked && data.action === 'create') throw new ApiError('本订单已禁止再次兑换，请联系支持。', 409)
   if (order.mode !== 'live') throw new ApiError('历史测试记录不能发起收款。', 409)
-  const canCreate = (isXGiftPlan(order.plan) ? xgiftCheckoutEnabled(env) : order.plan === 'gmail-account' ? gmailCheckoutEnabled(env) : isDeliverySupplierPlan(order.plan) ? delivery_supplierCheckoutEnabled(env) : emailProduct(order.plan) ? emailCheckoutEnabled(env) : env.PAYMENT_CHECKOUT_ENABLED === 'true') || (adminTest && order.is_test === 1 && order.price_cents === 1 && !order.partner_id && env.PAYMENT_TEST_ENABLED === 'true')
+  const custom = customProductId.test(order.plan) ? await customOrderSummary(env,order) : null
+  const automatic = Boolean(custom?.sms && custom.payment.provider === 'alipay')
+  const canCreate = (customProductId.test(order.plan) ? automatic && grizzlyCheckoutEnabled(env) : isXGiftPlan(order.plan) ? xgiftCheckoutEnabled(env) : order.plan === 'gmail-account' ? gmailCheckoutEnabled(env) : isDeliverySupplierPlan(order.plan) ? delivery_supplierCheckoutEnabled(env) : emailProduct(order.plan) ? emailCheckoutEnabled(env) : env.PAYMENT_CHECKOUT_ENABLED === 'true') || (adminTest && order.is_test === 1 && order.price_cents === 1 && !order.partner_id && env.PAYMENT_TEST_ENABLED === 'true')
   if (!(await env.INTEREST_LIMITER.limit({ key: 'payment:' + order.owner_hash })).success) throw new ApiError('操作较频繁，请稍后再试。', 429)
   let payment = await findPayment(env, order.id)
   if (!payment && data.action === 'create') {
     if (!canCreate) throw new ApiError('真实收款尚未开放。', 503)
-    const provider = paymentProvider(env, emailProduct(order.plan) || isXGiftPlan(order.plan) ? 'alipay' : env.PAYMENT_PROVIDER ?? '')
+    const provider = paymentProvider(env, automatic || emailProduct(order.plan) || isXGiftPlan(order.plan) ? 'alipay' : env.PAYMENT_PROVIDER ?? '')
     notifyUrl(env, provider.id)
     const now = Date.now()
     await env.INTEREST_DB.prepare("INSERT INTO payments(order_id,provider,account,amount_cents,expires_at,created_at,updated_at) SELECT id,?,?,price_cents,?,?,? FROM orders WHERE id=? AND mode='live' AND payment_status='unpaid' AND status='pending' AND redemption_blocked=0 AND refund_hold=0 AND refunded_cents=0 ON CONFLICT(order_id) DO NOTHING")

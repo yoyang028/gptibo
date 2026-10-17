@@ -21,6 +21,7 @@ PUBLIC_HOSTS = {
     'www.w3.org', 'www.apache.org', 'ui.shadcn.com', 'transitions.dev', 'vite.dev',
     'www.duolingo.com', 'www.duolingo.cn', 'd35aaqx5ub95lt.cloudfront.net',
     '98-xj.com',  # Reviewed public Xiaojiu upstream API and documentation.
+    'grizzlysms.com', 'api.grizzlysms.com',  # Reviewed public Grizzly SMS API.
 }
 BINARY_ASSETS = {'public/email-logo.png', 'public/email-shop.png', 'src/assets/hero.png'}
 FORBIDDEN_PARTS = {'.git', '.secrets', '.imports', '.admin-auth', '.xgift-private',

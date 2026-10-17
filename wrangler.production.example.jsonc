@@ -27,6 +27,7 @@
   "triggers": {"crons": ["* * * * *"]},
   "observability": {"enabled": false},
   "vars": {
+    "GRIZZLY_SMS_ENABLED": "false",
     "ORDER_TESTING_ENABLED": "false",
     "EMAIL_PRODUCTS_ENABLED": "false",
     "XGIFT_CHECKOUT_ENABLED": "false",

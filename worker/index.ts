@@ -17,6 +17,7 @@ import { sendDueRechargeReminders } from './recharge-reminders.ts'
 import { reconcileGmail } from './account_supplier/service.ts'
 import { requireSecureTransport, secureResponse } from './security.ts'
 import { checkAccount } from './account-check.ts'
+import { reconcileSms } from './grizzly/service.ts'
 const json = (value: unknown, status = 200) => Response.json(value, {
   status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 429 ? { 'Retry-After': '60' } : {}) },
 })
@@ -35,6 +36,7 @@ export default {
       await reconcileRechargeRefunds(env)
     }
     await Promise.all([sendDueRechargeReminders(env), reconcileGmail(env), reconcileDeliverySupplier(env), reconcileXGift(env), reconcileShopProducts(env)])
+    await reconcileSms(env)
     await sendOwnerOrderNotifications(env)
   },
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -70,6 +72,7 @@ async function route(request: Request, env: Env): Promise<Response> {
         await env.INTEREST_DB.prepare('SELECT paused,remote_attempt_no FROM recharge_redemptions LIMIT 1').all()
         await env.INTEREST_DB.prepare('SELECT lease_token FROM shop_order_details LIMIT 1').all()
         await env.INTEREST_DB.prepare('SELECT version FROM product_artwork LIMIT 1').all()
+        await env.INTEREST_DB.prepare('SELECT verified FROM grizzly_activations LIMIT 1').all()
         return json({ ok: true, backend: 'cloudflare-d1' })
       } catch { return error('数据库尚未就绪。', 503) }
     }

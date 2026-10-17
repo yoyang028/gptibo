@@ -5,7 +5,12 @@ import { readFileSync, readdirSync } from 'node:fs'
 import worker from '../worker/index.ts'
 import { seedAdminEmailCode } from './admin-email-fixture.ts'
 import { totpCode } from '../worker/totp.ts'
-import { type Env, type Statement, type Value } from '../worker/platform.ts'
+import {
+  hash,
+  type Env,
+  type Statement,
+  type Value,
+} from '../worker/platform.ts'
 import { sendOwnerOrderNotifications } from '../worker/owner-shop.ts'
 import type { ShopProduct } from '../shared/shop-products.ts'
 import { sendVerificationEmail } from '../worker/email.ts'
@@ -961,6 +966,25 @@ test('API credentials remain encrypted and private; only a verified compatible c
       .get(p.id)!.api_secret as string
     assert.notEqual(stored, secret)
     assert.ok(stored.length > 40)
+    // Adding an SMS provider must preserve fingerprints of already-verified
+    // JSON v1 products, including those saved before the SMS migrations.
+    assert.equal(
+      s.db
+        .prepare(
+          'SELECT api_verified_fingerprint FROM shop_products WHERE id=?',
+        )
+        .get(p.id)!.api_verified_fingerprint,
+      await hash(
+        JSON.stringify([
+          p.api.baseUrl,
+          p.api.productCode,
+          p.api.maxCostCents,
+          'json-v1',
+          null,
+          stored,
+        ]),
+      ),
+    )
     const published = await s.saveProduct({ ...p, status: 'published' })
     const catalog = await (await s.request('/api/catalog')).json()
     assert.equal(catalog.products[0].api, undefined)

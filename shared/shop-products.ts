@@ -1,3 +1,9 @@
+import {
+  validGrizzlyConfig,
+  type GrizzlyConfig,
+  type SmsView,
+} from './grizzly-sms.ts'
+
 export type ShopDelivery = 'manual' | 'api'
 export const SHOP_PRODUCT_GROUPS = {
   claude: 'Claude',
@@ -8,6 +14,7 @@ export const SHOP_PRODUCT_GROUPS = {
 } as const
 export type ShopProductGroupId = keyof typeof SHOP_PRODUCT_GROUPS
 export type ShopPayment = {
+  provider?: 'alipay'
   label: string
   instructions: string
   url: string
@@ -37,7 +44,8 @@ export type ShopProduct = {
   status: 'draft' | 'listed' | 'published' | 'archived'
   version: number
   api?: {
-    provider?: 'json-v1' | 'xiaojiu'
+    provider?: 'json-v1' | 'xiaojiu' | 'grizzly'
+    sms?: GrizzlyConfig
     baseUrl: string
     productCode: string
     supplierProductId?: number
@@ -80,6 +88,7 @@ export function groupShopProducts(products: readonly ShopProduct[]) {
   return [...groups.values()]
 }
 export type CustomOrderView = {
+  sms?: SmsView
   productId: string
   productName: string
   image: string
@@ -145,9 +154,23 @@ export function productProblems(
   if (!['manual', 'api'].includes(product.delivery)) errors.push('交付方式')
   if (
     product.api?.provider &&
-    !['json-v1', 'xiaojiu'].includes(product.api.provider)
+    !['json-v1', 'xiaojiu', 'grizzly'].includes(product.api.provider)
   )
     errors.push('供货接口类型')
+  if (
+    product.payment?.provider !== undefined &&
+    (product.payment.provider !== 'alipay' ||
+      product.delivery !== 'api' ||
+      product.api?.provider !== 'grizzly')
+  )
+    errors.push('自动收款仅适用于灰熊接码商品')
+  if (
+    product.api?.provider === 'grizzly' &&
+    product.delivery === 'api' &&
+    product.status !== 'draft' &&
+    (!validGrizzlyConfig(product.api) || product.payment?.provider !== 'alipay')
+  )
+    errors.push('灰熊美国接码项目、美元采购上限、成本汇率与支付宝自动收款')
   if (
     product.delivery === 'api' &&
     product.api?.provider === 'xiaojiu' &&
@@ -267,7 +290,9 @@ export function productProblems(
     if (
       !product.payment?.label.trim() ||
       !product.payment?.instructions.trim() ||
-      (!product.payment?.url && !product.payment?.qr)
+      (!product.payment?.provider &&
+        !product.payment?.url &&
+        !product.payment?.qr)
     )
       errors.push('收款名称、付款说明与收款链接／二维码')
     if (
