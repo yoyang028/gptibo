@@ -3,6 +3,7 @@ import { ApiError, body, hash, json, type Env } from '../platform.ts'
 import { seal, unseal } from '../product-secrets.ts'
 import { HanfolkClient, HanfolkError, hanfolkKey } from './client.ts'
 import { importHanfolkDrafts } from './importer.ts'
+import { hanfolkAvailability } from './availability.ts'
 type Settings = {
   api_secret: string
   key_hash: string
@@ -19,6 +20,7 @@ async function settings(env: Env) {
   return s
 }
 async function state(env: Env, s: Settings) {
+  const availability = await hanfolkAvailability(env)
   const rows = (
     await env.INTEREST_DB.prepare(
       'SELECT product_id,summary,detail,checked_at FROM hanfolk_catalog WHERE key_hash=? ORDER BY product_id',
@@ -76,11 +78,56 @@ async function state(env: Env, s: Settings) {
         status: p.status,
         pricePending: p.pricePending === true,
         priceCents: r.price_cents,
+        sourceStock: availability.stock.get(r.local_id) ?? 0,
       }
     }),
     procurementEnabled: false,
   }
 }
+async function refreshCatalog(env: Env, s: Settings) {
+  const client = new HanfolkClient(env, await unseal(env, s.api_secret))
+  const balance = await client.balance(),
+    products = (await client.products()).filter((p) =>
+      hanfolkFamily(p.title),
+    ),
+    now = Date.now(),
+    event = crypto.randomUUID()
+  const details = []
+  for (let start = 0; start < products.length; start += 4)
+    details.push(...await Promise.all(products.slice(start,start+4).map(p=>client.detail(p.id))))
+  await env.INTEREST_DB.batch([
+    env.INTEREST_DB.prepare(
+      "UPDATE hanfolk_settings SET checked_key_hash=key_hash,balance_cents=?,checked_at=?,version=version+1,change_id=? WHERE id='main' AND version=?",
+    ).bind(balance.balanceCents, now, event, s.version),
+    ...details.map((p) =>
+      env.INTEREST_DB.prepare(
+        'INSERT INTO hanfolk_catalog(product_id,summary,detail,key_hash,checked_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM hanfolk_settings WHERE change_id=?) ON CONFLICT(product_id) DO UPDATE SET summary=excluded.summary,detail=excluded.detail,key_hash=excluded.key_hash,checked_at=excluded.checked_at',
+      ).bind(p.id, JSON.stringify(p), JSON.stringify(p), s.key_hash, now, event),
+    ),
+    env.INTEREST_DB.prepare(
+      'DELETE FROM hanfolk_catalog WHERE (key_hash<>? OR checked_at<>?) AND EXISTS(SELECT 1 FROM hanfolk_settings WHERE change_id=?)',
+    ).bind(s.key_hash, now, event),
+    env.INTEREST_DB.prepare(
+      "INSERT INTO admin_audit(id,target_id,action,note,created_at) SELECT ?,'hanfolk','hanfolk-refresh','只读更新商品目录和余额；未采购',? FROM hanfolk_settings WHERE change_id=?",
+    ).bind(event, now, event),
+  ])
+  if (
+    !(await env.INTEREST_DB.prepare(
+      'SELECT id FROM admin_audit WHERE id=?',
+    )
+      .bind(event)
+      .first())
+  )
+    throw new ApiError('设置已更新，请重新读取。', 409)
+}
+
+/** Scheduled stock reads never import, reprice, publish, or purchase products. */
+export async function refreshHanfolkStock(env: Env) {
+  const s = await settings(env)
+  if (!s.api_secret || s.checked_at > Date.now() - 5 * 60_000) return
+  await refreshCatalog(env, s)
+}
+
 export async function hanfolkManagement(request: Request, env: Env) {
   let s = await settings(env)
   if (request.method === 'GET') return json(await state(env, s))
@@ -111,36 +158,7 @@ export async function hanfolkManagement(request: Request, env: Env) {
         throw new ApiError('请先在遮蔽输入框保存大橘 API Key。', 409)
       const client = new HanfolkClient(env, await unseal(env, s.api_secret))
       if (data.action === 'refresh') {
-        const balance = await client.balance(),
-          products = (await client.products()).filter((p) =>
-            hanfolkFamily(p.title),
-          ),
-          now = Date.now(),
-          event = crypto.randomUUID()
-        await env.INTEREST_DB.batch([
-          env.INTEREST_DB.prepare(
-            "UPDATE hanfolk_settings SET checked_key_hash=key_hash,balance_cents=?,checked_at=?,version=version+1,change_id=? WHERE id='main' AND version=?",
-          ).bind(balance.balanceCents, now, event, s.version),
-          ...products.map((p) =>
-            env.INTEREST_DB.prepare(
-              'INSERT INTO hanfolk_catalog(product_id,summary,key_hash,checked_at) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM hanfolk_settings WHERE change_id=?) ON CONFLICT(product_id) DO UPDATE SET summary=excluded.summary,key_hash=excluded.key_hash,checked_at=excluded.checked_at,detail=CASE WHEN hanfolk_catalog.key_hash=excluded.key_hash THEN hanfolk_catalog.detail ELSE NULL END',
-            ).bind(p.id, JSON.stringify(p), s.key_hash, now, event),
-          ),
-          env.INTEREST_DB.prepare(
-            'DELETE FROM hanfolk_catalog WHERE (key_hash<>? OR checked_at<>?) AND EXISTS(SELECT 1 FROM hanfolk_settings WHERE change_id=?)',
-          ).bind(s.key_hash, now, event),
-          env.INTEREST_DB.prepare(
-            "INSERT INTO admin_audit(id,target_id,action,note,created_at) SELECT ?,'hanfolk','hanfolk-refresh','只读更新商品目录和余额；未采购',? FROM hanfolk_settings WHERE change_id=?",
-          ).bind(event, now, event),
-        ])
-        if (
-          !(await env.INTEREST_DB.prepare(
-            'SELECT id FROM admin_audit WHERE id=?',
-          )
-            .bind(event)
-            .first())
-        )
-          throw new ApiError('设置已更新，请重新读取。', 409)
+        await refreshCatalog(env, s)
       } else if (data.action === 'detail') {
         const id = Number(data.productId),
           cached = await env.INTEREST_DB.prepare(

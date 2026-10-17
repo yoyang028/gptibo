@@ -134,6 +134,7 @@ test('Public unpriced content requires explicit display opt-in and cannot become
       'Apple Music 5个月兑换',
       'CDK 兑换 5 个月音乐会员，仅限印度区新号，需自备 UPI 或银行卡。',
     )
+  f.db.prepare('INSERT INTO hanfolk_catalog(product_id,summary,detail,key_hash,checked_at) VALUES(?,?,?,?,?)').run(d.id,JSON.stringify(d),JSON.stringify(d),'',Date.now())
   const r = await importHanfolkDrafts(
       f.env,
       [d],
@@ -174,7 +175,7 @@ test('Public unpriced content requires explicit display opt-in and cannot become
   assert.equal(create.status, 409)
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM orders').get()?.n, 0)
 })
-test('Same-family native offers remain separate with original order IDs and unchanged retail/flags', async () => {
+test('Source specifications replace native offers without rewriting historical retail records', async () => {
   const f = await customerFixture(),
     before = f.db
       .prepare(
@@ -187,6 +188,7 @@ test('Same-family native offers remain separate with original order IDs and unch
     [132, 'Google Gmail 账户'],
   ] as const) {
     const d = source(id, title, '合成商品资料')
+    f.db.prepare('INSERT INTO hanfolk_catalog(product_id,summary,detail,key_hash,checked_at) VALUES(?,?,?,?,?)').run(id,JSON.stringify(d),JSON.stringify(d),'',Date.now())
     await importHanfolkDrafts(f.env, [d], [{ productId: id, sku: '0' }])
     const p = await hanfolkDraft(d, '0')
     assert.equal(
@@ -205,9 +207,7 @@ test('Same-family native offers remain separate with original order IDs and unch
   }
   for (const plan of before) {
     const p = c.products.find((p) => p.id === plan.id)
-    assert(p)
-    assert.equal(p.priceCents, plan.price_cents)
-    assert(!p.pricePending)
+    assert.equal(p,undefined)
   }
   assert.deepEqual(
     f.db

@@ -1,0 +1,23 @@
+.official-logo-motion { display:grid; place-items:center; height:195px; margin-top:6px; background:none; border:0; box-shadow:none; color:var(--foreground); }
+.official-logo-glyph { display:block; width:142px; height:142px; object-fit:contain; background:transparent; border:0; box-shadow:none; filter:none; transform-origin:center; animation-duration:8s; animation-timing-function:ease-in-out; animation-iteration-count:infinite; animation-play-state:paused; }
+.official-logo-motion[data-wide=true] .official-logo-glyph { width:220px; height:88px; }
+.official-logo-mask { mask-size:contain; mask-position:center; mask-repeat:no-repeat; background:currentColor; }
+.official-logo-motion[data-brand=apple-music] { color:#fa2d48; }
+.official-logo-motion[data-active=true] .official-logo-glyph { animation-play-state:running; }
+.official-logo-motion[data-motion=turn] .official-logo-glyph { animation-name:brand-symbol-turn; animation-duration:10s; }
+.official-logo-motion[data-motion=breathe] .official-logo-glyph { animation-name:brand-symbol-breathe; animation-duration:7s; }
+.official-logo-motion[data-motion=rise] .official-logo-glyph { animation-name:brand-symbol-rise; animation-duration:9s; }
+.official-logo-motion[data-motion=rhythm] .official-logo-glyph { animation-name:brand-symbol-rhythm; animation-duration:6s; }
+.official-logo-motion[data-motion=drift] .official-logo-glyph { animation-name:brand-symbol-drift; animation-duration:11s; }
+.official-logo-motion[data-motion=glide] .official-logo-glyph { animation-name:brand-symbol-glide; animation-duration:8s; }
+.official-logo-detail { height:220px; margin:14px 0 24px; }
+.official-logo-detail .official-logo-glyph { width:160px; height:160px; }
+.official-logo-detail[data-wide=true] .official-logo-glyph { width:250px; height:100px; }
+@keyframes brand-symbol-turn { 0%,100% { transform:rotate(-5deg) translateY(0); } 50% { transform:rotate(5deg) translateY(-6px); } }
+@keyframes brand-symbol-breathe { 0%,100% { transform:scale(.94) rotate(-3deg); } 50% { transform:scale(1.035) rotate(4deg); } }
+@keyframes brand-symbol-rise { 0%,100% { transform:translateY(5px) rotate(1deg); } 50% { transform:translateY(-9px) rotate(-2deg); } }
+@keyframes brand-symbol-rhythm { 0%,100% { transform:translateY(0) rotate(-2deg); } 25%,75% { transform:translateY(-6px) rotate(0); } 50% { transform:translateY(0) rotate(2deg); } }
+@keyframes brand-symbol-drift { 0%,100% { transform:translate(-5px,3px); } 50% { transform:translate(5px,-7px); } }
+@keyframes brand-symbol-glide { 0%,100% { transform:translateX(-7px) rotate(-1deg); } 50% { transform:translateX(7px) rotate(1deg); } }
+@media(max-width:600px) { .official-logo-motion { height:175px; } .official-logo-glyph { width:126px; height:126px; } .official-logo-motion[data-wide=true] .official-logo-glyph { width:205px; height:82px; } }
+@media(prefers-reduced-motion:reduce) { .official-logo-motion[data-motion] .official-logo-glyph { animation:none; transform:none; } }

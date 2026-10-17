@@ -4,6 +4,21 @@ The Muse blue mark uses the original path and color stops shown in the hero at h
 
 OpenAI, Codex, Claude and Grok SVG marks are sourced from [Lobe Icons](https://github.com/lobehub/lobe-icons), package `@lobehub/icons-static-svg`, retrieved 2026-09-26. The original SVG paths are retained and rendered as CSS masks to support light/dark themes. The upstream MIT license is included in this directory. Brand names and marks belong to their respective owners.
 
+## Single official marks (2026-10-17)
+
+Six catalog families use one first-party SVG each, with distinct slow transform loops, no surrounding deck or decorative frame. Motion pauses offscreen and when the document is hidden; reduced-motion disables it. The previously established ChatGPT, Claude, SMS, Codex credits, Plus student, Muse and remote-deployment card compositions are retained. Gmail reuses its original envelope scene; Duolingo uses the original official Duo animation below.
+
+| Local asset | Verified first-party source | Preparation |
+| --- | --- | --- |
+| grok-official.svg | https://grok.com/images/favicon.svg | Original three light symbol paths; crop to the symbol and remove the favicon backdrop/foreignObject. Render as a theme-aware mask. |
+| gemini-official.svg | https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg | Official Gemini page asset; retain original geometry and self-contained gradient image. |
+| adobe-express-official.svg | https://www.adobe.com/express/code/icons/adobe-express-logo.svg | Asset selected by the official Express homepage icon utility. Keep the original colored A symbol, remove the app-tile backdrop and crop to the symbol; retain its original color image and vectors. |
+| apple-account-official.svg | https://appleid.cdn-apple.com/static/bin/cb2291598332/images/accountIcons/icon.svg | Apple Account page's official multicolor account icon, unchanged. |
+| apple-music-official.svg | https://music.apple.com/ | Official inline 83×20 Apple Music wordmark; use as a single pink mask. |
+| capcut-official.svg | https://www.capcut.com/ | Official inline 106×20 header mark; crop to its first 26×20 symbol. |
+
+Assets contain no executable content or remote references. Gemini and Adobe's official SVGs include embedded color images clipped by their original vector artwork. No source artwork is fetched at runtime. Trademarks remain the property of their respective owners; use identifies the service offered by this independent shop.
+
 
 ## Duolingo Duo home animation
 

@@ -18,6 +18,7 @@ import { reconcileGmail } from './account_supplier/service.ts'
 import { requireSecureTransport, secureResponse } from './security.ts'
 import { checkAccount } from './account-check.ts'
 import { reconcileSms } from './grizzly/service.ts'
+import { refreshHanfolkStock } from './hanfolk/management.ts'
 const json = (value: unknown, status = 200) => Response.json(value, {
   status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 429 ? { 'Retry-After': '60' } : {}) },
 })
@@ -32,6 +33,7 @@ export default {
     await retryTelegramInvitations(env).catch(() => { console.error('Telegram invitation queue temporarily unavailable') })
     // Reminders run every minute; preserve the existing five-minute reconciliation cadence.
     if (event.scheduledTime === undefined || Math.floor(event.scheduledTime / 60_000) % 5 === 0) {
+      await refreshHanfolkStock(env).catch(() => { console.error('Hanfolk stock refresh temporarily unavailable') })
       await Promise.all([reconcilePayments(env), reconcileRecharge(env), retryPayoutNotifications(env), reconcileInvoicePayments(env)])
       await reconcileRechargeRefunds(env)
     }

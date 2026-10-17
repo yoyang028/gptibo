@@ -296,7 +296,7 @@ export function hanfolkBuyerCopy(
         '不是。供货说明明确要求自备 UPI 或银行卡，请先确认地区、新用户资格和支付条件。',
     })
   }
-  if (family === 'apple-id') {
+  if (family === 'apple-id' && [50,4,5,14,15,16].includes(product.id)) {
     const region =
         product.title.match(/香港|土耳其|尼日利亚|日本|美国/)?.[0] ??
         '所选地区',

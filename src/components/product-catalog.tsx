@@ -2,6 +2,9 @@ import { SmsFlowPreview } from './sms-flow-preview'
 import type { SmsPublicCatalog } from '../../shared/grizzly-sms'
 import { MuseLogoMotion } from './muse-logo-motion'
 import { ProductArtwork } from './product-artwork'
+import { OfficialLogoMotion } from './official-logo-motion'
+import { officialBrand } from './official-brand'
+import { GmailScene } from './gmail-scene'
 import { ProductServiceScene } from './product-service-scene'
 import type { ProductArtworkMap } from '../../shared/product-artwork'
 import { useStorefrontI18n } from '@/lib/storefront-i18n'
@@ -42,7 +45,7 @@ function CatalogSkeleton() {
   </div>
 }
 
-export function ProductCatalog({ smsCatalog, onHelp, onOrders, onNavigate, offers, catalogReady, error, productOrder = [], hiddenProductIds = [], products = [], productArtwork = {} }: { smsCatalog?: SmsPublicCatalog; productArtwork?: ProductArtworkMap; products?: ShopProduct[]; catalogReady: boolean; error?: string; productOrder?: readonly string[]; hiddenProductIds?: readonly string[]; onHelp: () => void; onOrders: () => void; onNavigate: (page: string) => void; offers: CatalogPlan[] }) {
+export function ProductCatalog({ managedProductGroups = [], smsCatalog, onHelp, onOrders, onNavigate, offers, catalogReady, error, productOrder = [], hiddenProductIds = [], products = [], productArtwork = {} }: { managedProductGroups?:string[]; smsCatalog?: SmsPublicCatalog; productArtwork?: ProductArtworkMap; products?: ShopProduct[]; catalogReady: boolean; error?: string; productOrder?: readonly string[]; hiddenProductIds?: readonly string[]; onHelp: () => void; onOrders: () => void; onNavigate: (page: string) => void; offers: CatalogPlan[] }) {
   const { t } = useStorefrontI18n()
   const [category, setCategory] = useState('all')
   const [query, setQuery] = useState('')
@@ -53,9 +56,9 @@ export function ProductCatalog({ smsCatalog, onHelp, onOrders, onNavigate, offer
   const startingPrice = catalogStartingPrice(offers)
   const matches = (group: string, text: string) => (category === 'all' || category === group) && text.toLowerCase().includes(query.trim().toLowerCase())
   const chatgpt = matches('ai', 'ChatGPT Plus Pro')
-  const gmail = !productGroups.some(g => g.id === 'gmail') && matches('mail', 'Gmail 邮箱账号 email accounts 2FA')
-  const upcoming = UPCOMING_PRODUCTS.filter(p => !productGroups.some(g => g.id === p.id) && matches('ai', p.name))
-  const memberships = Object.entries(EMAIL_PRODUCTS).filter(([, p]) => !productGroups.some(g => g.id === p.productId) && p.productId !== 'gmail' && matches(p.productId === 'gemini' ? 'ai' : 'learning', p.name + (p.productId === 'duolingo' ? ' Duolingo' : '')))
+  const gmail = !managedProductGroups.includes('gmail') && !productGroups.some(g => g.id === 'gmail') && matches('mail', 'Gmail 邮箱账号 email accounts 2FA')
+  const upcoming = UPCOMING_PRODUCTS.filter(p => !managedProductGroups.includes(p.id) && !productGroups.some(g => g.id === p.id) && matches('ai', p.name))
+  const memberships = Object.entries(EMAIL_PRODUCTS).filter(([, p]) => !managedProductGroups.includes(p.productId) && !productGroups.some(g => g.id === p.productId) && p.productId !== 'gmail' && matches(p.productId === 'gemini' ? 'ai' : 'learning', p.name + (p.productId === 'duolingo' ? ' Duolingo' : '')))
   const xgift = matches('tool', 'X Premium 推特 Twitter 会员赠送')
   const xOffers = offers.filter(p => p.product_id === 'x-premium')
   const xAvailable = xOffers.some(p => p.enabled)
@@ -79,7 +82,7 @@ export function ProductCatalog({ smsCatalog, onHelp, onOrders, onNavigate, offer
       return { id: g.id, node: <article className={`store-product service-${g.id}`} data-product-group={g.id}>
         <div className="store-product-heading"><h3>{g.name}</h3><span>{available ? p.badge : !priced.length ? '资料预览 · 待定价' : '可浏览 · 未开售'}</span></div>
         <p className="store-spec">{multiple ? `${g.products.length} 个规格可选` : p.duration} · {presentation.tagline}</p>
-        {g.id === 'muse' ? <MuseLogoMotion /> : multiple ? <SubscriptionDeck brand={g.name} productId={g.id} plans={g.products.map(p => ({ id: p.id, name: variantLabel(p, g.name), price: p.pricePending ? null : p.priceCents / 100, unit: p.unit }))} /> : <ProductArtwork config={productArtwork[g.id] ?? productArtwork[p.id]} name={g.name} caption={p.duration} fallback={<ProductServiceScene productId={g.id} name={g.name} duration={p.duration} />} />}
+        {g.id === 'muse' ? <MuseLogoMotion /> : g.id === 'duolingo' ? <MembershipScene productId='duolingo'/> : g.id === 'gmail' ? <GmailScene/> : officialBrand(g.id) ? <OfficialLogoMotion productId={g.id}/> : multiple ? <SubscriptionDeck brand={g.name} productId={g.id} plans={g.products.map(p => ({ id: p.id, name: variantLabel(p, g.name), price: p.pricePending ? null : p.priceCents / 100, unit: p.unit }))} /> : <ProductArtwork config={productArtwork[g.id] ?? productArtwork[p.id]} name={g.name} caption={p.duration} fallback={<ProductServiceScene productId={g.id} name={g.name} duration={p.duration} />} />}
         <div className="store-product-bottom"><span className="store-starting-price">{starting ? <>¥{formatCatalogPrice(starting.priceCents / 100)}<small>{multiple ? ' 起' : '／' + p.unit}</small></> : <small>待定价</small>}</span><a className="store-action" href={storefrontHref('product/' + g.id)} onClick={e => navigate(e, 'product/' + g.id)}>{multiple ? '选择规格' : '查看商品'}</a></div>
       </article> }
     }),

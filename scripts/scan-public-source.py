@@ -29,7 +29,10 @@ PUBLIC_HOSTS = {
 PUBLIC_DOC_REFERENCES = {
     # Existing public reference links are permitted only in their documentation;
     # this does not permit application requests to these shop-specific origins.
-    'public/brands/README.md': {'muse.gptibo.com'},
+    'public/brands/README.md': {
+        'muse.gptibo.com', 'grok.com', 'www.gstatic.com', 'www.adobe.com',
+        'account.apple.com', 'appleid.cdn-apple.com', 'music.apple.com', 'www.capcut.com',
+    },
     'docs/GRIZZLY_SMS.md': {'shop.scholai.top'},
     'docs/HANFOLK_BUYER_DETAILS.md': {
         'vip.dajuai.us', 'owlduo.com', 'muse.ai', 'grok.com',
@@ -45,7 +48,6 @@ PUBLIC_BUYER_REFERENCES = {
         'gemini.google.com', 'accounts.google.com', 'express.adobe.com',
         'www.capcut.com', 'www.jio.com',
     },
-    'worker/hanfolk/matches.ts': {'accounts.google.com'},
     'tests/hanfolk-buyer-copy.test.ts': {'vip.dajuai.us', 'owlduo.com', 'grok.com'},
 }
 BINARY_ASSETS = {'public/email-logo.png', 'public/email-shop.png', 'src/assets/hero.png'}

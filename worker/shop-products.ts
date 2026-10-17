@@ -28,7 +28,7 @@ import {
 } from '../shared/grizzly-sms.ts'
 import { recordSupplierRefund } from './grizzly/management.ts'
 import { affordablePools, poolQuotes } from './grizzly/pools.ts'
-import { withExistingFamilyOffers } from './hanfolk/matches.ts'
+import { availableHanfolkProducts } from './hanfolk/availability.ts'
 import { publicBuyerProduct } from '../shared/redemption-copy.ts'
 import { editableProducts, guideSaveStatement, deliveredRedemptionGuide, privateProductGuide } from './redemption-guides.ts'
 import {
@@ -100,7 +100,7 @@ export async function shopProducts(env: Env, includeDrafts = false) {
       if (!includeDrafts) delete p.api
       return p
     })
-  return includeDrafts ? products : (await withExistingFamilyOffers(env, products)).map(publicBuyerProduct)
+  return includeDrafts ? products : (await availableHanfolkProducts(env, products)).map(publicBuyerProduct)
 }
 async function productRow(env: Env, id: string) {
   return env.INTEREST_DB.prepare(
@@ -674,7 +674,7 @@ export async function createCustomOrder(
     ...(coupon ? [couponReservation(env, coupon, orderId, email)] : []),
     db
       .prepare(
-        "INSERT INTO shop_order_details(order_id,product_id,snapshot,fields,api_secret,redemption_guide) SELECT id,?,?,?,?,COALESCE((SELECT encrypted_content FROM shop_redemption_guides WHERE product_id=?),'') FROM orders WHERE id=?",
+        "INSERT INTO shop_order_details(order_id,product_id,snapshot,fields,api_secret,redemption_guide) SELECT id,?,?,?,?,COALESCE((SELECT encrypted_content FROM shop_redemption_guides WHERE product_id=?),?) FROM orders WHERE id=?",
       )
       .bind(
         id,
@@ -682,6 +682,7 @@ export async function createCustomOrder(
         JSON.stringify(fields),
         row.api_secret,
         id,
+        await seal(env, ''),
         orderId,
       ),
     ...(p.api?.provider === 'grizzly'

@@ -21,6 +21,7 @@ function initializeClient() {
 export function useStore(page: string) {
   const [orders, setOrders] = useState<ServerOrder[]>([])
   const [recoveryEmail, setRecoveryEmail] = useState<string | null>(null)
+  const [managedProductGroups, setManagedProductGroups] = useState<string[]>([])
   const [hiddenProductIds, setHiddenProductIds] = useState<StorefrontProductId[]>([])
   const [productOrder, setProductOrder] = useState<StorefrontProductId[]>([])
   const [completedOrdersByProduct, setCompletedOrdersByProduct] = useState<Record<string, number>>({})
@@ -55,9 +56,9 @@ export function useStore(page: string) {
       const [list, offers] = await readStoreResources({
         initialize: initializeClient,
         orders: () => api<{ orders: ServerOrder[]; recoveryEmail: string | null }>('/api/orders'),
-        catalog: () => api<{ sms?:SmsPublicCatalog; productArtwork?:ProductArtworkMap; products?:ShopProduct[]; shop?:{name:string;brandName:string;logo:string;pageTitle:string;headline:string;description:string}; completedOrdersByProduct?: Record<string, number>; plans: CatalogPlan[]; paymentMethods?: PaymentMethodOption[]; productOrder?: StorefrontProductId[]; hiddenProductIds?: StorefrontProductId[]; supportContacts: SupportContacts; announcement?: AnnouncementSettings | null; checkoutEnabled?: boolean; testingEnabled?: boolean; partner?: { name: string; slug: string; brandName?: string; logo?: string; pageTitle?: string; headline?: string; description?: string } }>('/api/catalog' + (shopSlug ? '?partner=' + encodeURIComponent(shopSlug) : '')),
+        catalog: () => api<{ managedProductGroups?:string[]; sms?:SmsPublicCatalog; productArtwork?:ProductArtworkMap; products?:ShopProduct[]; shop?:{name:string;brandName:string;logo:string;pageTitle:string;headline:string;description:string}; completedOrdersByProduct?: Record<string, number>; plans: CatalogPlan[]; paymentMethods?: PaymentMethodOption[]; productOrder?: StorefrontProductId[]; hiddenProductIds?: StorefrontProductId[]; supportContacts: SupportContacts; announcement?: AnnouncementSettings | null; checkoutEnabled?: boolean; testingEnabled?: boolean; partner?: { name: string; slug: string; brandName?: string; logo?: string; pageTitle?: string; headline?: string; description?: string } }>('/api/catalog' + (shopSlug ? '?partner=' + encodeURIComponent(shopSlug) : '')),
         onOrders: value => { if (generation.current === current) { setOrders(value.orders); setRecoveryEmail(value.recoveryEmail) } },
-        onCatalog: value => { if (generation.current === current) { setSms(value.sms); setProductArtwork(value.productArtwork ?? {}); setProducts(value.products ?? []); setShop(value.shop); setCatalog(value.plans); setCompletedOrdersByProduct(value.completedOrdersByProduct ?? {}); setPaymentMethods(value.paymentMethods ?? []); setProductOrder(value.productOrder ?? []); setHiddenProductIds(value.hiddenProductIds ?? []); setSupportContacts(value.supportContacts); setAnnouncement(value.announcement ?? null); setCheckoutEnabled(value.checkoutEnabled === true); setTestingEnabled(value.testingEnabled === true); setPartner(value.partner); setCatalogReady(true); setShopUnavailable(false) } },
+        onCatalog: value => { if (generation.current === current) { setManagedProductGroups(value.managedProductGroups ?? []); setSms(value.sms); setProductArtwork(value.productArtwork ?? {}); setProducts(value.products ?? []); setShop(value.shop); setCatalog(value.plans); setCompletedOrdersByProduct(value.completedOrdersByProduct ?? {}); setPaymentMethods(value.paymentMethods ?? []); setProductOrder(value.productOrder ?? []); setHiddenProductIds(value.hiddenProductIds ?? []); setSupportContacts(value.supportContacts); setAnnouncement(value.announcement ?? null); setCheckoutEnabled(value.checkoutEnabled === true); setTestingEnabled(value.testingEnabled === true); setPartner(value.partner); setCatalogReady(true); setShopUnavailable(false) } },
         onReady: () => { if (generation.current === current) setReady(true) },
       })
       if (generation.current === current) {
@@ -109,5 +110,5 @@ export function useStore(page: string) {
       return old && old.version > order.version ? previous : [order, ...previous.filter(item => item.id !== order.id)].sort((a,b) => b.createdAt-a.createdAt).slice(0,100)
     })
   }
-  return { orders, recoveryEmail, catalog, sms, products, productArtwork, shop, completedOrdersByProduct, paymentMethods, productOrder, hiddenProductIds, checkoutEnabled, testingEnabled, partner, catalogReady, supportContacts, announcement, shopUnavailable, ready, busy, pendingAction, error, refresh, create, action, acceptOrder }
+  return { managedProductGroups, orders, recoveryEmail, catalog, sms, products, productArtwork, shop, completedOrdersByProduct, paymentMethods, productOrder, hiddenProductIds, checkoutEnabled, testingEnabled, partner, catalogReady, supportContacts, announcement, shopUnavailable, ready, busy, pendingAction, error, refresh, create, action, acceptOrder }
 }

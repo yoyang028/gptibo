@@ -12,7 +12,7 @@ import {
   type HanfolkProduct,
   type HanfolkDetail,
 } from '../../shared/hanfolk-catalog'
-import type { ShopProduct } from '../../shared/shop-products'
+import type { ShopProductInput } from '../../shared/shop-products'
 import './hanfolk-catalog.css'
 
 type SourceProduct = HanfolkProduct & {
@@ -30,6 +30,7 @@ type Draft = {
   status: string
   pricePending: boolean
   priceCents: number
+  sourceStock: number
   relatedPlanId?: string | null
   matchNote?: string
 }
@@ -52,7 +53,7 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
     [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
     [message, setMessage] = useState(''),
-    [edit, setEdit] = useState<ShopProduct | null>(null)
+    [edit, setEdit] = useState<ShopProductInput | null>(null)
   const {
     data,
     error: readError,
@@ -108,7 +109,7 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
     setBusy('editor')
     setError('')
     try {
-      const all = await api<{ products: ShopProduct[] }>(
+      const all = await api<{ products: ShopProductInput[] }>(
         '/api/admin/my-shop/products',
       )
       const p = all.products.find((p) => p.id === id)
@@ -130,7 +131,7 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
               大橘 AI · 卖家 API
             </h2>
             <p>
-              商品资料只读同步，新增规格先保存待定价草稿，不改变原有商品售价。
+              商品与规格库存只读同步；同类旧规格已退出展示，历史订单和价格记录保留。新增规格逐项定价后再开售。
             </p>
           </div>
           <span>
@@ -355,7 +356,7 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
             <h2>已整理的商品与规格匹配</h2>
             <p>
               草稿仅后台可见；可公开资料并显示「待定价」，仍不可购买。先核对实际
-              SKU、交付方式、兑换地址与售后，再设置零售价。
+              SKU、交付方式、私有兑换指引与售后，再设置零售价。上游缺货或已删除的规格自动隐藏于前台。
             </p>
           </div>
           <Button variant="outline" onClick={() => setLocal((v) => v + 1)}>
@@ -372,6 +373,7 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
                 <tr>
                   <th>项目 / 商品</th>
                   <th>源规格</th>
+                  <th>上游库存 / 前台</th>
                   <th>导入时成本（私有）</th>
                   <th>零售价与展示状态</th>
                   <th>操作</th>
@@ -392,10 +394,11 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
                         {p.matchNote && <small>{p.matchNote}</small>}
                         {p.relatedPlanId && (
                           <small>
-                            同类原商品：{p.relatedPlanId}（保留独立规格与价格）
+                            历史原商品：{p.relatedPlanId}（旧规格不再展示）
                           </small>
                         )}
                       </td>
+                      <td>{p.sourceStock}<small>{p.sourceStock > 0 ? '有货 · 按展示设置' : '缺货或已移除 · 前台隐藏'}</small></td>
                       <td>¥{(p.costCents / 100).toFixed(2)}</td>
                       <td>
                         {p.pricePending

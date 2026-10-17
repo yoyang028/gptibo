@@ -30,3 +30,6 @@
 :root .product-logo[data-brand='muse'] {
   background: transparent;
 }
+:root .product-mark.product-mark-official { background:transparent; border:0; border-radius:0; box-shadow:none; color:var(--foreground); }
+:root .product-mark.product-mark-official > .product-logo { width:70%; height:70%; object-fit:contain; border:0; border-radius:0; box-shadow:none; }
+:root .product-mark.mark-apple-music.product-mark-official { color:#fa2d48; }

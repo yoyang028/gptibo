@@ -38,6 +38,10 @@ import { RefundContent } from './order-services'
 import './shop-products.css'
 import { GrizzlyOrderContent } from './grizzly-order-content'
 import { ProductKeyFacts } from './product-key-facts'
+import { OfficialLogoMotion } from './official-logo-motion'
+import { officialBrand } from './official-brand'
+import { GmailScene } from './gmail-scene'
+import { MembershipScene } from './membership-scene'
 import { ProductCopyText, ProductDescription } from './product-buyer-details'
 import { productCopyBlocks } from '../../shared/product-copy'
 
@@ -229,7 +233,7 @@ export function ShopProductPage({
             </div>
           </div>
           <ProductKeyFacts highlights={product.buyerHighlights} warnings={product.buyerWarnings}/>
-          {familyId === 'muse' ? <MuseLogoMotion detail /> : <ProductArtwork
+          {familyId === 'muse' ? <MuseLogoMotion detail /> : familyId === 'duolingo' ? <MembershipScene productId="duolingo"/> : familyId === 'gmail' ? <GmailScene/> : officialBrand(familyId) ? <OfficialLogoMotion productId={familyId} detail/> : <ProductArtwork
             config={artwork}
             name={product.name}
             caption={product.duration}

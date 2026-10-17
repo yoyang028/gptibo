@@ -443,6 +443,23 @@ test('redemption guides stay encrypted and private until verified payment and co
   }
 })
 
+test('an empty guide at purchase stays empty after later product edits', async t => {
+  const s = await setup()
+  t.after(()=>s.db.close())
+  const p = await s.saveProduct(product({ requiresRedemption: true }))
+  const buyer = await s.buyer()
+  const response = await s.create(p, buyer)
+  assert.equal(response.status,201)
+  const {order} = await response.json()
+  const snapshot = s.db.prepare('SELECT redemption_guide FROM shop_order_details WHERE order_id=?').get(order.id)!.redemption_guide
+  assert.ok(snapshot)
+  await s.saveProduct({ ...p, version:Number(s.db.prepare('SELECT version FROM shop_products WHERE id=?').get(p.id)!.version), redemptionGuide:'[新入口](https://redeem.example.com/added-later)' } as ShopProduct)
+  s.db.prepare("UPDATE orders SET payment_status='paid',status='success' WHERE id=?").run(order.id)
+  s.db.prepare("UPDATE shop_order_details SET delivery_content='FIXTURE-ONLY-CODE' WHERE order_id=?").run(order.id)
+  const detail = await customOrderSummary(s.env, await getOrder(s.env, order.id))
+  assert.equal(detail?.redemptionGuide,undefined)
+})
+
 test('legacy order notes and snapshots cannot disclose redemption URLs before payment or before a code is delivered', async t => {
   const s = await setup()
   t.after(()=>s.db.close())

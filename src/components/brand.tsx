@@ -1,6 +1,7 @@
 import { DuoMark, GeminiMark } from './membership-scene'
 import { clearProductBrand } from '../../shared/product-brand'
 import './product-brand.css'
+import { officialBrand } from './official-brand'
 import {
   Mail,
   Package,
@@ -36,9 +37,10 @@ export function ProductMark({
   productId?: string
 }) {
   const brand = clearProductBrand(productId)
+  const official = officialBrand(productId)
   return (
     <div
-      className={`product-mark mark-${productId} ${small ? 'small' : ''}${brand ? ' product-mark-clear' : ''}`}
+      className={`product-mark mark-${productId} ${small ? 'small' : ''}${brand ? ' product-mark-clear' : ''}${official ? ' product-mark-official' : ''}`}
       data-brand={brand}
       aria-hidden="true"
     >
@@ -56,6 +58,8 @@ export function XLogoPath() {
 }
 export function ProductLogo({ productId }: { productId: string }) {
   const brand = clearProductBrand(productId)
+  const official = officialBrand(productId)
+  if (official) return official.mono ? <span className="product-logo" style={{maskImage:`url(/brands/${official.file})`}} aria-hidden="true"/> : <img className="product-logo" style={{background:'none'}} src={'/brands/'+official.file} alt="" aria-hidden="true"/>
   if (brand === 'muse')
     return (
       <img

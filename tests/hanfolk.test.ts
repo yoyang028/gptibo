@@ -249,6 +249,6 @@ test('Admin key encryption, optimistic versions, read-only refresh, real specs a
     selection: [{ productId: 100, sku: '10' }],
   })
   assert.equal(imported.result.imported.length, 1)
-  assert.equal(fixture.stats().reads, 3)
+  assert.equal(fixture.stats().reads, 12)
   assert.equal(fixture.stats().writes, 0)
 })

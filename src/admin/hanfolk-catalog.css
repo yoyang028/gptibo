@@ -1,8 +1,10 @@
 .hanfolk-admin {
   display: grid;
   gap: 22px;
+  min-width: 0;
 }
 .hanfolk-admin > .admin-card {
+  min-width: 0;
   padding: 24px;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -179,6 +181,8 @@
 .hanfolk-admin .admin-table td {
   vertical-align: top;
 }
+.hanfolk-admin .admin-table-scroll { max-width:100%; overflow-x:auto; }
+.hanfolk-admin .admin-table td small { max-width:280px; white-space:normal; overflow-wrap:anywhere; }
 @media (max-width: 640px) {
   .hanfolk-admin > .admin-card {
     padding: 18px;

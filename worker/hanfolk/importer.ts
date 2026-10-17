@@ -8,6 +8,9 @@ import {
   type ShopProduct,
 } from '../../shared/shop-products.ts'
 import { ApiError, hash, type Env } from '../platform.ts'
+import { publicBuyerProduct, redemptionGuideFromProduct } from '../../shared/redemption-copy.ts'
+import { seal } from '../product-secrets.ts'
+import { validateGuide } from '../redemption-guides.ts'
 import {
   hanfolkBuyerCopy,
   SourceCopyChanged,
@@ -34,7 +37,7 @@ export async function hanfolkDraft(
     if (e instanceof SourceCopyChanged) throw new ApiError(e.message, 409)
     throw e
   }
-  return {
+  return publicBuyerProduct({
     ...copy,
     id:
       'custom-' + (await hash('hanfolk:' + detail.id + ':' + sku)).slice(0, 32),
@@ -60,7 +63,7 @@ export async function hanfolkDraft(
     payment: { label: '', instructions: '', url: '', qr: '' },
     status: 'draft',
     version: 0,
-  }
+  })
 }
 
 export async function importHanfolkDrafts(
@@ -85,12 +88,14 @@ export async function importHanfolkDrafts(
         errors = productProblems(p)
       if (errors.length)
         throw new ApiError('源商品资料需要补全：' + errors.join('、'))
-      return { item, detail, variant, p }
+      const guide = redemptionGuideFromProduct({ ...p, ...hanfolkBuyerCopy(detail, item.sku) })
+      const encryptedGuide = guide ? await seal(env, validateGuide(guide)) : ''
+      return { item, detail, variant, p, encryptedGuide }
     }),
   )
   const imported: string[] = [],
     existing: string[] = []
-  for (const { item, detail, variant, p } of prepared) {
+  for (const { item, detail, variant, p, encryptedGuide } of prepared) {
     const linked = await env.INTEREST_DB.prepare(
       'SELECT local_id FROM hanfolk_product_links WHERE product_id=? AND sku=?',
     )
@@ -140,6 +145,7 @@ export async function importHanfolkDrafts(
           p.id,
           event,
         ),
+      ...(encryptedGuide ? [db.prepare('INSERT INTO shop_redemption_guides(product_id,encrypted_content,product_version,updated_at) SELECT ?,?,0,? WHERE EXISTS(SELECT 1 FROM shop_products WHERE id=? AND change_id=?) ON CONFLICT(product_id) DO NOTHING').bind(p.id,encryptedGuide,now,p.id,event)] : []),
       db
         .prepare(
           "INSERT INTO admin_audit(id,target_id,action,note,created_at) SELECT ?,id,'hanfolk-draft','导入代理商品待定价草稿；未采购、未开售',? FROM shop_products WHERE id=? AND change_id=?",
