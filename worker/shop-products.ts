@@ -28,6 +28,7 @@ import {
 } from '../shared/grizzly-sms.ts'
 import { recordSupplierRefund } from './grizzly/management.ts'
 import { affordablePools, poolQuotes } from './grizzly/pools.ts'
+import { withExistingFamilyOffers } from './hanfolk/matches.ts'
 import {
   XiaojiuPurchaseClient,
   XiaojiuPurchaseError,
@@ -74,22 +75,21 @@ export async function shopProducts(env: Env, includeDrafts = false) {
       'SELECT p.*,c.price_cents,c.enabled FROM shop_products p JOIN catalog_plans c ON c.id=p.id ORDER BY p.updated_at DESC',
     ).all<Row>()
   ).results
-  return rows
+  const products = rows
     .map(rowProduct)
     .filter(
       (p) =>
         includeDrafts ||
-        (!p.pricePending &&
-          (p.status === 'listed' ||
-            (p.status === 'published' &&
-              !(
-                p.delivery === 'api' &&
-                p.api?.provider === 'xiaojiu' &&
-                env.XIAOJIU_PURCHASE_ENABLED !== 'true'
-              ) &&
-              !(
-                p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env)
-              )))),
+        (p.status === 'listed' &&
+          (!p.pricePending || p.catalogPreview === true)) ||
+        (p.status === 'published' &&
+          !p.pricePending &&
+          !(
+            p.delivery === 'api' &&
+            p.api?.provider === 'xiaojiu' &&
+            env.XIAOJIU_PURCHASE_ENABLED !== 'true'
+          ) &&
+          !(p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env))),
     )
     .map((p) => {
       if (!includeDrafts && p.api?.provider === 'grizzly')
@@ -97,6 +97,7 @@ export async function shopProducts(env: Env, includeDrafts = false) {
       if (!includeDrafts) delete p.api
       return p
     })
+  return includeDrafts ? products : withExistingFamilyOffers(env, products)
 }
 async function productRow(env: Env, id: string) {
   return env.INTEREST_DB.prepare(
@@ -272,6 +273,15 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     priceCents: input.priceCents,
     ...(input.pricePending !== undefined
       ? { pricePending: input.pricePending }
+      : {}),
+    ...(input.catalogPreview !== undefined
+      ? { catalogPreview: input.catalogPreview }
+      : {}),
+    ...(input.buyerHighlights !== undefined
+      ? { buyerHighlights: input.buyerHighlights }
+      : {}),
+    ...(input.buyerWarnings !== undefined
+      ? { buyerWarnings: input.buyerWarnings }
       : {}),
     stock: input.stock,
     features: input.features,
@@ -529,6 +539,7 @@ export async function customOrderSummary(
     ...(p.api?.provider === 'grizzly'
       ? { sms: await smsSummary(env, order) }
       : {}),
+    ...(p.groupId ? { groupId: p.groupId } : {}),
     productId: p.id,
     productName: p.name,
     image: p.image,

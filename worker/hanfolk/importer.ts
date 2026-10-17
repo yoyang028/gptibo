@@ -1,8 +1,6 @@
 import {
   hanfolkFamily,
   hanfolkMoney,
-  skuName,
-  supplierText,
   type HanfolkDetail,
 } from '../../shared/hanfolk-catalog.ts'
 import {
@@ -10,14 +8,11 @@ import {
   type ShopProduct,
 } from '../../shared/shop-products.ts'
 import { ApiError, hash, type Env } from '../platform.ts'
-import { hanfolkCopy } from './content.ts'
+import {
+  hanfolkBuyerCopy,
+  SourceCopyChanged,
+} from '../../shared/hanfolk-buyer-copy.ts'
 
-function section(text: string, pattern: RegExp) {
-  return text
-    .split(/\n\n(?=### )/)
-    .filter((part) => pattern.test(part.split('\n')[0]))
-    .join('\n\n')
-}
 export async function hanfolkDraft(
   detail: HanfolkDetail,
   sku: string,
@@ -26,70 +21,40 @@ export async function hanfolkDraft(
     variant = detail.sku_variants.find((v) => v.sku === sku)
   if (!family || !variant)
     throw new ApiError('仅可导入已选九类商品及接口确认的实际规格。')
-  const name = skuName(detail, sku),
-    text = supplierText(detail.description)
-  const copy = hanfolkCopy(detail, name)
-  const conditions = section(text, /须知|注意|售后|质保|退款|限制|条件|声明/),
-    delivery = section(text, /步骤|教程|使用|交付|领取|登录|兑换|开通/)
-  const description = (
-    '### 商品内容\n' +
-    text +
-    '\n\n### 当前规格\n' +
-    name +
-    '\n\n### 适用条件与购买前确认\n' +
-    copy.conditions +
-    '\n\n### 领取与使用\n' +
-    copy.instructions
-  ).slice(0, 4000)
-  const title = (
-    name === detail.title ? name : detail.title + ' · ' + name
-  ).slice(0, 80)
-  const category =
-    family === 'duolingo'
-      ? '语言学习'
-      : family === 'gmail'
-        ? '邮箱账号'
-        : ['grok', 'gemini', 'muse'].includes(family)
-          ? 'AI 服务'
-          : family === 'apple-id'
-            ? '账号服务'
-            : '创作与生活'
-  const purchaseNote = (conditions || copy.conditions).slice(0, 4000)
-  const deliveryInstructions = (delivery || copy.instructions).slice(0, 4000)
   let image = ''
   try {
     const url = new URL(detail.cover)
     if (url.protocol === 'https:' && !url.username && !url.password)
       image = url.href
-  } catch {
-    /* Drafts can be completed in the editor. */
+  } catch {}
+  let copy
+  try {
+    copy = hanfolkBuyerCopy(detail, sku)
+  } catch (e) {
+    if (e instanceof SourceCopyChanged) throw new ApiError(e.message, 409)
+    throw e
   }
   return {
+    ...copy,
     id:
       'custom-' + (await hash('hanfolk:' + detail.id + ':' + sku)).slice(0, 32),
     groupId: family,
-    name: title,
-    category,
-    tagline: (name === detail.title ? detail.title : name).slice(0, 160),
-    description,
+    category:
+      family === 'gmail'
+        ? '邮箱账号'
+        : family === 'duolingo'
+          ? '语言学习'
+          : ['grok', 'gemini', 'muse'].includes(family)
+            ? 'AI 服务'
+            : family === 'apple-id'
+              ? '账号服务'
+              : '创作与生活',
     image,
     badge: '待定价草稿',
     unit: '份',
-    duration: (name === detail.title ? '所选商品规格' : name).slice(0, 80),
     priceCents: 1,
     pricePending: true,
     stock: Math.min(variant.stock, 1000000),
-    features: [
-      name.slice(0, 160),
-      /成品|账号|账户|Apple\s*ID/i.test(detail.title)
-        ? '账号资料交付'
-        : '兑换资料交付',
-      copy.conditions.split('。')[0].slice(0, 160),
-    ],
-    purchaseNote,
-    deliveryInstructions,
-    steps: copy.steps,
-    faq: copy.faq,
     fields: [],
     delivery: 'manual',
     payment: { label: '', instructions: '', url: '', qr: '' },

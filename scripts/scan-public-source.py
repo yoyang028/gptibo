@@ -31,6 +31,22 @@ PUBLIC_DOC_REFERENCES = {
     # this does not permit application requests to these shop-specific origins.
     'public/brands/README.md': {'muse.gptibo.com'},
     'docs/GRIZZLY_SMS.md': {'shop.scholai.top'},
+    'docs/HANFOLK_BUYER_DETAILS.md': {
+        'vip.dajuai.us', 'owlduo.com', 'muse.ai', 'grok.com',
+        'gemini.google.com', 'accounts.google.com', 'express.adobe.com',
+        'www.capcut.com', 'www.jio.com',
+    },
+}
+# Verified buyer-facing links, scoped to editorial copy and its tests. They do
+# not expand the API client's allowlist or authorize backend requests.
+PUBLIC_BUYER_REFERENCES = {
+    'shared/hanfolk-buyer-copy.ts': {
+        'vip.dajuai.us', 'owlduo.com', 'muse.ai', 'grok.com',
+        'gemini.google.com', 'accounts.google.com', 'express.adobe.com',
+        'www.capcut.com', 'www.jio.com',
+    },
+    'worker/hanfolk/matches.ts': {'accounts.google.com'},
+    'tests/hanfolk-buyer-copy.test.ts': {'vip.dajuai.us', 'owlduo.com', 'grok.com'},
 }
 BINARY_ASSETS = {'public/email-logo.png', 'public/email-shop.png', 'src/assets/hero.png'}
 FORBIDDEN_PARTS = {'.git', '.secrets', '.imports', '.admin-auth', '.xgift-private',
@@ -101,7 +117,9 @@ def scan(root, files):
                 # Ignore templates and incomplete expression/regex fragments.
                 if '.' not in host or host.endswith('.'):
                     continue
-                if not allowed_host(host) and host not in PUBLIC_DOC_REFERENCES.get(name, set()):
+                if (not allowed_host(host)
+                        and host not in PUBLIC_DOC_REFERENCES.get(name, set())
+                        and host not in PUBLIC_BUYER_REFERENCES.get(name, set())):
                     findings.append((name, line, 'unexpected external host'))
     return sorted(set(findings))
 

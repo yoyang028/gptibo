@@ -73,14 +73,14 @@ export function ProductCatalog({ smsCatalog, onHelp, onOrders, onNavigate, offer
       const p = g.products[0]
       return matches(/学习|语言|学生/.test(p.category) ? 'learning' : /邮箱|邮件/.test(p.category) ? 'mail' : /AI|订阅|GPT|Claude|Codex|Grok/i.test(p.category + ' ' + p.name) ? 'ai' : 'tool', g.name + ' ' + g.products.map(p => p.name + ' ' + p.category + ' ' + p.tagline).join(' '))
     }).map(g => {
-      const p = g.products[0], multiple = g.products.length > 1
+      const p = g.products[0], multiple = g.products.length > 1, priced = g.products.filter(p=>!p.pricePending), starting = priced[0]
       const presentation = shopPresentation(g.id, p)
       const available = g.products.some(p => p.status === 'published' && p.stock !== 0 && offers.some(o => o.id === p.id && o.enabled))
       return { id: g.id, node: <article className={`store-product service-${g.id}`} data-product-group={g.id}>
-        <div className="store-product-heading"><h3>{g.name}</h3><span>{available ? p.badge : '暂停售卖'}</span></div>
+        <div className="store-product-heading"><h3>{g.name}</h3><span>{available ? p.badge : !priced.length ? '资料预览 · 待定价' : '可浏览 · 未开售'}</span></div>
         <p className="store-spec">{multiple ? `${g.products.length} 个规格可选` : p.duration} · {presentation.tagline}</p>
-        {g.id === 'muse' ? <MuseLogoMotion /> : multiple ? <SubscriptionDeck brand={g.name} productId={g.id} plans={g.products.map(p => ({ id: p.id, name: variantLabel(p, g.name), price: p.priceCents / 100, unit: p.unit }))} /> : <ProductArtwork config={productArtwork[g.id] ?? productArtwork[p.id]} name={g.name} caption={p.duration} fallback={<ProductServiceScene productId={g.id} name={g.name} duration={p.duration} />} />}
-        <div className="store-product-bottom"><span className="store-starting-price">¥{formatCatalogPrice(p.priceCents / 100)}<small>{multiple ? ' 起' : '／' + p.unit}</small></span><a className="store-action" href={storefrontHref('product/' + g.id)} onClick={e => navigate(e, 'product/' + g.id)}>{multiple ? '选择规格' : '查看商品'}</a></div>
+        {g.id === 'muse' ? <MuseLogoMotion /> : multiple ? <SubscriptionDeck brand={g.name} productId={g.id} plans={g.products.map(p => ({ id: p.id, name: variantLabel(p, g.name), price: p.pricePending ? null : p.priceCents / 100, unit: p.unit }))} /> : <ProductArtwork config={productArtwork[g.id] ?? productArtwork[p.id]} name={g.name} caption={p.duration} fallback={<ProductServiceScene productId={g.id} name={g.name} duration={p.duration} />} />}
+        <div className="store-product-bottom"><span className="store-starting-price">{starting ? <>¥{formatCatalogPrice(starting.priceCents / 100)}<small>{multiple ? ' 起' : '／' + p.unit}</small></> : <small>待定价</small>}</span><a className="store-action" href={storefrontHref('product/' + g.id)} onClick={e => navigate(e, 'product/' + g.id)}>{multiple ? '选择规格' : '查看商品'}</a></div>
       </article> }
     }),
     { id: "chatgpt", node: chatgpt && <article className="store-product"><div className="store-product-heading"><h3>ChatGPT</h3>{offers.length > 0 && !plans.some(p => p.enabled) && <span>{t('暂停售卖')}</span>}</div><p className="store-spec">{t('自有账号充值 · Plus / Pro')}</p><ProductArtwork config={productArtwork.chatgpt} name="ChatGPT" caption="Plus / Pro" fallback={<SubscriptionDeck plans={plans} />} /><div className="store-product-bottom"><span className="store-starting-price">{startingPrice === null ? <small>{t(offers.length ? '价格暂不可用' : '价格加载中')}</small> : <>¥{formatCatalogPrice(startingPrice)}<small>{t(' 起')}</small></>}</span><a className="store-action" href={storefrontHref('product/chatgpt')} onClick={e => navigate(e, 'product/chatgpt')}>{t('选择套餐')}</a></div></article> },

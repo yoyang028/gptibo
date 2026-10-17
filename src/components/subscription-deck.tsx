@@ -63,8 +63,8 @@ export function SubscriptionDeck({ plans, brand = 'ChatGPT', productId = 'chatgp
     onBlur={() => { focused.current = false }}>
     {plans.map((plan, i) => <div className="store-tier" data-tier={i} key={plan.id}>
       <div className="store-tier-face">
-      <span className="store-tier-copy"><span className="store-tier-brand">{brand}</span><strong className="store-tier-name">{plan.name}</strong></span>
-      <span className="store-tier-price">{plan.price === null ? <small>{t('价格待加载')}</small> : <>¥{formatCatalogPrice(plan.price)}<small>{t('/ ' + (plan.unit || '月'))}</small></>}</span>
+      <span className="store-tier-copy"><span className="store-tier-brand">{brand}</span><strong className={'store-tier-name' + (plan.name.length > 12 ? ' store-tier-name-long' : '')}>{plan.name}</strong></span>
+      <span className="store-tier-price">{plan.price === null ? <small>{t('待定价')}</small> : <>¥{formatCatalogPrice(plan.price)}<small>{t('/ ' + (plan.unit || '月'))}</small></>}</span>
       </div>
     </div>)}
   </div>

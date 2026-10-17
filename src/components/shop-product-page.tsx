@@ -37,6 +37,7 @@ import { groupShopProducts, type ShopProduct } from '../../shared/shop-products'
 import { RefundContent } from './order-services'
 import './shop-products.css'
 import { GrizzlyOrderContent } from './grizzly-order-content'
+import { ProductKeyFacts } from './product-key-facts'
 import { ProductCopyText, ProductDeliveryNotice, ProductDescription, ProductSpecComparison } from './product-buyer-details'
 import { DELIVERY_COPY_HEADING, productCopyBlocks } from '../../shared/product-copy'
 
@@ -140,7 +141,7 @@ export function ShopProductPage({
     }
   }
   async function purchase() {
-    if (busy || !accepted || preview || !available) return
+    if (busy || !accepted || preview || product.pricePending || !available) return
     if (couponCode.trim() && coupon?.code !== couponCode.trim().toUpperCase()) {
       setError('请先应用优惠码，或清空后继续。')
       return
@@ -228,6 +229,7 @@ export function ShopProductPage({
               </span>
             </div>
           </div>
+          <ProductKeyFacts highlights={product.buyerHighlights} warnings={product.buyerWarnings}/>
           {deliveryNotice && <ProductDeliveryNotice block={deliveryNotice} />}
           {familyId === 'muse' ? <MuseLogoMotion detail /> : <ProductArtwork
             config={artwork}
@@ -323,11 +325,12 @@ export function ShopProductPage({
           </div>
           <Button
             className="primary-action summary-cta"
-            disabled={preview || !available || product.stock === 0}
+            disabled={preview || product.pricePending || !available || product.stock === 0}
             onClick={() => setOpen(true)}
           >
             {preview
               ? '商品预览'
+              : product.pricePending ? '待定价，暂不可购买'
               : !available
                 ? '暂停售卖'
                 : product.stock === 0
@@ -336,7 +339,7 @@ export function ShopProductPage({
             <ArrowRight size={16} />
           </Button>
           <p className="summary-note">
-            {displayOnly || !available
+            {product.pricePending ? '资料已公开，售价尚未确认，当前不能下单。' : displayOnly || !available
               ? '当前可查看商品与规格，恢复售卖后可在此下单。'
               : '付款后由店主核对收款，确认后按说明交付。'}
           </p>

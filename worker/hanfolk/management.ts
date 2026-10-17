@@ -42,6 +42,8 @@ async function state(env: Env, s: Settings) {
       public_json: string
       version: number
       price_cents: number
+      related_plan_id: string | null
+      match_note: string
     }>()
   ).results
   return {
@@ -66,6 +68,8 @@ async function state(env: Env, s: Settings) {
         id: r.local_id,
         productId: r.product_id,
         sku: r.sku,
+        relatedPlanId: r.related_plan_id,
+        matchNote: r.match_note,
         costCents: r.cost_cents,
         name: p.name,
         family: p.groupId,

@@ -31,6 +31,8 @@ import {
 } from '../../shared/shop-products'
 import '@/components/shop-products.css'
 import { GrizzlyProductFields } from './GrizzlyProductFields'
+import { ProductMark } from '@/components/brand'
+import { clearProductBrand } from '../../shared/product-brand'
 import {
   SMS_PRODUCT_IDS,
   GRIZZLY_ORIGIN,
@@ -97,6 +99,8 @@ export function ProductEditor({
     [apiToken, setApiToken] = useState(''),
     [apiKey, setApiKey] = useState(''),
     [features, setFeatures] = useState(initial.features.join('\n')),
+    [buyerHighlights, setBuyerHighlights] = useState((initial.buyerHighlights ?? []).join('\n')),
+    [buyerWarnings, setBuyerWarnings] = useState((initial.buyerWarnings ?? []).join('\n')),
     [price, setPrice] = useState(
       initial.pricePending ? '' : (initial.priceCents / 100).toFixed(2),
     ),
@@ -129,6 +133,12 @@ export function ProductEditor({
       .split('\n')
       .map((s) => s.trim())
       .filter(Boolean),
+    ...(product.buyerHighlights !== undefined || buyerHighlights.trim() ? {
+      buyerHighlights: buyerHighlights.split('\n').map(s=>s.trim()).filter(Boolean),
+    } : {}),
+    ...(product.buyerWarnings !== undefined || buyerWarnings.trim() ? {
+      buyerWarnings: buyerWarnings.split('\n').map(s=>s.trim()).filter(Boolean),
+    } : {}),
   }
   const dirty =
     JSON.stringify(value) !== baseline || Boolean(apiToken) || Boolean(apiKey)
@@ -167,7 +177,7 @@ export function ProductEditor({
       !(
         product.pricePending &&
         !price.trim() &&
-        ['draft', 'archived'].includes(action)
+        ['draft', 'archived', 'listed'].includes(action)
       ) &&
       !/^\d+(\.\d{1,2})?$/.test(price)
     ) {
@@ -177,6 +187,9 @@ export function ProductEditor({
     const outgoing = {
       ...value,
       status: action === 'verify' ? ('draft' as const) : action,
+      ...(action === 'listed' && value.pricePending
+        ? { catalogPreview: true }
+        : {}),
     }
     const problems = productProblems({
       ...outgoing,
@@ -292,6 +305,26 @@ export function ProductEditor({
           >
             <fieldset disabled={busy} className="owner-editor-section">
               <legend>商品展示</legend>
+              <div className="owner-editor-grid">
+                <label>
+                  重点信息（每行一项，最多6项）
+                  <textarea
+                    rows={3}
+                    value={buyerHighlights}
+                    onChange={(e) => setBuyerHighlights(e.target.value)}
+                    maxLength={1400}
+                  />
+                </label>
+                <label>
+                  购买提醒（每行一项，最多6项）
+                  <textarea
+                    rows={3}
+                    value={buyerWarnings}
+                    onChange={(e) => setBuyerWarnings(e.target.value)}
+                    maxLength={1400}
+                  />
+                </label>
+              </div>
               <div className="owner-editor-grid">
                 <label>
                   商品名称
@@ -411,7 +444,9 @@ export function ProductEditor({
                 />
               </label>
               <div>
-                {product.image ? (
+                {clearProductBrand(product.groupId ?? product.id) ? (
+                  <ProductMark productId={product.groupId ?? product.id} />
+                ) : product.image ? (
                   <img
                     className="shop-product-icon"
                     src={product.image}
@@ -1140,7 +1175,7 @@ export function ProductEditor({
                 disabled={busy}
                 onClick={() => void save('listed')}
               >
-                仅展示，暂不开售
+                {value.pricePending ? '公开资料，待定价' : '仅展示，暂不开售'}
               </Button>
               <Button
                 type="button"
@@ -1245,7 +1280,13 @@ export default function ProductPublisher({
               data-product-id={p.id}
               key={p.id}
             >
-              {p.image ? <img src={p.image} alt="" /> : <Package size={26} />}
+              {clearProductBrand(p.groupId ?? p.id) ? (
+                <ProductMark productId={p.groupId ?? p.id} />
+              ) : p.image ? (
+                <img src={p.image} alt="" />
+              ) : (
+                <Package size={26} />
+              )}
               <div className="owner-product-info">
                 <strong>{p.name}</strong>
                 <small>

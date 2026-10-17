@@ -10,7 +10,10 @@
   width: 145px;
   height: 145px;
   object-fit: contain;
-  filter: drop-shadow(0 18px 25px #0064e020);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  filter: none;
   animation: muse-emblem-float 7s ease-in-out infinite;
   animation-play-state: paused;
   user-select: none;

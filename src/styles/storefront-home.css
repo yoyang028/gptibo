@@ -34,6 +34,7 @@
 .store-deck { height:185px; margin:6px -9px 0; position:relative; isolation:isolate; }
 .store-tier { display:block; align-content:start; text-align:left; }
 .store-tier-copy { position:absolute; inset:0; display:block; padding:12px 17px; opacity:0; transition:opacity .15s ease; }
+.store-tier-name.store-tier-name-long { font-size:14px; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; max-height:37px; }
 .store-tier[data-copy-visible="true"] .store-tier-copy,
 .store-tier[data-copy-visible="true"] .store-tier-price,
 .store-deck[data-phase="inspect"] .store-tier-price { opacity:1; }

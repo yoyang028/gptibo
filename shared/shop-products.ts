@@ -42,6 +42,10 @@ export type ShopProduct = {
   priceCents: number
   /** Supplier imports stay private until the owner confirms a retail price. */
   pricePending?: boolean
+  /** Explicit owner choice: browse verified content before setting a price. */
+  catalogPreview?: boolean
+  buyerHighlights?: string[]
+  buyerWarnings?: string[]
   stock: number
   features: string[]
   purchaseNote: string
@@ -93,11 +97,15 @@ export function groupShopProducts(products: readonly ShopProduct[]) {
   }
   for (const group of groups.values())
     group.products.sort(
-      (a, b) => a.priceCents - b.priceCents || a.id.localeCompare(b.id),
+      (a, b) =>
+        Number(Boolean(a.pricePending)) - Number(Boolean(b.pricePending)) ||
+        a.priceCents - b.priceCents ||
+        a.id.localeCompare(b.id),
     )
   return [...groups.values()]
 }
 export type CustomOrderView = {
+  groupId?: ShopProductGroupId
   sms?: SmsView
   productId: string
   productName: string
@@ -161,8 +169,31 @@ export function productProblems(
     typeof product.pricePending !== 'boolean'
   )
     errors.push('售价确认状态')
-  if (product.pricePending && !['draft', 'archived'].includes(product.status))
-    errors.push('请先设置并确认零售价，再展示或开售')
+  if (
+    product.catalogPreview !== undefined &&
+    typeof product.catalogPreview !== 'boolean'
+  )
+    errors.push('资料展示设置')
+  if (
+    product.pricePending &&
+    !['draft', 'archived'].includes(product.status) &&
+    !(product.status === 'listed' && product.catalogPreview === true)
+  )
+    errors.push('未定价商品只能保存草稿或公开资料，不能开售')
+  for (const key of ['buyerHighlights', 'buyerWarnings'] as const) {
+    const values = product[key]
+    if (
+      values !== undefined &&
+      (!Array.isArray(values) ||
+        values.length > 6 ||
+        values.some((v) => !text(v, 220)))
+    )
+      errors.push(
+        key === 'buyerHighlights'
+          ? '重点信息（最多6项，每项220字）'
+          : '购买提醒（最多6项，每项220字）',
+      )
+  }
   if (
     product.groupId !== undefined &&
     !Object.hasOwn(SHOP_PRODUCT_GROUPS, product.groupId)

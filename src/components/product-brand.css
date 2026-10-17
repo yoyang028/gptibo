@@ -1,0 +1,32 @@
+/* The transparent variant wins over workspace-specific icon tiles, while the
+   original wrapper dimensions keep headings and summaries aligned. */
+:root .product-mark.product-mark-clear[data-brand] {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  filter: none;
+  color: var(--foreground);
+}
+:root .product-mark.product-mark-clear[data-brand] > .product-logo {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  filter: none;
+}
+:root .product-logo[data-brand='chatgpt'] {
+  color: #000;
+}
+:root.dark .product-logo[data-brand='chatgpt'],
+:root .dark .product-logo[data-brand='chatgpt'] {
+  color: #fff;
+}
+:root .product-logo[data-brand='codex'] {
+  color: var(--foreground);
+}
+:root .product-logo[data-brand='muse'] {
+  background: transparent;
+}

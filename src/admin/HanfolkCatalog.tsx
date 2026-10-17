@@ -30,6 +30,8 @@ type Draft = {
   status: string
   pricePending: boolean
   priceCents: number
+  relatedPlanId?: string | null
+  matchNote?: string
 }
 type State = {
   version: number
@@ -350,10 +352,10 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
       <section className="admin-card">
         <div className="hanfolk-heading">
           <div>
-            <h2>已整理的商品草稿</h2>
+            <h2>已整理的商品与规格匹配</h2>
             <p>
-              待定价草稿不会出现在前台，也不能下单。编辑确认售价和资料后，先选择「展示中
-              · 未开售」。
+              草稿仅后台可见；可公开资料并显示「待定价」，仍不可购买。先核对实际
+              SKU、交付方式、兑换地址与售后，再设置零售价。
             </p>
           </div>
           <Button variant="outline" onClick={() => setLocal((v) => v + 1)}>
@@ -370,7 +372,7 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
                 <tr>
                   <th>项目 / 商品</th>
                   <th>源规格</th>
-                  <th>代理成本（私有）</th>
+                  <th>导入时成本（私有）</th>
                   <th>零售价与展示状态</th>
                   <th>操作</th>
                 </tr>
@@ -387,6 +389,12 @@ export default function HanfolkCatalog({ revision }: { revision: number }) {
                       <td>
                         #{p.productId}
                         <small>SKU {p.sku}</small>
+                        {p.matchNote && <small>{p.matchNote}</small>}
+                        {p.relatedPlanId && (
+                          <small>
+                            同类原商品：{p.relatedPlanId}（保留独立规格与价格）
+                          </small>
+                        )}
                       </td>
                       <td>¥{(p.costCents / 100).toFixed(2)}</td>
                       <td>
