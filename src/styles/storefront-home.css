@@ -6,9 +6,11 @@
 .store-intro-support { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; font-size:11px; color:var(--muted-foreground); }
 .store-intro-support button { font-size:12px; color:var(--foreground); padding-right:0; }
 .store-home { display:grid; grid-template-columns:128px minmax(0,1fr); gap:25px; margin-bottom:44px; }
+.store-sidebar { position:sticky; top:calc(var(--store-header-height,76px) + 16px); align-self:start; max-height:calc(100dvh - var(--store-header-height,76px) - 32px); overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
 .store-sidebar-label { display:block; padding:9px 10px 17px; font-size:11px; color:var(--muted-foreground); }
 .store-categories { display:flex; flex-direction:column; gap:5px; }
 .store-categories button,.store-sidebar-links button { height:44px; justify-content:flex-start; gap:10px; font-size:12px; font-weight:400; padding:0 11px; color:var(--muted-foreground); }
+.store-categories button { flex-shrink:0; white-space:normal; text-align:left; }
 .store-categories button[aria-pressed=true] { background:var(--accent); color:var(--foreground); }
 .store-sidebar-links { display:flex; flex-direction:column; border-top:1px solid var(--border); margin:24px 10px 0; padding-top:16px; }
 .store-sidebar-links button { padding:0; font-size:11px; }
@@ -129,10 +131,12 @@
 .store-skeleton-price { width:25%; height:24px; }
 .store-skeleton-card .store-skeleton-action { width:82px; height:34px; border-radius:22px; }
 @media(max-width:800px) {
-  .store-home { grid-template-columns:1fr; gap:20px; }
+  .store-home { display:block; }
+  .store-sidebar { top:var(--store-header-height,76px); z-index:10; max-height:none; overflow:visible; background:var(--background); }
+  .store-content { margin-top:20px; }
   .store-sidebar-label,.store-sidebar-links { display:none; }
-  .store-categories { flex-direction:row; flex-wrap:wrap; gap:4px; }
-  .store-categories button { font-size:12px; }
+  .store-categories { flex-direction:row; flex-wrap:nowrap; gap:4px; padding:8px 4px; margin-inline:-4px; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; }
+  .store-categories button { font-size:12px; white-space:nowrap; }
   .store-intro-support { display:none; }
   .store-intro { padding-block:30px 22px; }
 }

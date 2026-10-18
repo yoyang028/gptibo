@@ -12,8 +12,8 @@ import { normalizeProductOrder } from '../../shared/product-order'
 import { XPremiumScene } from './x-premium'
 import { MembershipScene } from './membership-scene'
 import { EMAIL_PRODUCTS } from '../../shared/email-products'
-import { useState, type MouseEvent, type ReactNode } from 'react'
-import { ChevronRight, CircleHelp, Clock3, LayoutGrid, Mail, ReceiptText, Search, Sparkles, Terminal } from 'lucide-react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { BookOpen, ChevronRight, CircleHelp, Clock3, Heart, LayoutGrid, Mail, MessageSquare, ReceiptText, Search, Sparkles, Terminal } from 'lucide-react'
 import { LaunchInterestDialog, type InterestProduct } from './launch-interest-dialog'
 import { ProductMark } from './brand'
 import { SubscriptionDeck } from './subscription-deck'
@@ -22,17 +22,16 @@ import { Input } from '@/components/ui/input'
 import { UPCOMING_PRODUCTS } from '@/lib/products'
 import { storefrontHref } from '@/lib/storefront-routing'
 import { catalogSubscriptionPlans, catalogStartingPrice, formatCatalogPrice } from '@/lib/catalog-display'
+import { CATALOG_CATEGORIES, catalogCategory, type CatalogCategory } from '@/lib/catalog-categories'
 import { shopPresentation, variantLabel } from '@/lib/shop-presentation'
 import type { CatalogPlan } from '@/lib/api'
 import { groupShopProducts, type ShopProduct } from '../../shared/shop-products'
 import '@/styles/storefront-home.css'
 
+const categoryIcons = { ai: Sparkles, learning: BookOpen, lifestyle: Heart, mail: Mail, sms: MessageSquare, tool: Terminal }
 const categories = [
-  { id: 'all', name: '全部商品', icon: LayoutGrid },
-  { id: 'ai', name: 'AI 订阅', icon: Sparkles },
-  { id: 'learning', name: '语言学习', icon: Sparkles },
-  { id: 'mail', name: '邮箱账号', icon: Mail },
-  { id: 'tool', name: '工具服务', icon: Terminal },
+  { id: 'all', name: '全部商品', icon: LayoutGrid } as const,
+  ...CATALOG_CATEGORIES.map(category => ({ ...category, icon: categoryIcons[category.id] })),
 ]
 
 function CatalogSkeleton() {
@@ -47,23 +46,39 @@ function CatalogSkeleton() {
 
 export function ProductCatalog({ managedProductGroups = [], smsCatalog, onHelp, onOrders, onNavigate, offers, catalogReady, error, productOrder = [], hiddenProductIds = [], products = [], productArtwork = {} }: { managedProductGroups?:string[]; smsCatalog?: SmsPublicCatalog; productArtwork?: ProductArtworkMap; products?: ShopProduct[]; catalogReady: boolean; error?: string; productOrder?: readonly string[]; hiddenProductIds?: readonly string[]; onHelp: () => void; onOrders: () => void; onNavigate: (page: string) => void; offers: CatalogPlan[] }) {
   const { t } = useStorefrontI18n()
-  const [category, setCategory] = useState('all')
+  const [category, setCategory] = useState<CatalogCategory | 'all'>('all')
   const [query, setQuery] = useState('')
   const [interest, setInterest] = useState<InterestProduct>()
   const [interestOpen, setInterestOpen] = useState(false)
+  const catalogRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const catalog = catalogRef.current
+    const header = document.querySelector<HTMLElement>('.site-header')
+    if (!catalog || !header) return
+    const measure = () => catalog.style.setProperty('--store-header-height', `${header.getBoundingClientRect().height}px`)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [])
+  function selectCategory(id: CatalogCategory | 'all') {
+    setCategory(id)
+    const catalog = catalogRef.current
+    if (catalog && catalog.getBoundingClientRect().top < 0) catalog.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }
   const plans = catalogSubscriptionPlans(offers)
   const productGroups = groupShopProducts(products).filter(g => g.id !== 'codex-sms')
   const startingPrice = catalogStartingPrice(offers)
-  const matches = (group: string, text: string) => (category === 'all' || category === group) && text.toLowerCase().includes(query.trim().toLowerCase())
+  const matches = (group: CatalogCategory, text: string) => (category === 'all' || category === group) && text.toLowerCase().includes(query.trim().toLowerCase())
   const chatgpt = matches('ai', 'ChatGPT Plus Pro')
   const gmail = !managedProductGroups.includes('gmail') && !productGroups.some(g => g.id === 'gmail') && matches('mail', 'Gmail 邮箱账号 email accounts 2FA')
-  const upcoming = UPCOMING_PRODUCTS.filter(p => !managedProductGroups.includes(p.id) && !productGroups.some(g => g.id === p.id) && matches('ai', p.name))
-  const memberships = Object.entries(EMAIL_PRODUCTS).filter(([, p]) => !managedProductGroups.includes(p.productId) && !productGroups.some(g => g.id === p.productId) && p.productId !== 'gmail' && matches(p.productId === 'gemini' ? 'ai' : 'learning', p.name + (p.productId === 'duolingo' ? ' Duolingo' : '')))
-  const xgift = matches('tool', 'X Premium 推特 Twitter 会员赠送')
+  const upcoming = UPCOMING_PRODUCTS.filter(p => !managedProductGroups.includes(p.id) && !productGroups.some(g => g.id === p.id) && matches(catalogCategory(p), p.name))
+  const memberships = Object.entries(EMAIL_PRODUCTS).filter(([, p]) => !managedProductGroups.includes(p.productId) && !productGroups.some(g => g.id === p.productId) && p.productId !== 'gmail' && matches(catalogCategory({ id: p.productId }), p.name + (p.productId === 'duolingo' ? ' Duolingo' : '')))
+  const xgift = matches('lifestyle', 'X Premium 推特 Twitter 会员赠送')
   const xOffers = offers.filter(p => p.product_id === 'x-premium')
   const xAvailable = xOffers.some(p => p.enabled)
   const xOffer = [...xOffers].sort((a, b) => Number(Boolean(b.enabled)) - Number(Boolean(a.enabled)) || a.price_cents - b.price_cents)[0]
-  const sms = matches('tool', 'SMS接码 codex Claude Google Gmail 美国 手机号 短信 verification')
+  const sms = matches('sms', 'SMS接码 codex Claude Google Gmail 美国 手机号 短信 verification')
   const smsProjects = smsCatalog?.projects.filter(p => p.visible)
   const smsAvailable = smsProjects?.some(p => p.enabled)
   const smsPrice = smsProjects?.length ? Math.min(...smsProjects.map(p => p.priceCents)) : 1580
@@ -74,7 +89,7 @@ export function ProductCatalog({ managedProductGroups = [], smsCatalog, onHelp, 
   const cards: { id: string; compact?: boolean; node: ReactNode }[] = [
     ...productGroups.filter(g => {
       const p = g.products[0]
-      return matches(/学习|语言|学生/.test(p.category) ? 'learning' : /邮箱|邮件/.test(p.category) ? 'mail' : /AI|订阅|GPT|Claude|Codex|Grok/i.test(p.category + ' ' + p.name) ? 'ai' : 'tool', g.name + ' ' + g.products.map(p => p.name + ' ' + p.category + ' ' + p.tagline).join(' '))
+      return matches(catalogCategory(p), g.name + ' ' + g.products.map(p => p.name + ' ' + p.category + ' ' + p.tagline).join(' '))
     }).map(g => {
       const p = g.products[0], multiple = g.products.length > 1, priced = g.products.filter(p=>!p.pricePending), starting = priced[0]
       const presentation = shopPresentation(g.id, p)
@@ -103,10 +118,10 @@ export function ProductCatalog({ managedProductGroups = [], smsCatalog, onHelp, 
     else groups.push([card])
   }
   const visibleCards = groups.flat()
-  return <section id="catalog-products" className="store-home page-width" aria-label={t('商品目录')}>
+  return <section ref={catalogRef} id="catalog-products" className="store-home page-width" aria-label={t('商品目录')}>
     <aside className="store-sidebar" aria-label={t('商品分类')}>
       <span className="store-sidebar-label">{t('浏览商品')}</span>
-      <div className="store-categories" role="group" aria-label={t('按品类筛选')}>{categories.map(({ id, name, icon: Icon }) => <Button key={id} variant="ghost" aria-pressed={category === id} onClick={() => setCategory(id)}><Icon size={16} />{t(name)}</Button>)}</div>
+      <div className="store-categories" role="group" aria-label={t('按品类筛选')}>{categories.map(({ id, name, icon: Icon }) => <Button key={id} variant="ghost" aria-pressed={category === id} onClick={() => selectCategory(id)}><Icon size={16} />{t(name)}</Button>)}</div>
       <div className="store-sidebar-links"><Button variant="ghost" onClick={onOrders}><Clock3 size={16} />{t('继续我的订单')}</Button><Button variant="ghost" onClick={onHelp}><CircleHelp size={16} />{t('购买帮助')}</Button></div>
     </aside>
     <div className="store-content" aria-busy={!catalogReady && !error}>
