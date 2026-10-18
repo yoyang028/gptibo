@@ -4,6 +4,7 @@ import { seal, unseal } from '../product-secrets.ts'
 import { HanfolkClient, HanfolkError, hanfolkKey } from './client.ts'
 import { importHanfolkDrafts } from './importer.ts'
 import { hanfolkAvailability } from './availability.ts'
+import { prepareDajuCleanup } from './cleanup.ts'
 type Settings = {
   api_secret: string
   key_hash: string
@@ -95,6 +96,7 @@ async function refreshCatalog(env: Env, s: Settings) {
   const details = []
   for (let start = 0; start < products.length; start += 4)
     details.push(...await Promise.all(products.slice(start,start+4).map(p=>client.detail(p.id))))
+  const cleanup = await prepareDajuCleanup(env, details, event, now)
   await env.INTEREST_DB.batch([
     env.INTEREST_DB.prepare(
       "UPDATE hanfolk_settings SET checked_key_hash=key_hash,balance_cents=?,checked_at=?,version=version+1,change_id=? WHERE id='main' AND version=?",
@@ -110,6 +112,7 @@ async function refreshCatalog(env: Env, s: Settings) {
     env.INTEREST_DB.prepare(
       "INSERT INTO admin_audit(id,target_id,action,note,created_at) SELECT ?,'hanfolk','hanfolk-refresh','只读更新商品目录和余额；未采购',? FROM hanfolk_settings WHERE change_id=?",
     ).bind(event, now, event),
+    ...cleanup,
   ])
   if (
     !(await env.INTEREST_DB.prepare(
@@ -121,7 +124,7 @@ async function refreshCatalog(env: Env, s: Settings) {
     throw new ApiError('设置已更新，请重新读取。', 409)
 }
 
-/** Scheduled stock reads never import, reprice, publish, or purchase products. */
+/** A complete stock sync also removes unavailable listings; sales and orders remain unchanged. */
 export async function refreshHanfolkStock(env: Env) {
   const s = await settings(env)
   if (!s.api_secret || s.checked_at > Date.now() - 5 * 60_000) return
@@ -155,7 +158,7 @@ export async function hanfolkManagement(request: Request, env: Env) {
         throw new ApiError('设置已更新，请重新读取。', 409)
     } else {
       if (!s.api_secret)
-        throw new ApiError('请先在遮蔽输入框保存大橘 API Key。', 409)
+        throw new ApiError('请先在遮蔽输入框保存Daju API Key。', 409)
       const client = new HanfolkClient(env, await unseal(env, s.api_secret))
       if (data.action === 'refresh') {
         await refreshCatalog(env, s)

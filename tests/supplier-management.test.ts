@@ -34,7 +34,7 @@ test('Inventory uses explicit provider/link identity, remains admin-only and nev
   assert.equal(response.status, 200)
   const text = await response.text()
   const snapshot = JSON.parse(text)
-  assert.equal(snapshot.linkedSuppliers[imported.imported[0]], 'hanfolk')
+  assert.equal(snapshot.linkedSuppliers[imported.imported[0]], 'daju')
   assert.equal(snapshot.products.find((p: ShopProduct) => p.id === draft.id).api.provider, 'xiaojiu')
   assert(snapshot.plans.every((p: { id: string }) => !p.id.startsWith('custom-')))
   for (const secret of ['api_secret', 'apiToken', 'apiKey', 'redemptionGuide', pair.apiKey, pair.apiToken]) assert(!text.includes(secret), secret)
@@ -75,7 +75,7 @@ test('A new Xiaojiu SKU reuses only a current credential from the same provider 
 test('Supplier classification does not guess from product names or category', async () => {
   const p = await xiaojiuDraft()
   assert.equal(productSupplier(p, {}), 'xiaojiu')
-  assert.equal(productSupplier(p, { [p.id]: 'hanfolk' }), 'hanfolk')
+  assert.equal(productSupplier(p, { [p.id]: 'daju' }), 'daju')
   assert.equal(productSupplier({ ...p, api: { ...p.api!, provider: 'grizzly' } }, {}), 'grizzly')
   assert.equal(productSupplier({ ...p, name: '灰熊 大橘 小久', api: undefined, delivery: 'manual' }, {}), 'other')
 })
@@ -103,8 +103,10 @@ test('Bugan inspection queries only mapped authorization and catalog, without ch
 })
 
 test('Previous admin links resolve to the corresponding supplier within product management', () => {
-  for (const [old, supplier] of [['sms', 'grizzly'], ['hanfolk', 'hanfolk'], ['plans', 'other']])
+  for (const [old, supplier] of [['sms', 'grizzly'], ['hanfolk', 'daju'], ['plans', 'other']])
     assert.deepEqual(adminProductRoute('?view=' + old), { view: 'products', supplier })
+  assert.deepEqual(adminProductRoute('?view=products&supplier=hanfolk'), { view: 'products', supplier: 'daju' })
+  assert.deepEqual(adminProductRoute('?view=products&supplier=daju'), { view: 'products', supplier: 'daju' })
   assert.deepEqual(adminProductRoute('?view=products&supplier=xiaojiu'), { view: 'products', supplier: 'xiaojiu' })
   assert.deepEqual(adminProductRoute('?view=products&supplier=unknown'), { view: 'products', supplier: 'all' })
   assert.deepEqual(adminProductRoute('?view=orders&supplier=hanfolk'), { view: 'orders', supplier: 'all' })

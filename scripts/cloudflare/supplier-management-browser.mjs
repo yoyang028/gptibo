@@ -35,7 +35,11 @@ async function api(url, data) {
   return response.json()
 }
 async function screenshot(name) { await page.screenshot({ path: path.join(evidence, name + '.png'), fullPage: true }) }
-async function supplier(name) { await page.getByRole('navigation', { name: '后台导航' }).getByRole('button', { name, exact: true }).click() }
+async function supplier(name) { await page.getByRole('navigation', { name: '商品服务商' }).getByRole('button').filter({ hasText: name }).first().click() }
+async function stock(stock) {
+  const response = await fetch(control + '/daju/stock', { method: 'POST', headers: { Origin: control, 'Content-Type': 'application/json', 'X-Local-Control': fs.readFileSync(path.join(privateRoot,'control-token'),'utf8').trim() }, body: JSON.stringify({ productId:100, sku:'20', stock }) })
+  assert.equal(response.status,204)
+}
 async function noOverflow() {
   const overflow = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth, nodes: [...document.querySelectorAll('body *')].filter(e => { const r=e.getBoundingClientRect(); return r.right > innerWidth+1 && r.width>0 && getComputedStyle(e).position !== 'fixed' }).slice(0,16).map(e => ({ tag:e.tagName, class:e.className, right:Math.round(e.getBoundingClientRect().right), width:Math.round(e.getBoundingClientRect().width) })) }))
   if (overflow.scrollWidth > overflow.width + 1) { console.log(JSON.stringify(overflow)); await screenshot('overflow-debug') }
@@ -61,18 +65,21 @@ try {
   hanfolk = await api('/api/admin/hanfolk', { action: 'refresh', version: hanfolk.version })
   await api('/api/admin/hanfolk', { action: 'import', version: hanfolk.version, selection: hanfolk.products.flatMap(p => p.detail.sku_variants.map(s => ({ productId: p.id, sku: s.sku }))) })
   const template = (await api('/api/admin/my-shop/products')).products.find(p => p.id.startsWith('custom-'))
-  const seed = await api('/api/admin/my-shop/products', { ...template, id: '', version: 0, groupId: undefined, name: '浏览器验收小久采购配置', delivery: 'api', status: 'draft', pricePending: false, priceCents: 500, api: { provider: 'xiaojiu', baseUrl: 'https://98-xj.com', productCode: '999', supplierProductId: 10, maxCostCents: 200 }, apiKey: xiaojiuFixtureKey, apiToken: xiaojiuFixtureSecret })
+  const seed = await api('/api/admin/my-shop/products', { ...template, id: '', version: 0, groupId: undefined, name: '浏览器验收Xiaojiu采购配置', delivery: 'api', status: 'draft', pricePending: false, priceCents: 500, api: { provider: 'xiaojiu', baseUrl: 'https://98-xj.com', productCode: '999', supplierProductId: 10, maxCostCents: 200 }, apiKey: xiaojiuFixtureKey, apiToken: xiaojiuFixtureSecret })
   await page.reload()
   await page.locator('.supplier-inventory tbody tr').first().waitFor()
   assert.equal(await page.locator('.supplier-overview-card').count(), 4)
   const nav = page.getByRole('navigation', { name: '后台导航' })
   for (const name of ['接码管理', '代理商品', '商品与套餐']) assert.equal(await nav.getByRole('button', { name, exact: true }).count(), 0)
+  assert.equal(await nav.getByRole('button', { name: '商品管理', exact: true }).count(), 1)
+  assert.equal(await page.locator('.admin-product-children').count(), 0)
+  for (const name of ['Bugan', 'Xiaojiu', 'Grizzly', 'Daju']) assert.equal(await nav.getByRole('button', { name, exact: true }).count(), 0)
   await screenshot('overview-desktop')
   record('One product menu groups all four suppliers and shows a combined searchable inventory')
 
-  await supplier('小久 · xiaojiu')
+  await supplier('Xiaojiu')
   await page.locator('.supplier-inventory tbody tr').first().waitFor()
-  assert((await page.locator('.supplier-inventory tbody tr td:nth-child(2)').allTextContents()).every(s => s === '小久 · xiaojiu'))
+  assert((await page.locator('.supplier-inventory tbody tr td:nth-child(2)').allTextContents()).every(s => s === 'Xiaojiu'))
   await page.locator(`[data-product-id="${seed.product.id}"]`).getByRole('button', { name: '编辑与定价' }).click()
   await page.getByLabel('售价（元）', { exact: true }).fill('6.50')
   const saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/admin/my-shop/products' && r.request().method() === 'POST')
@@ -85,7 +92,7 @@ try {
   record('Xiaojiu lists only its products, and edits persist through the actual product API')
 
   await page.getByRole('tab', { name: '上游目录与 API', exact: true }).click()
-  await page.getByLabel('小久采购配置', { exact: true }).selectOption(seed.product.id)
+  await page.getByLabel('Xiaojiu采购配置', { exact: true }).selectOption(seed.product.id)
   await page.getByRole('button', { name: '读取余额与商品目录', exact: true }).click()
   await page.getByRole('heading', { name: /钱包余额/ }).waitFor()
   const create = page.getByRole('button', { name: '创建商品草稿', exact: true }).first()
@@ -100,23 +107,23 @@ try {
   await screenshot('xiaojiu-catalog-desktop')
   record('Xiaojiu reads the wallet/catalog using server-held credentials and can draft a selected SKU')
 
-  await supplier('灰熊')
+  await supplier('Grizzly')
   await page.locator('.sms-admin-projects').waitFor()
   assert.equal(await page.locator('.sms-admin-project').count(), 3)
   await screenshot('grizzly-desktop')
   record('Grizzly keeps its three project editors, pool quotes, configuration and order controls')
 
-  await supplier('大橘')
+  await supplier('Daju')
   await page.locator('.hanfolk-group tbody tr').first().waitFor()
   assert.equal(await page.getByRole('tab', { selected: true }).textContent(), '已整理商品')
   assert.equal(await page.locator('.hanfolk-group').count(), 9)
   await screenshot('daju-products-desktop')
-  await page.getByRole('group', { name: '大橘商品类别' }).getByRole('button', { name: 'Grok', exact: true }).click()
+  await page.getByRole('group', { name: 'Daju商品类别' }).getByRole('button', { name: 'Grok', exact: true }).click()
   assert.equal(await page.locator('.hanfolk-group').count(), 1)
-  await page.getByLabel('搜索大橘商品').fill('no-such-product')
+  await page.getByLabel('搜索Daju商品').fill('no-such-product')
   await page.getByRole('heading', { name: '没有匹配的商品' }).waitFor()
-  await page.getByLabel('搜索大橘商品').fill('')
-  await page.getByRole('group', { name: '大橘商品类别' }).getByRole('button', { name: '全部类别', exact: true }).click()
+  await page.getByLabel('搜索Daju商品').fill('')
+  await page.getByRole('group', { name: 'Daju商品类别' }).getByRole('button', { name: '全部类别', exact: true }).click()
   record('Daju defaults to nine organized product groups with working category, search and state filters')
 
   await page.getByRole('tab', { name: '上游目录与选品', exact: true }).click()
@@ -128,25 +135,39 @@ try {
   await page.getByRole('button', { name: '导入商品草稿', exact: true }).click()
   await page.getByRole('status').filter({ hasText: '已有规格保留原售价' }).waitFor()
   await page.getByRole('tab', { name: 'API 配置', exact: true }).click()
-  assert.equal(await page.getByLabel('大橘 API Key', { exact: true }).inputValue(), '')
+  assert.equal(await page.getByLabel('Daju API Key', { exact: true }).inputValue(), '')
   await screenshot('daju-connection-desktop')
   record('Daju keeps catalog selection and encrypted API configuration in separate tabs; importing preserves existing listings')
 
-  await supplier('bugan')
+  const beforeCleanup = await api('/api/admin/hanfolk')
+  const removed = beforeCleanup.drafts.find(p => p.productId === 100 && p.sku === '20')
+  assert(removed)
+  await stock(0)
+  await page.getByRole('button', { name: '同步商品与库存', exact:true }).click()
+  await page.getByRole('status').filter({ hasText:'无效、无货和旧重复商品已清理' }).waitFor()
+  const afterCleanup = await api('/api/admin/hanfolk')
+  assert(!afterCleanup.drafts.some(p => p.id === removed.id))
+  assert(!(await api('/api/admin/my-shop/products')).products.some(p => p.id === removed.id))
+  const refused = await context.request.post('/api/admin/hanfolk', { headers:{Origin:origin}, data:{action:'import',version:afterCleanup.version,selection:[{productId:100,sku:'20'}]} })
+  assert.equal(refused.status(),409)
+  await stock(5)
+  record('An out-of-stock Daju specification is deleted from management and cannot be imported again while unavailable')
+
+  await supplier('Bugan')
   await page.locator('.supplier-inventory tbody tr').first().waitFor()
-  assert((await page.locator('.supplier-inventory tbody tr td:nth-child(2)').allTextContents()).every(s => s === 'bugan'))
+  assert((await page.locator('.supplier-inventory tbody tr td:nth-child(2)').allTextContents()).every(s => s === 'Bugan'))
   await screenshot('bugan-products-desktop')
   await page.getByRole('tab', { name: 'API 与供货商品', exact: true }).click()
   await page.getByText('接入地址', { exact: true }).waitFor()
   record('Bugan has a dedicated inventory and API status/mapping page for existing recharge products')
 
-  for (const [legacy, expected] of [['sms','grizzly'], ['hanfolk','hanfolk'], ['plans','other']]) {
+  for (const [legacy, expected] of [['sms','grizzly'], ['hanfolk','daju'], ['plans','other']]) {
     await page.goto('/admin?view=' + legacy)
     await page.waitForURL('**supplier=' + expected)
     await page.getByRole('heading', { name: '商品管理', exact: true }).waitFor()
   }
   await supplier('商品总览')
-  await supplier('大橘')
+  await supplier('Daju')
   await page.goBack()
   await page.locator('.supplier-overview-card').last().waitFor()
   await page.reload()
@@ -156,11 +177,11 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   await noOverflow()
   await screenshot('overview-mobile')
-  await supplier('大橘')
+  await supplier('Daju')
   await page.locator('.hanfolk-group tbody tr').first().waitFor()
   await noOverflow()
   await screenshot('daju-mobile')
-  await supplier('灰熊')
+  await supplier('Grizzly')
   await page.locator('.sms-admin-projects').waitFor()
   await noOverflow()
   await screenshot('grizzly-mobile')
@@ -170,4 +191,4 @@ try {
   assert.equal(after.xiaojiu?.debits ?? 0, initial.xiaojiu?.debits ?? 0)
   fs.writeFileSync(path.join(evidence, 'results.json'), JSON.stringify(result, null, 2))
   console.log(JSON.stringify({ passed: result.checks.length, pageErrors: result.pageErrors.length }))
-} finally { await browser.close() }
+} finally { await stock(5).catch(() => {}); await browser.close() }

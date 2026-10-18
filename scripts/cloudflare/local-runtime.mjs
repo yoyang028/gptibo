@@ -160,6 +160,12 @@ try {
     }
     if (request.method !== 'POST' || request.headers.origin !== 'http://127.0.0.1:' + controlPort || !authorized) { response.writeHead(403).end(); return }
     if (request.url === '/shutdown') { response.writeHead(204).end(); await shutdown(); return }
+    if (grizzlyVariant && request.url === '/daju/stock') {
+      let raw = ''; for await (const chunk of request) { raw += chunk; if (raw.length > 500) { response.writeHead(413).end(); return } }
+      try { const input = JSON.parse(raw); hanfolkFixture.setStock(input.productId, input.sku, input.stock); response.writeHead(204).end() }
+      catch { response.writeHead(400).end() }
+      return
+    }
     if ((xiaojiuVariant || grizzlyVariant) && request.url === '/reset-auth-limits') {
       // Repeatable acceptance against this isolated, synthetic D1 only. The
       // control socket already requires loopback Host, Origin and its capability.

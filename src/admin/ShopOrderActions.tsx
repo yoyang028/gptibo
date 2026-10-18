@@ -75,7 +75,7 @@ export default function ShopOrderActions({
           {custom.sms.phone && <p>本次手机号：{custom.sms.phone}</p>}
           {custom.sms.code && <p>验证码：{custom.sms.code}</p>}
           {custom.sms.activationId && (
-            <p>灰熊接码编号：{custom.sms.activationId}</p>
+            <p>Grizzly 接码编号：{custom.sms.activationId}</p>
           )}
           {custom.sms.costUsd && <p>实际采购价：US$ {custom.sms.costUsd}</p>}
           {custom.sms.country && (
@@ -84,7 +84,7 @@ export default function ShopOrderActions({
               {custom.sms.country === '12' ? '美国（虚拟）12' : '美国 187'}
             </p>
           )}
-          <p>本站买家退款与灰熊余额退款分别核对，不会相互代替。</p>
+          <p>本站买家退款与 Grizzly 余额退款分别核对，不会相互代替。</p>
           {custom.sms.supplierCancelledAt && (
             <p>
               上游已确认停止：
@@ -92,12 +92,12 @@ export default function ShopOrderActions({
             </p>
           )}
           {custom.sms.supplierRefundConfirmedAt ? (
-            <p>已核对灰熊余额退款：US$ {custom.sms.supplierRefundUsd}</p>
+            <p>已核对 Grizzly 余额退款：US$ {custom.sms.supplierRefundUsd}</p>
           ) : (
             custom.sms.state === 'cancelled' &&
             custom.sms.costUsd && (
               <>
-                <label htmlFor="sms-refund-usd">灰熊实际退回余额 · 美元</label>
+                <label htmlFor="sms-refund-usd">Grizzly 实际退回余额 · 美元</label>
                 <Input
                   id="sms-refund-usd"
                   inputMode="decimal"
@@ -125,7 +125,7 @@ export default function ShopOrderActions({
                   }
                   onClick={() => void action('confirm-supplier-refund')}
                 >
-                  已核对灰熊余额到账，登记上游退款
+                  已核对 Grizzly 余额到账，登记上游退款
                 </Button>
               </>
             )
@@ -133,7 +133,7 @@ export default function ShopOrderActions({
           {['unknown', 'review'].includes(custom.sms.state) && (
             <>
               <p>
-                先到灰熊核对账单、活动号码及退款记录。填写核对记录后关闭此接码任务，客户才可进入原订单退款审核；这里不会重新采购或自动退款。
+                先到 Grizzly 核对账单、活动号码及退款记录。填写核对记录后关闭此接码任务，客户才可进入原订单退款审核；这里不会重新采购或自动退款。
               </p>
               <label htmlFor="sms-admin-reference">
                 上游账单／客服核对记录

@@ -52,7 +52,7 @@ const adminOrder = async (env: Env, o: AdminOrder) => {
   if (view.custom?.sms) Object.assign(view.custom.sms, await smsAdminInfo(env,o.id))
   return { ...view, platformStatus:await platformOrderStatus(env,o),settlementStatus:o.settlement_status }
 }
-const plans = async (env: Env) => (await env.INTEREST_DB.prepare('SELECT * FROM catalog_plans ORDER BY rowid').all<Plan>()).results
+const plans = async (env: Env) => (await env.INTEREST_DB.prepare('SELECT * FROM catalog_plans WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=catalog_plans.id) ORDER BY rowid').all<Plan>()).results
 const customerOrder = async (env: Env, o: Order, contacts = new Map<string, Promise<SupportContactsSettings>>(), syncError = false) => {
   o = await expireRechargeOrder(env, o)
   const owner = o.partner_id ?? 'platform'
@@ -391,7 +391,7 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
     if (!Number.isSafeInteger(data.priceCents) || Number(data.priceCents) < 1 || Number(data.priceCents) > 10000000 || typeof data.enabled !== 'boolean' || !Number.isInteger(data.version)) throw new ApiError('价格或商品状态无效。')
     if (data.partnerEnabled !== undefined && typeof data.partnerEnabled !== 'boolean') throw new ApiError('代理销售设置无效。')
     if ((data.purchaseNote !== undefined && (typeof data.purchaseNote !== 'string' || data.purchaseNote.length > 2000)) || (data.deliveryInstructions !== undefined && (typeof data.deliveryInstructions !== 'string' || data.deliveryInstructions.length > 2000))) throw new ApiError('商品说明最多 2000 字。')
-    const plan = await db.prepare('SELECT * FROM catalog_plans WHERE id=?').bind(planMatch[1]).first<Plan>()
+    const plan = await db.prepare('SELECT * FROM catalog_plans WHERE id=? AND NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=catalog_plans.id)').bind(planMatch[1]).first<Plan>()
     if (!plan) throw new ApiError('套餐不存在。', 404)
     if (plan.version !== data.version) throw new ApiError('套餐已更新，请刷新后重试。', 409)
     if(Number(data.priceCents)<await customRetailFloor(env,plan.id))throw new ApiError('售价不得低于该商品的最高采购成本。')

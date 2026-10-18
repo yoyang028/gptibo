@@ -40,7 +40,13 @@ export const hanfolkFixtureProducts = [
 }))
 export function createHanfolkFixture() {
   let reads = 0
+  const products = structuredClone(hanfolkFixtureProducts)
   return {
+    setStock(productId, sku, stock) {
+      const variant = products.find(p => p.id === productId)?.sku_variants.find(v => v.sku === sku)
+      if (!variant || !Number.isSafeInteger(stock) || stock < 0) throw new Error('Invalid synthetic stock')
+      variant.stock = stock
+    },
     stats: () => ({ reads, writes: 0 }),
     async fetch(request) {
       const url = new URL(request.url)
@@ -58,11 +64,11 @@ export function createHanfolkFixture() {
       if (action === 'products')
         return Response.json({
           success: true,
-          count: hanfolkFixtureProducts.length,
-          products: hanfolkFixtureProducts,
+          count: products.length,
+          products,
         })
       if (action === 'product') {
-        const p = hanfolkFixtureProducts.find(
+        const p = products.find(
           (p) => p.id === Number(url.searchParams.get('id')),
         )
         return Response.json(

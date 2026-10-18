@@ -84,6 +84,8 @@ export async function importHanfolkDrafts(
         variant = detail?.sku_variants.find((v) => v.sku === item.sku)
       if (!detail || !variant)
         throw new ApiError('商品规格缓存已变化，请重新读取。', 409)
+      if (variant.stock <= 0)
+        throw new ApiError('Daju 该规格当前无货，不能导入商品。', 409)
       const p = await hanfolkDraft(detail, item.sku),
         errors = productProblems(p)
       if (errors.length)
@@ -113,6 +115,7 @@ export async function importHanfolkDrafts(
     // Deterministic IDs and one transaction prevent duplicate local drafts. An
     // existing product is preserved even when the source price or text changes.
     await db.batch([
+      db.prepare('DELETE FROM catalog_deletions WHERE plan_id=?').bind(p.id),
       db
         .prepare(
           'INSERT INTO catalog_plans(id,product_id,name,price_cents,enabled,partner_enabled,purchase_note,delivery_instructions,updated_at) VALUES(?,?,?,?,0,0,?,?,?) ON CONFLICT(id) DO NOTHING',

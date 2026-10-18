@@ -143,7 +143,7 @@ function SettingsForm({
               : '配置检查已通过，可按项目开售'}
           </strong>
           <p>
-            配置与检查不会采购号码。仅付款确认后的正式订单可使用店主灰熊余额采购。
+            配置与检查不会采购号码。仅付款确认后的正式订单可使用店主Grizzly余额采购。
           </p>
           {missing.length > 0 && (
             <ul>
@@ -158,7 +158,7 @@ function SettingsForm({
         <div className="sms-admin-heading">
           <h2>
             <KeyRound size={18} />
-            灰熊连接与采购成本
+            Grizzly连接与采购成本
           </h2>
           <span>
             {data.configured
@@ -170,10 +170,10 @@ function SettingsForm({
         </div>
         <div className="sms-admin-connection-grid">
           <label>
-            灰熊 API Key
+            Grizzly API Key
             <Input
               type="password"
-              aria-label="灰熊 API Key"
+              aria-label="Grizzly API Key"
               autoComplete="new-password"
               value={apiKey}
               onChange={(e) => {
@@ -207,7 +207,7 @@ function SettingsForm({
           </label>
           <div className="sms-admin-balance">
             <Wallet size={20} />
-            <span>灰熊预充值余额</span>
+            <span>Grizzly预充值余额</span>
             <strong>
               {data.balanceUsd === null ? '待检查' : 'US$ ' + data.balanceUsd}
             </strong>
@@ -379,7 +379,7 @@ export default function SmsManagement({
   return (
     <div className="sms-admin">
       <p className="sms-admin-intro">
-        客户支付进入本站收款通道；采购从店主预充值的灰熊余额扣款。上游停止接码、上游退回余额、本站退款分别核对与留档。
+        客户支付进入本站收款通道；采购从店主预充值的Grizzly余额扣款。上游停止接码、上游退回余额、本站退款分别核对与留档。
       </p>
       {loading && !data && <p role="status">正在读取接码管理…</p>}
       {error && <p role="alert">{error}</p>}
@@ -417,7 +417,7 @@ export default function SmsManagement({
                 <tr>
                   <th>订单 / 项目</th>
                   <th>客户收款 · 人民币</th>
-                  <th>灰熊采购 · 美元</th>
+                  <th>Grizzly采购 · 美元</th>
                   <th>上游取消 / 余额退款</th>
                   <th>接码与售后状态</th>
                   <th>操作</th>

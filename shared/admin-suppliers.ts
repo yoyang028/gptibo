@@ -1,10 +1,10 @@
 import type { ShopProduct } from './shop-products.ts'
 
 export const ADMIN_SUPPLIERS = [
-  { id: 'bugan', name: 'bugan', description: 'ChatGPT 订阅与自动充值', mark: 'B' },
-  { id: 'xiaojiu', name: '小久 · xiaojiu', description: '钱包采购、卡密与兑换商品', mark: 'X' },
-  { id: 'grizzly', name: '灰熊', description: '短信接码、号码池与接码订单', mark: 'G' },
-  { id: 'hanfolk', name: '大橘', description: 'AI 订阅、会员与上游规格选品', mark: 'D' },
+  { id: 'bugan', name: 'Bugan', description: 'ChatGPT 订阅与自动充值', mark: 'B' },
+  { id: 'xiaojiu', name: 'Xiaojiu', description: '钱包采购、卡密与兑换商品', mark: 'X' },
+  { id: 'grizzly', name: 'Grizzly', description: '短信接码、号码池与接码订单', mark: 'G' },
+  { id: 'daju', name: 'Daju', description: 'AI 订阅、会员与上游规格选品', mark: 'D' },
 ] as const
 export type AdminSupplier = (typeof ADMIN_SUPPLIERS)[number]['id']
 export type ProductSection = AdminSupplier | 'all' | 'other'
@@ -20,9 +20,9 @@ export function productSupplier(product: ShopProduct, linkedSuppliers: Record<st
 export function adminProductRoute(search: string) {
   const params = new URLSearchParams(search)
   const view = params.get('view') ?? 'overview'
-  const legacy: Record<string, ProductSection> = { sms: 'grizzly', hanfolk: 'hanfolk', plans: 'other' }
+  const legacy: Record<string, ProductSection> = { sms: 'grizzly', hanfolk: 'daju', plans: 'other' }
   if (Object.hasOwn(legacy, view)) return { view: 'products', supplier: legacy[view] }
-  const requested = params.get('supplier')
+  const requested = params.get('supplier') === 'hanfolk' ? 'daju' : params.get('supplier')
   const supplier: ProductSection = requested === 'other' || ADMIN_SUPPLIERS.some(s => s.id === requested)
     ? requested as ProductSection : 'all'
   return { view, supplier: view === 'products' ? supplier : 'all' as ProductSection }

@@ -43,7 +43,7 @@ export async function publicArtwork(
 async function artworkProducts(env: Env): Promise<ArtworkProduct[]> {
   const [products, artwork] = await Promise.all([
     env.INTEREST_DB.prepare(
-      'SELECT c.product_id,MAX(c.name) name,MAX(p.public_json) custom FROM catalog_plans c LEFT JOIN shop_products p ON p.id=c.product_id GROUP BY c.product_id ORDER BY c.product_id',
+      'SELECT c.product_id,MAX(c.name) name,MAX(p.public_json) custom FROM catalog_plans c LEFT JOIN shop_products p ON p.id=c.product_id WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=c.id) GROUP BY c.product_id ORDER BY c.product_id',
     ).all<{ product_id: string; name: string; custom: string | null }>(),
     env.INTEREST_DB.prepare(
       'SELECT product_id,settings,version FROM product_artwork',

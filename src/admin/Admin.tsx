@@ -21,7 +21,7 @@ import { useResource } from '@/lib/use-resource'
 import { Feedback, WorkspaceBoot } from '@/components/workspace-loading'
 import { useSession } from '@/lib/use-session'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowUpRight, Check, ChevronDown, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, Package, Plug, RefreshCw, Search, ShieldCheck, Sun, Moon, MessageCircle, ChartNoAxesCombined } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Check, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, Package, Plug, RefreshCw, Search, ShieldCheck, Sun, Moon, MessageCircle, ChartNoAxesCombined } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/copy-button'
 import { Badge } from '@/components/ui/badge'
@@ -177,7 +177,6 @@ export default function Admin() {
     return views.some(v => v.id === initial.view) ? initial : { view: 'overview', supplier: 'all' as ProductSection }
   })
   const view = route.view, supplier = route.supplier
-  const [productsOpen, setProductsOpen] = useState(true)
   const [revision, setRevision] = useState(0)
   const [detail, setDetail] = useState<string>()
   function navigate(nextView: string, nextSupplier: ProductSection = 'all') {
@@ -188,14 +187,12 @@ export default function Admin() {
     else url.searchParams.delete('supplier')
     if (url.href !== location.href) history.pushState(null, '', url)
     setRoute(next)
-    if (nextView === 'products') setProductsOpen(true)
   }
   const setView = (nextView: string) => navigate(nextView)
   useEffect(() => {
     const restore = () => {
       const next = adminProductRoute(location.search)
       setRoute(views.some(v => v.id === next.view) ? next : { view: 'overview', supplier: 'all' })
-      if (next.view === 'products') setProductsOpen(true)
     }
     window.addEventListener('popstate', restore)
     return () => window.removeEventListener('popstate', restore)
@@ -253,10 +250,7 @@ export default function Admin() {
     <aside className="admin-sidebar">
       <a className="admin-brand" href="/admin"><ShopBrand platform name={shopName} logo={shopIdentity?.shop.logo} /></a>
       <span className="admin-workspace-label">管理工作台</span>
-      <nav aria-label="后台导航">{views.map(item => item.id === 'products' ? <div className="admin-product-nav" key={item.id}>
-        <Button variant="ghost" className="admin-product-toggle" data-active={view === 'products'} aria-expanded={productsOpen} aria-controls="admin-product-children" onClick={() => view === 'products' ? setProductsOpen(v => !v) : navigate('products')}><Package size={17} />商品管理<ChevronDown size={14} /></Button>
-        {productsOpen && <div id="admin-product-children" className="admin-product-children">{[{ id: 'all', name: '商品总览' }, ...ADMIN_SUPPLIERS, { id: 'other', name: '自营及其他' }].map(s => <Button variant="ghost" key={s.id} aria-current={view === 'products' && supplier === s.id ? 'page' : undefined} onClick={() => navigate('products', s.id as ProductSection)}><span className="admin-product-dot" />{s.name}</Button>)}</div>}
-      </div> : <Button variant="ghost" key={item.id} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><item.icon size={17} />{item.label}</Button>)}</nav>
+      <nav aria-label="后台导航">{views.map(item => <Button variant="ghost" key={item.id} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><item.icon size={17} />{item.label}</Button>)}</nav>
       <div className="admin-sidebar-bottom"><span><ShieldCheck size={15} />{session.username}</span><Button variant="ghost" onClick={() => void logout()} disabled={busy}><LogOut size={15} />退出登录</Button></div>
     </aside>
     <div className="admin-workspace">

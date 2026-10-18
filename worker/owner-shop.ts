@@ -150,7 +150,7 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
     const [plans, contacts, stats, visits, costs, coupons] = await Promise.all([
       db
         .prepare(
-          "SELECT c.* FROM catalog_plans c LEFT JOIN shop_products p ON p.id=c.id WHERE p.id IS NULL OR (json_extract(p.public_json,'$.status')<>'archived' AND COALESCE(json_extract(p.public_json,'$.pricePending'),0)=0) ORDER BY c.rowid",
+          "SELECT c.* FROM catalog_plans c LEFT JOIN shop_products p ON p.id=c.id WHERE (p.id IS NULL OR (json_extract(p.public_json,'$.status')<>'archived' AND COALESCE(json_extract(p.public_json,'$.pricePending'),0)=0)) AND NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=c.id) ORDER BY c.rowid",
         )
         .all<{
           id: string

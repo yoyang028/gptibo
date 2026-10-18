@@ -8,14 +8,14 @@ export async function supplierManagement(request: Request, env: Env, path: strin
   if (path === '/api/admin/suppliers' && request.method === 'GET') {
     const [products, plans, links] = await Promise.all([
       shopProducts(env, true),
-      env.INTEREST_DB.prepare('SELECT * FROM catalog_plans ORDER BY rowid').all<{ id: string }>(),
+      env.INTEREST_DB.prepare('SELECT * FROM catalog_plans WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=catalog_plans.id) ORDER BY rowid').all<{ id: string }>(),
       env.INTEREST_DB.prepare('SELECT local_id FROM hanfolk_product_links').all<{ local_id: string }>(),
     ])
     const ready = configured(env)
     return json({
       products,
       plans: plans.results.filter(p => !customProductId.test(p.id)),
-      linkedSuppliers: Object.fromEntries(links.results.map(p => [p.local_id, 'hanfolk'])),
+      linkedSuppliers: Object.fromEntries(links.results.map(p => [p.local_id, 'daju'])),
       bugan: {
         configured: ready,
         salesEnabled: checkoutEnabled(env),
@@ -27,7 +27,7 @@ export async function supplierManagement(request: Request, env: Env, path: strin
   }
   if (path === '/api/admin/suppliers/bugan/check' && request.method === 'POST') {
     await body(request)
-    if (!configured(env)) throw new ApiError('bugan 供货 API 尚未配置。', 409)
+    if (!configured(env)) throw new ApiError('Bugan 供货 API 尚未配置。', 409)
     const mappings = Object.entries(productMap(env))
     const [catalog, ...costs] = await Promise.all([
       upstreamRequest<Product[]>(env, '/products'),

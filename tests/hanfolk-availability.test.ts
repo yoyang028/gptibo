@@ -14,7 +14,8 @@ test('Only exact in-stock source SKUs are public; removed SKUs, missing products
     specs: [{ title: '年份', values: [{id:'1',name:'2025'}, {id:'2',name:'2024'}, {id:'3',name:'2023'}] }],
     is_sku: true,
     sku_variants: [{sku:'1',price:1,stock:5},{sku:'2',price:2,stock:0},{sku:'3',price:3,stock:6}] }
-  const imported = await importHanfolkDrafts(f.env, [source], source.sku_variants.map(v => ({productId:source.id,sku:v.sku})))
+  const importable = { ...source, sku_variants: source.sku_variants.map(v => ({ ...v, stock: Math.max(1, v.stock) })) }
+  const imported = await importHanfolkDrafts(f.env, [importable], source.sku_variants.map(v => ({productId:source.id,sku:v.sku})))
   for (const id of imported.imported) {
     const row=f.db.prepare('SELECT public_json FROM shop_products WHERE id=?').get(id)!
     const p={...JSON.parse(String(row.public_json)),status:'listed',catalogPreview:true}

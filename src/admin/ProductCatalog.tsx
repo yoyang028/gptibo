@@ -111,8 +111,8 @@ function XiaojiuSource({ products, onEdit, onCreate }: { products: ShopProduct[]
     onCreate({ ...freshProduct(), name: [item.name, item.specification].filter(Boolean).join(' · ').slice(0, 80), pricePending: true, stock: item.stock, delivery: 'api', credentialSource: { id: loadedSource.id, version: loadedSource.version }, api: { provider: 'xiaojiu', baseUrl: 'https://98-xj.com', productCode: String(item.skuId), supplierProductId: item.productId, maxCostCents: item.priceCents, configured: true, verified: false } })
   }
   return <div className="supplier-source">
-    <section className="supplier-card"><div className="supplier-card-heading"><div><h2><KeyRound size={18} /> 小久采购 API</h2><p>使用已保存商品的采购凭据读取余额和上游目录。</p></div><span className="admin-pill">{sources.length ? '已保存采购配置' : '待配置'}</span></div>
-      {sources.length ? <div className="supplier-source-controls"><label>采购配置<select aria-label="小久采购配置" value={source?.id ?? ''} disabled={busy} onChange={e => { setSourceId(e.target.value); setCatalog(undefined); setLoadedSource(undefined) }}>{sources.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><Button variant="outline" disabled={busy} onClick={() => void load()}><RefreshCw size={15} />{busy ? '正在读取…' : '读取余额与商品目录'}</Button><Button variant="ghost" disabled={busy} onClick={() => source && onEdit(source)}>编辑采购配置</Button></div> : <p className="supplier-help">先新增一个小久商品，在商品的供货配置中保存采购 API Key 和 Secret，再从这里读取目录。</p>}
+    <section className="supplier-card"><div className="supplier-card-heading"><div><h2><KeyRound size={18} /> Xiaojiu采购 API</h2><p>使用已保存商品的采购凭据读取余额和上游目录。</p></div><span className="admin-pill">{sources.length ? '已保存采购配置' : '待配置'}</span></div>
+      {sources.length ? <div className="supplier-source-controls"><label>采购配置<select aria-label="Xiaojiu采购配置" value={source?.id ?? ''} disabled={busy} onChange={e => { setSourceId(e.target.value); setCatalog(undefined); setLoadedSource(undefined) }}>{sources.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><Button variant="outline" disabled={busy} onClick={() => void load()}><RefreshCw size={15} />{busy ? '正在读取…' : '读取余额与商品目录'}</Button><Button variant="ghost" disabled={busy} onClick={() => source && onEdit(source)}>编辑采购配置</Button></div> : <p className="supplier-help">先新增一个Xiaojiu商品，在商品的供货配置中保存采购 API Key 和 Secret，再从这里读取目录。</p>}
       <p className="supplier-help">采购凭据保存在服务端，选择规格后可复用。每个新商品仍需核对售价、详情、采购成本和收款方式。</p><Feedback error={error} />
     </section>
     {catalog && <section className="supplier-card"><div className="supplier-card-heading"><div><h2><Wallet size={18} /> 钱包余额 {money(catalog.balanceCents)}</h2><p>目录共 {catalog.total} 个规格 · 本次读取未采购、未扣款。</p></div></div><div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>上游商品 / 规格</th><th>采购成本</th><th>库存</th><th>操作</th></tr></thead><tbody>{catalog.items.map(item => {
@@ -147,10 +147,13 @@ export default function ProductCatalog({ revision, supplier, onSupplier, onSaved
     setEdit({ ...freshProduct(), delivery: 'api', api: { provider: 'xiaojiu', baseUrl: 'https://98-xj.com', productCode: '', configured: false, verified: false } })
   }
   return <div className="product-catalog">
+    <nav className="supplier-section-nav" aria-label="商品服务商">
+      {[{ id: 'all', name: '商品总览' }, ...ADMIN_SUPPLIERS, { id: 'other', name: '自营及其他' }].map(s => <Button key={s.id} variant="ghost" aria-current={supplier === s.id ? 'page' : undefined} onClick={() => onSupplier(s.id as ProductSection)}>{s.name}<span className="supplier-section-count">{data ? rows.filter(r => s.id === 'all' || r.supplier === s.id).length : '—'}</span></Button>)}
+    </nav>
     {supplier === 'all' && <div className="supplier-overview">{ADMIN_SUPPLIERS.map(s => <button key={s.id} className="supplier-overview-card" onClick={() => onSupplier(s.id)}><span className="supplier-mark" data-supplier={s.id}>{s.mark}</span><strong>{s.name}</strong><p>{s.description}</p><span>{loading && !data ? '读取中…' : data ? rows.filter(r => r.supplier === s.id).length + ' 项商品 / 规格' : '暂未读取'}<ArrowRight size={15} /></span></button>)}</div>}
     <Feedback error={error || editError} loading={loading} data={data} />
-    {supplier === 'grizzly' ? <SmsManagement revision={revision} onOrder={onOrder} /> : supplier === 'hanfolk' ? <HanfolkCatalog revision={revision} onSaved={onSaved} /> : data && <>
-      {supplier !== 'all' && <div className="supplier-page-heading"><div><h2>{supplierName(supplier)}</h2><p>{supplier === 'other' ? '管理人工交付、自营商品及其他已接入的供货商品。' : ADMIN_SUPPLIERS.find(s => s.id === supplier)?.description}</p></div>{supplier === 'xiaojiu' ? <Button onClick={addXiaojiu}><Plus size={15} />新增小久商品</Button> : supplier === 'other' ? <Button onClick={() => setEdit(freshProduct())}><Plus size={15} />新增自营商品</Button> : null}</div>}
+    {supplier === 'grizzly' ? <SmsManagement revision={revision} onOrder={onOrder} /> : supplier === 'daju' ? <HanfolkCatalog revision={revision} onSaved={onSaved} /> : data && <>
+      {supplier !== 'all' && <div className="supplier-page-heading"><div><h2>{supplierName(supplier)}</h2><p>{supplier === 'other' ? '管理人工交付、自营商品及其他已接入的供货商品。' : ADMIN_SUPPLIERS.find(s => s.id === supplier)?.description}</p></div>{supplier === 'xiaojiu' ? <Button onClick={addXiaojiu}><Plus size={15} />新增Xiaojiu商品</Button> : supplier === 'other' ? <Button onClick={() => setEdit(freshProduct())}><Plus size={15} />新增自营商品</Button> : null}</div>}
       {supplier === 'xiaojiu' && <p className="supplier-help">采购开关：{data.xiaojiuEnabled ? '已开放' : '未开放'} · 每个规格分别设置本站售价和采购成本上限。</p>}
       {supplier === 'bugan' || supplier === 'xiaojiu' ? <WorkspaceTabs key={supplier} label={supplierName(supplier) + '商品工作台'} items={[
         { value: 'products', label: '已整理商品', content: <InventoryTable rows={rows.filter(r => r.supplier === supplier)} onEdit={editRow} busy={busy} /> },
@@ -158,7 +161,7 @@ export default function ProductCatalog({ revision, supplier, onSupplier, onSaved
         ...(supplier === 'bugan' ? [{ value: 'history', label: '修改记录', content: <PlanHistory revision={revision} ids={Object.keys(data.bugan.productMap)} /> }] : []),
       ]} /> : <><div className="supplier-list-toolbar"><span>{supplier === 'all' ? '全部服务商的商品统一查看，编辑时保留各自供货配置。' : '未归属上述四家服务商的商品。'}</span><ProductArtworkSettingsButton onSaved={onSaved} /></div><InventoryTable key={supplier} rows={rows.filter(r => supplier === 'all' || r.supplier === 'other')} onEdit={editRow} busy={busy} />{supplier === 'other' && <GmailSupplierPanel revision={revision} />}</>}
     </>}
-    {edit && <ProductEditor key={edit.id || 'new'} initial={edit} listingOnly={Boolean(data?.linkedSuppliers[edit.id] === 'hanfolk')} onClose={() => setEdit(undefined)} onSaved={onSaved} />}
+    {edit && <ProductEditor key={edit.id || 'new'} initial={edit} listingOnly={Boolean(data?.linkedSuppliers[edit.id] === 'daju')} onClose={() => setEdit(undefined)} onSaved={onSaved} />}
     {plan && <PlanEditor plan={plan} onClose={() => setPlan(undefined)} onUpdated={onSaved} />}
   </div>
 }

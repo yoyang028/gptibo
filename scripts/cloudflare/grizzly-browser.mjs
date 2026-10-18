@@ -296,7 +296,7 @@ try {
   await adminPage.reload()
   await adminPage.locator('.sms-admin-projects').waitFor()
   await adminPage
-    .getByLabel('灰熊 API Key', { exact: true })
+    .getByLabel('Grizzly API Key', { exact: true })
     .fill(grizzlyFixtureKey)
   await adminPage
     .getByLabel('成本汇率 · 人民币 / 1 美元', { exact: true })

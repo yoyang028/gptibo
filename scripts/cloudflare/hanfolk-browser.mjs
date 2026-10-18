@@ -164,7 +164,7 @@ try {
     })
   }
   await adminPage.getByRole('tab', { name: 'API 配置', exact: true }).click()
-  await adminPage.getByLabel('大橘 API Key').fill(hanfolkFixtureKey)
+  await adminPage.getByLabel('Daju API Key').fill(hanfolkFixtureKey)
   await adminPage
     .getByRole('button', { name: '加密保存密钥', exact: true })
     .click()
@@ -227,7 +227,7 @@ try {
   record(
     'Authenticated admin imports eighteen synthetic specifications as private unpriced drafts; buyer sees no costs or drafts',
   )
-  await adminPage.getByRole('group', { name: '大橘商品类别' }).getByRole('button', { name: 'Grok', exact: true }).click()
+  await adminPage.getByRole('group', { name: 'Daju商品类别' }).getByRole('button', { name: 'Grok', exact: true }).click()
   await adminPage
     .locator('.hanfolk-admin tbody tr')
     .first()

@@ -23,7 +23,7 @@ export async function accountingRoutes(request: Request, env: Env, url: URL) {
       db.prepare('SELECT s.version,s.last_settlement_id,a.closed_at FROM accounting_state s LEFT JOIN accounting_settlements a ON a.id=s.last_settlement_id WHERE s.id=1'),
       db.prepare(`SELECT ${totalsSql},MIN(created_at) first_at FROM accounting_candidates`),
       db.prepare(`SELECT plan,MAX(plan_name) plan_name,${totalsSql} FROM accounting_candidates GROUP BY plan ORDER BY plan`),
-      db.prepare('SELECT p.id plan,p.name,c.cost_cents FROM catalog_plans p LEFT JOIN accounting_costs c ON c.plan=p.id ORDER BY p.rowid'),
+      db.prepare('SELECT p.id plan,p.name,c.cost_cents FROM catalog_plans p LEFT JOIN accounting_costs c ON c.plan=p.id WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=p.id) ORDER BY p.rowid'),
       db.prepare('SELECT * FROM accounting_settlements ORDER BY closed_at DESC,base_version DESC LIMIT 10 OFFSET ?').bind((page-1)*10),
       db.prepare('SELECT COUNT(*) total FROM accounting_settlements'),
       db.prepare(`SELECT COUNT(*) total FROM orders o LEFT JOIN recharge_orders t ON t.order_id=o.id WHERE o.mode='live' AND o.is_test=0 AND o.payment_status='paid' AND (o.refund_hold=1 OR COALESCE(t.financial_hold,0)=1) AND (o.status='success' OR EXISTS(SELECT 1 FROM accounting_items i WHERE i.order_id=o.id))`),
@@ -35,7 +35,7 @@ export async function accountingRoutes(request: Request, env: Env, url: URL) {
   if (path === '/api/admin/accounting/costs' && request.method === 'POST') {
     const data = await body(request)
     if (!Number.isSafeInteger(data.version) || !Array.isArray(data.costs)) throw new ApiError('成本设置无效。')
-    const plans = (await db.prepare('SELECT id plan FROM catalog_plans').all<{ plan: string }>()).results
+    const plans = (await db.prepare('SELECT id plan FROM catalog_plans WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=catalog_plans.id)').all<{ plan: string }>()).results
     const costs = data.costs as AccountingCost[]
     if (costs.length !== plans.length || new Set(costs.map(c => c?.plan)).size !== plans.length || costs.some(c => !c || !plans.some(p => p.plan === c.plan) || (c.cost_cents !== null && (!Number.isSafeInteger(c.cost_cents) || c.cost_cents < 0 || c.cost_cents > 10000000)))) throw new ApiError('请填写有效采购成本，最多两位小数；未知成本可以留空。')
     const token = crypto.randomUUID(); const now = Date.now()

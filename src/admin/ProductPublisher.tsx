@@ -245,7 +245,7 @@ export function ProductEditor({
         },
       )
       setSupplierCatalog(result)
-      setMessage('已读取小久余额与商品目录，未创建采购订单。')
+      setMessage('已读取Xiaojiu余额与商品目录，未创建采购订单。')
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -513,7 +513,7 @@ export function ProductEditor({
               </label>
               <p className="owner-editor-notice">
                 {product.api?.provider === 'grizzly'
-                  ? '灰熊接码使用订单专属支付宝付款码，服务端确认到账后自动分配号码。'
+                  ? 'Grizzly接码使用订单专属支付宝付款码，服务端确认到账后自动分配号码。'
                   : '已接入的 ChatGPT 使用原有平台代收与直充流程。其他新增商品使用下方配置的收款方式，店主确认到账后进入交付。'}
               </p>
               {product.delivery === 'api' && (
@@ -561,8 +561,8 @@ export function ProductEditor({
                       }}
                     >
                       <option value="json-v1">通用 JSON v1 供货</option>
-                      <option value="xiaojiu">小久 · 钱包余额采购</option>
-                      <option value="grizzly">灰熊 SMS · 美国单次接码</option>
+                      <option value="xiaojiu">Xiaojiu · 钱包余额采购</option>
+                      <option value="grizzly">Grizzly SMS · 美国单次接码</option>
                     </select>
                   </label>
                   <label>
@@ -587,7 +587,7 @@ export function ProductEditor({
                   </label>
                   {product.api?.provider === 'xiaojiu' && (
                     <label>
-                      小久商品 ID
+                      Xiaojiu商品 ID
                       <Input
                         type="number"
                         min="1"
@@ -611,7 +611,7 @@ export function ProductEditor({
                   ) : (
                     <label>
                       {product.api?.provider === 'xiaojiu'
-                        ? '小久 SKU ID（规格编号）'
+                        ? 'Xiaojiu SKU ID（规格编号）'
                         : '上游商品编码'}
                       <Input
                         value={product.api?.productCode ?? ''}
@@ -660,10 +660,10 @@ export function ProductEditor({
                   {product.api?.provider === 'xiaojiu' && (
                     <>
                       <p className="owner-editor-notice">
-                        使用小久钱包余额按单购买，每单采购一份。上游不提供锁价参数；系统采购前核价，实际扣款超限时保留原单并暂停自动处理。只读检查不会购买或扣款。
+                        使用Xiaojiu钱包余额按单购买，每单采购一份。上游不提供锁价参数；系统采购前核价，实际扣款超限时保留原单并暂停自动处理。只读检查不会购买或扣款。
                       </p>
                       <label>
-                        小久 API Key
+                        Xiaojiu API Key
                         <Input
                           type="password"
                           autoComplete="new-password"
@@ -684,7 +684,7 @@ export function ProductEditor({
                   )}
                   <label>
                     {product.api?.provider === 'xiaojiu'
-                      ? '小久 API Secret（完整原文）'
+                      ? 'Xiaojiu API Secret（完整原文）'
                       : '服务端 API 密钥'}
                     <Input
                       type="password"
@@ -715,19 +715,19 @@ export function ProductEditor({
                         variant="outline"
                         onClick={() => void loadSupplierCatalog()}
                       >
-                        读取小久余额与商品目录
+                        读取Xiaojiu余额与商品目录
                       </Button>
                       {supplierCatalog && (
                         <>
                           <p role="status">
-                            小久钱包可用余额：¥
+                            Xiaojiu钱包可用余额：¥
                             {(supplierCatalog.balanceCents / 100).toFixed(2)} ·
                             当前第 {supplierCatalog.page} 页
                           </p>
                           <label>
-                            从小久目录选择商品规格
+                            从Xiaojiu目录选择商品规格
                             <select
-                              aria-label="从小久目录选择商品规格"
+                              aria-label="从Xiaojiu目录选择商品规格"
                               value={
                                 supplierCatalog.items.some(
                                   (item) =>
@@ -1252,7 +1252,7 @@ export default function ProductPublisher({
         </Button>
       </div>
       <p>
-        美国单次短信项目请在 <a href="/admin?view=products&supplier=grizzly">商品管理 → 灰熊</a>{' '}
+        美国单次短信项目请在 <a href="/admin?view=products&supplier=grizzly">商品管理 → Grizzly</a>{' '}
         集中配置与发布。
       </p>
       {error && <p role="alert">{error}</p>}
