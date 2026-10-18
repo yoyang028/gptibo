@@ -1,11 +1,12 @@
 import { ArrowUpRight } from 'lucide-react'
+import { customerProductName } from '@/lib/shop-presentation'
 import {
   productCopyLinks,
   type ProductCopyBlock,
 } from '../../shared/product-copy'
 
 export function ProductCopyText({ text }: { text: string }) {
-  return <>{productCopyLinks(text).map((part, i) => part.href
+  return <>{productCopyLinks(customerProductName(text)).map((part, i) => part.href
     ? <a key={i} href={part.href} target="_blank" rel="noopener noreferrer" aria-label={part.text + '（在新窗口打开）'}>{part.text}<ArrowUpRight size={11} aria-hidden="true" /></a>
     : <span key={i}>{part.text}</span>)}</>
 }

@@ -19,15 +19,35 @@ export function shopPresentation(id: string, product: ShopProduct) {
   return families[id] ?? { tagline: product.tagline, intro: product.tagline, category: product.category }
 }
 
-export function variantLabel(product: ShopProduct, brand: string) {
-  const label = product.name.startsWith(brand) ? product.name.slice(brand.length).trim() : product.name
-  return label.replace(/^Claude\s*/i, '').replace(/^Codex\s*/i, '').replace(/\s*额度$/, ' 点').replace(/Max\s*(\d+)x/i, 'Max $1×') || product.duration
+export function customerProductName(value: string) {
+  return value.replace(/\bGoogle\s+(Gemini|Gmail)\b/gi, (_, brand: string) => brand.toLowerCase() === 'gemini' ? 'Gemini' : 'Gmail')
+}
+
+export function variantLabel(product: ShopProduct, brand: string, siblings: readonly ShopProduct[] = []) {
+  const name = customerProductName(product.name)
+  if (product.groupId === 'apple-id') {
+    return name.replace(/Apple\s*ID/gi, '').replace(/[（(][^）)]*[）)]/g, '').replace(/已购\s*/g, '').replace(/\s*·\s*/g, ' · ').trim()
+  }
+  if (product.groupId === 'gemini') {
+    if (/成品账号/.test(name)) {
+      const cohort = name.match(/(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)\d{2}/)?.[0].replace(/\s*[-–—]\s*/, '–')
+      const multipleAccounts = !siblings.length || siblings.filter(p => /成品账号/.test(p.name)).length > 1
+      return multipleAccounts && cohort ? `成品账号 · ${cohort}` : '成品账号'
+    }
+    if (/激活链接|兑换链接/.test(name)) {
+      const months = (product.duration + ' ' + name).match(/(\d+)\s*个月/)?.[1]
+      return months ? `${months} 个月 · 激活链接` : '激活链接'
+    }
+  }
+  const displayBrand = customerProductName(brand)
+  const label = name.startsWith(displayBrand) ? name.slice(displayBrand.length).trim() : name
+  return label.replace(/^Claude\s*/i, '').replace(/^Codex\s*/i, '').replace(/\s*额度$/, ' 点').replace(/Max\s*(\d+)x/i, 'Max $1×').replace(/^[·\s-]+/, '') || product.duration
 }
 
 // Older imported descriptions include procurement labels that are only useful
 // to the operator. Preserve their service conditions while removing that copy.
 export function customerProductCopy(value: string) {
-  return value
+  return customerProductName(value)
     .replace(/，对应供货目录「[^」]+」的「[^」]+」规格。/g, '。')
     .replace('店主确认实际到账后采购对应规格；交付内容保存在原订单。', '付款确认后，卡密或领取信息会交付到原订单。')
 }

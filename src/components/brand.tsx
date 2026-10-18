@@ -1,11 +1,10 @@
-import { DuoMark, GeminiMark } from './membership-scene'
+import { GeminiMark } from './membership-scene'
 import { clearProductBrand } from '../../shared/product-brand'
 import './product-brand.css'
 import { officialBrand } from './official-brand'
 import {
   Mail,
   Package,
-  GraduationCap,
   Palette,
   Music2,
   Apple,
@@ -77,13 +76,18 @@ export function ProductLogo({ productId }: { productId: string }) {
         aria-hidden="true"
       />
     )
-  if (brand === 'muse' || brand === 'codex')
+  if (brand === 'muse' || brand === 'codex' || brand === 'duolingo' || brand === 'student-verification')
     return (
       <img
         className="product-logo"
         data-brand={brand}
         style={{ background: 'none' }}
-        src={brand === 'codex' ? '/brands/codex-blue.svg' : '/brands/muse.svg'}
+        src={'/brands/' + {
+          codex: 'codex-blue.svg',
+          muse: 'muse.svg',
+          duolingo: 'duolingo-duo-home.svg',
+          'student-verification': 'student-plus.svg',
+        }[brand]}
         alt=""
         aria-hidden="true"
       />
@@ -133,16 +137,7 @@ export function ProductLogo({ productId }: { productId: string }) {
         <XLogoPath />
       </svg>
     )
-  if (productId === 'duolingo') return <DuoMark />
   if (productId === 'gemini') return <GeminiMark />
-  if (productId === 'student-verification')
-    return (
-      <GraduationCap
-        className="product-logo"
-        style={{ background: 'none' }}
-        aria-hidden="true"
-      />
-    )
   const slug =
     productId === 'chatgpt'
       ? 'openai'

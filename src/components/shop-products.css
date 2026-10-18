@@ -90,6 +90,30 @@
   font-size: 15px;
   font-weight: 550;
 }
+.shop-product-variants-compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.shop-product-variants-compact .shop-variant {
+  padding: 13px 12px;
+  gap: 9px;
+  min-height: 48px;
+}
+.shop-product-variants-compact .shop-variant span > strong {
+  font-size: 13px;
+  letter-spacing: 0;
+}
+.shop-product-variants-compact .shop-variant > strong {
+  font-size: 11px;
+  font-weight: 450;
+  letter-spacing: 0;
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+@media (max-width: 760px) {
+  .shop-product-variants-compact { grid-template-columns: minmax(0, 1fr); }
+  .shop-product-variants-compact .shop-variant { display: flex; padding: 12px; }
+}
 .shop-detail-intro h1 > span {
   display: block;
   font-size: clamp(16px, 2vw, 23px);

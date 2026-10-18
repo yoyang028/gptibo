@@ -2,7 +2,7 @@ import { MuseLogoMotion } from './muse-logo-motion'
 import { ProductArtwork } from './product-artwork'
 import { ProductMark } from './brand'
 import { ProductServiceScene } from './product-service-scene'
-import { customerProductCopy, shopPresentation, variantLabel } from '@/lib/shop-presentation'
+import { customerProductCopy, customerProductName, shopPresentation, variantLabel } from '@/lib/shop-presentation'
 import type {
   ProductArtworkConfig,
   ProductArtworkMap,
@@ -115,7 +115,9 @@ export function ShopProductPage({
   const requestKey = useRef<{ identity: string; key: string } | null>(null)
   const displayOnly = product.status === 'listed'
   const familyId = product.groupId ?? product.id
-  const familyName = displayName || product.name || '商品名称'
+  const buyerName = customerProductName(product.name)
+  const familyName = customerProductName(displayName || product.name || '商品名称')
+  const compactVariants = familyId === 'apple-id' || familyId === 'gemini'
   const presentation = shopPresentation(familyId, product)
   const descriptionBlocks = productCopyBlocks(customerProductCopy(product.description))
   const [couponCode, setCouponCode] = useState(''),
@@ -204,7 +206,7 @@ export function ShopProductPage({
       </section>
       <section
         className={`purchase-workspace page-width shop-product-workspace family-${familyId}`}
-        aria-label={product.name + '商品详情'}
+        aria-label={buyerName + '商品详情'}
       >
         <div className="product-area">
           <div className="product-topline">
@@ -235,18 +237,18 @@ export function ShopProductPage({
           <ProductKeyFacts highlights={product.buyerHighlights} warnings={product.buyerWarnings}/>
           {familyId === 'muse' ? <MuseLogoMotion detail /> : familyId === 'duolingo' ? <MembershipScene productId="duolingo"/> : familyId === 'gmail' ? <GmailScene/> : officialBrand(familyId) ? <OfficialLogoMotion productId={familyId} detail/> : <ProductArtwork
             config={artwork}
-            name={product.name}
+            name={buyerName}
             caption={product.duration}
             detail
             fallback={(!variants || variants.length === 1) ? <ProductServiceScene productId={familyId} name={familyName} duration={product.duration} /> : null}
           />
           }
           <div className="product-pitch">
-            <h3>{familyId === 'claude' ? '找到适合你的用量。' : familyId === 'codex-credits' ? '按需补充，继续创造。' : product.name}</h3>
-            <p>{product.tagline}</p>
+            <h3>{familyId === 'claude' ? '找到适合你的用量。' : familyId === 'codex-credits' ? '按需补充，继续创造。' : compactVariants ? familyId === 'apple-id' ? '选择适合你的账号。' : '选择适合你的开通方式。' : buyerName}</h3>
+            <p>{compactVariants ? familyId === 'apple-id' ? '按地区和类型选择，查看所选账号的完整条件。' : '选择成品账号或激活链接，查看对应的会员与开通条件。' : customerProductCopy(product.tagline)}</p>
           </div>
           {variants && variants.length > 1 && (
-            <fieldset className="shop-product-variants">
+            <fieldset className={'shop-product-variants' + (compactVariants ? ' shop-product-variants-compact' : '')}>
               <legend>选择适合你的规格<span>{variants.length} 个规格可选</span></legend>
               {variants.map((variant) => (
                 <label
@@ -256,7 +258,7 @@ export function ShopProductPage({
                 >
                   <input
                     type="radio"
-                    aria-label={variant.name}
+                    aria-label={compactVariants ? variantLabel(variant, familyName, variants) : customerProductName(variant.name)}
                     name="product-variant"
                     value={variant.id}
                     checked={variant.id === product.id}
@@ -266,25 +268,25 @@ export function ShopProductPage({
                     }}
                   />
                   <span>
-                    <strong>{variantLabel(variant, familyName)}</strong>
-                    <small>{variant.features[0] || variant.duration}</small>
+                    <strong>{variantLabel(variant, familyName, variants)}</strong>
+                    {!compactVariants && <small>{customerProductCopy(variant.features[0] || variant.duration)}</small>}
                   </span>
                   <strong>{variant.pricePending ? '待定价' : <><small>¥</small>{(variant.priceCents / 100).toFixed(2)}</>}</strong>
                 </label>
               ))}
             </fieldset>
           )}
-          <div className="shop-product-option">
-            <span className="section-kicker">商品详情</span>
+          <div className="shop-product-option" role={compactVariants ? 'region' : undefined} aria-label={compactVariants ? '已选规格详情' : undefined} aria-live={compactVariants ? 'polite' : undefined}>
+            <span className="section-kicker">{compactVariants ? '已选规格详情' : '商品详情'}</span>
             <div className="plan-option-top">
-              <h3>{product.name || '商品规格'}</h3>
+              <h3>{buyerName || '商品规格'}</h3>
               <span>{product.duration}</span>
             </div>
             <ul className="plan-features">
               {product.features.map((feature, i) => (
                 <li key={i}>
                   <Check size={15} />
-                  {feature}
+                  {customerProductCopy(feature)}
                 </li>
               ))}
             </ul>
@@ -298,7 +300,7 @@ export function ShopProductPage({
           </div>
           <div className="summary-product">
             {product.groupId && <ProductMark small productId={product.groupId} />}
-            <div><strong>{product.name || '商品名称'}</strong><p>{product.duration || '商品规格'}</p></div>
+            <div><strong>{buyerName || '商品名称'}</strong><p>{product.duration || '商品规格'}</p></div>
           </div>
           <dl className="summary-details">
             <div>
@@ -352,7 +354,7 @@ export function ShopProductPage({
         <div className="shop-buyer-heading">
           <span className="section-kicker">PRODUCT DETAILS</span>
           <h2>了解你的选择。</h2>
-          <p>{product.name}</p>
+          <p>{buyerName}</p>
         </div>
         <div className="shop-buyer-body">
           <ProductDescription blocks={descriptionBlocks} />
@@ -397,7 +399,7 @@ export function ShopProductPage({
       >
         <DialogContent className="motion-dialog">
           <DialogHeader>
-            <DialogTitle>购买 {product.name}</DialogTitle>
+            <DialogTitle>购买 {buyerName}</DialogTitle>
             <DialogDescription>
               核对商品、收款与交付说明后填写下单信息。
             </DialogDescription>

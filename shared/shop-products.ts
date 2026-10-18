@@ -12,12 +12,12 @@ export const SHOP_PRODUCT_GROUPS = {
   'student-verification': 'Plus 学生认证',
   muse: 'Muse',
   grok: 'Grok',
-  gemini: 'Google Gemini',
+  gemini: 'Gemini',
   duolingo: '多邻国',
   'adobe-express': 'Adobe Express',
   'apple-music': 'Apple Music',
   'apple-id': 'Apple ID',
-  gmail: 'Google Gmail',
+  gmail: 'Gmail',
   'capcut-pro': 'CapCut Pro',
 } as const
 export type ShopProductGroupId = keyof typeof SHOP_PRODUCT_GROUPS

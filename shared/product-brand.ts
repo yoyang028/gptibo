@@ -1,4 +1,4 @@
-export type ClearProductBrand = 'chatgpt' | 'codex' | 'claude' | 'muse'
+export type ClearProductBrand = 'chatgpt' | 'codex' | 'claude' | 'muse' | 'duolingo' | 'student-verification'
 
 /** Stable product identities only; never infer a brand from buyer text. */
 export function clearProductBrand(id: string): ClearProductBrand | undefined {
@@ -7,4 +7,5 @@ export function clearProductBrand(id: string): ClearProductBrand | undefined {
   if (['codex', 'codex-credits', 'codex-sms', 'codex-sms-once'].includes(id))
     return 'codex'
   if (id === 'muse') return 'muse'
+  if (id === 'duolingo' || id === 'student-verification') return id
 }

@@ -8,6 +8,8 @@ OpenAI, Codex, Claude and Grok SVG marks are sourced from [Lobe Icons](https://g
 
 Claude uses its original `claude.svg` vector path as an orange CSS mask in both themes. All shared Claude marks, including product headings, catalog/editor previews, summaries and SMS project selection, have transparent wrappers with no tile, border or shadow (2026-10-18).
 
+The Plus student-verification mark (`student-plus.svg`) is an original vector illustration of a graduation cap and plus sign. It uses transparent space around green paths, without an app tile, border or shadow. Small Duolingo marks reuse the original vector-only `duolingo-duo-home.svg` poster below on a transparent wrapper; the established large Duo animation is retained (2026-10-18).
+
 ## Single official marks (2026-10-17)
 
 Six catalog families use one first-party SVG each, with distinct slow transform loops and small independent scene accents: Grok stars, Gemini sparkles, Express creative marks, Music notes and rhythm, Apple Account colored dots, and CapCut editing guides. Logo geometry and colors stay intact, without a surrounding deck or tile. All motion pauses offscreen and when the document is hidden; reduced-motion disables both the logo and accent animations. The previously established ChatGPT, Claude, SMS, Codex credits, Plus student, Muse and remote-deployment card compositions are retained. Gmail reuses its original envelope scene; Duolingo uses the original official Duo animation below.
