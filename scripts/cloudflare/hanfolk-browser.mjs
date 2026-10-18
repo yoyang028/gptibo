@@ -163,17 +163,19 @@ try {
       status: 'draft',
     })
   }
+  await adminPage.getByRole('tab', { name: 'API 配置', exact: true }).click()
   await adminPage.getByLabel('大橘 API Key').fill(hanfolkFixtureKey)
   await adminPage
     .getByRole('button', { name: '加密保存密钥', exact: true })
     .click()
   await adminPage
     .getByRole('status')
-    .filter({ hasText: '密钥已在服务端加密保存' })
+    .filter({ hasText: 'API 密钥已加密保存' })
     .waitFor()
   await adminPage
-    .getByRole('button', { name: '只读读取九类商品', exact: true })
+    .getByRole('button', { name: '同步商品与库存', exact: true })
     .click()
+  await adminPage.getByRole('tab', { name: '上游目录与选品', exact: true }).click()
   await adminPage.locator('.hanfolk-source').nth(8).waitFor()
   for (let i = 0; i < 9; i++) {
     const detailResponse = adminPage.waitForResponse(
@@ -182,6 +184,7 @@ try {
         r.request().method() === 'POST' &&
         r.request().postDataJSON()?.action === 'detail',
     )
+    await adminPage.locator('.hanfolk-source').nth(i).locator(':scope > summary').click()
     await adminPage
       .locator('.hanfolk-source')
       .nth(i)
@@ -195,14 +198,14 @@ try {
       .locator('.hanfolk-skus')
       .waitFor()
     await adminPage
-      .getByRole('button', { name: '只读读取九类商品', exact: true })
+      .getByRole('button', { name: '同步商品与库存', exact: true })
       .waitFor({ state: 'visible' })
   }
   await adminPage
-    .getByRole('button', { name: '选择本类已读取的规格', exact: true })
+    .getByRole('button', { name: '选择本类规格', exact: true })
     .click()
   await adminPage
-    .getByRole('button', { name: '导入待定价草稿', exact: true })
+    .getByRole('button', { name: '导入商品草稿', exact: true })
     .click()
   await adminPage
     .getByRole('status')
@@ -224,7 +227,7 @@ try {
   record(
     'Authenticated admin imports eighteen synthetic specifications as private unpriced drafts; buyer sees no costs or drafts',
   )
-  await adminPage.getByLabel('代理商品类别').selectOption('grok')
+  await adminPage.getByRole('group', { name: '大橘商品类别' }).getByRole('button', { name: 'Grok', exact: true }).click()
   await adminPage
     .locator('.hanfolk-admin tbody tr')
     .first()

@@ -1,3 +1,4 @@
+import { freshProduct } from './product-draft'
 import { ProductArtworkSettingsButton } from './ProductArtworkSettings'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -40,29 +41,6 @@ import {
   GRIZZLY_USA,
 } from '../../shared/grizzly-sms'
 
-const freshProduct = (): ShopProduct => ({
-  id: '',
-  name: '',
-  category: 'AI 订阅',
-  tagline: '',
-  description: '',
-  image: '',
-  badge: '自营商品',
-  unit: '份',
-  duration: '',
-  priceCents: 100,
-  stock: -1,
-  features: [],
-  purchaseNote: '',
-  deliveryInstructions: '',
-  steps: [],
-  faq: [],
-  fields: [],
-  delivery: 'manual',
-  payment: { label: '', instructions: '', url: '', qr: '' },
-  status: 'draft',
-  version: 0,
-})
 const statuses = {
   draft: '草稿',
   listed: '展示中 · 未开售',
@@ -217,6 +195,7 @@ export function ProductEditor({
           (action === 'verify' ? '/verify-api' : ''),
         {
           ...outgoing,
+          credentialSource: apiToken || apiKey ? undefined : product.credentialSource,
           ...(apiToken ? { apiToken } : {}),
           ...(apiKey ? { apiKey } : {}),
         },
@@ -1273,7 +1252,7 @@ export default function ProductPublisher({
         </Button>
       </div>
       <p>
-        美国单次短信项目请在 <a href="/admin?view=sms">接码管理</a>{' '}
+        美国单次短信项目请在 <a href="/admin?view=products&supplier=grizzly">商品管理 → 灰熊</a>{' '}
         集中配置与发布。
       </p>
       {error && <p role="alert">{error}</p>}

@@ -70,6 +70,8 @@ export type ShopProduct = {
   }
 }
 export type ShopProductInput = ShopProduct & {
+  /** Admin-only reuse of an existing Xiaojiu credential; never returned publicly. */
+  credentialSource?: { id: string; version: number }
   /** Owner-only field; encrypted separately and released only with paid delivery. */
   redemptionGuide?: string
   apiToken?: string

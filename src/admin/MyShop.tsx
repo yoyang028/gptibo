@@ -17,7 +17,6 @@ import { VisitorStats } from '@/components/visitor-stats'
 import { useResource } from '@/lib/use-resource'
 import type { StorefrontProductId } from '../../shared/product-order'
 import type { Offer } from '@/partner/model'
-import ProductPublisher from './ProductPublisher'
 import '@/partner/partner.css'
 import '@/partner/workspace.css'
 import '@/components/shop-products.css'
@@ -29,6 +28,7 @@ export default function MyShop({
   customers,
   accounting,
   refunds,
+  onManageProducts,
 }: {
   revision: number
   onSaved: () => void
@@ -36,6 +36,7 @@ export default function MyShop({
   customers: ReactNode
   accounting: ReactNode
   refunds: ReactNode
+  onManageProducts: () => void
 }) {
   const [tab, setTab] = useState('stores')
   const { data } = useResource<{
@@ -83,7 +84,7 @@ export default function MyShop({
                 active={tab === 'stores'}
                 onSaved={onSaved}
                 publishingContent={
-                  <ProductPublisher revision={revision} onSaved={onSaved} />
+                  <div className="admin-panel-title"><div><h3>商品管理</h3><p className="stores-help">商品上架、定价与供货 API 已按服务商统一管理。</p></div><Button variant="outline" onClick={onManageProducts}>进入商品管理</Button></div>
                 }
                 sortingContent={
                   <ProductManagement

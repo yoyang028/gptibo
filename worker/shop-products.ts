@@ -331,8 +331,22 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
       throw e
     }
   }
+  let inheritedCredential = ''
+  if (input.credentialSource !== undefined) {
+    if (api?.provider !== 'xiaojiu' || previous || credential || input.apiKey)
+      throw new ApiError('仅新的小久商品可复用已保存的采购凭据。', 409)
+    const source = customProductId.test(String(input.credentialSource?.id))
+      ? await productRow(env, input.credentialSource.id) : null
+    if (!source || source.version !== input.credentialSource.version ||
+      rowProduct(source).api?.provider !== 'xiaojiu' || !source.api_secret ||
+      rowProduct(source).api?.baseUrl !== api.baseUrl)
+      throw new ApiError('来源商品的采购配置已变化，请重新读取小久商品。', 409)
+    inheritedCredential = source.api_secret
+  }
   const sealed = credential
     ? await seal(env, credential)
+    : inheritedCredential
+      ? inheritedCredential
     : sameProvider
       ? (previous?.api_secret ?? '')
       : ''

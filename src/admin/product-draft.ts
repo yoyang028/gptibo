@@ -1,0 +1,25 @@
+import type { ShopProduct } from '../../shared/shop-products'
+
+export const freshProduct = (): ShopProduct => ({
+  id: '',
+  name: '',
+  category: 'AI 订阅',
+  tagline: '',
+  description: '',
+  image: '',
+  badge: '自营商品',
+  unit: '份',
+  duration: '',
+  priceCents: 100,
+  stock: -1,
+  features: [],
+  purchaseNote: '',
+  deliveryInstructions: '',
+  steps: [],
+  faq: [],
+  fields: [],
+  delivery: 'manual',
+  payment: { label: '', instructions: '', url: '', qr: '' },
+  status: 'draft',
+  version: 0,
+})

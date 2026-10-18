@@ -40,6 +40,7 @@ import { smsManagement, smsPublicCatalog } from './grizzly/management.ts'
 import { hanfolkManagement } from './hanfolk/management.ts'
 import { hanfolkAvailability } from './hanfolk/availability.ts'
 import { concealRedemptionLinks } from '../shared/redemption-copy.ts'
+import { supplierManagement } from './supplier-management.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
 type OrderPartnerSource = { id: string; slug: string; name: string; email: string; wechat: string; qq: string }
@@ -291,6 +292,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
 
 async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname; const method = request.method; const db = env.INTEREST_DB
+  if (path === '/api/admin/suppliers' || path === '/api/admin/suppliers/bugan/check') return supplierManagement(request, env, path)
   if (path === '/api/admin/payments/reconcile' && method === 'POST') { await body(request); return json(await reconcilePayments(env)) }
   if (path === '/api/admin/recharge/reconcile' && method === 'POST') { await body(request); return json(await reconcileRecharge(env)) }
   if (path === '/api/admin/overview' && method === 'GET') {

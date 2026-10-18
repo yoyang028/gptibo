@@ -1,7 +1,6 @@
-import { ProductArtworkSettingsButton } from './ProductArtworkSettings'
+import ProductCatalog from './ProductCatalog'
+import { ADMIN_SUPPLIERS, adminProductRoute, type ProductSection } from '../../shared/admin-suppliers'
 import MyShop from './MyShop'
-import SmsManagement from './SmsManagement'
-import HanfolkCatalog from './HanfolkCatalog'
 import ShopOrderActions from './ShopOrderActions'
 import { ShopBrand } from '@/components/shop-brand'
 import TicketWorkspace from '@/components/ticket-workspace'
@@ -13,8 +12,7 @@ import { useAuthVerification } from '@/components/use-auth-verification'
 import { PaymentChannelsPanel } from './PaymentChannelsPanel'
 import { EmailDeliveryPanel } from './EmailDeliveryPanel'
 import { XGiftPanel } from './XGiftPanel'
-import { isXGiftPlan } from '../../shared/xgift-products'
-import { GmailOrderPanel, GmailSupplierPanel } from './GmailSupplierPanel'
+import { GmailOrderPanel } from './GmailSupplierPanel'
 import { productNameForPlan, productNameForId, emailProduct } from '../../shared/email-products'
 import { activityCopy } from '@/lib/activity-copy'
 import { platformPaymentLabel, type PlatformOrderStatus } from '../../shared/platform-order-status'
@@ -23,12 +21,11 @@ import { useResource } from '@/lib/use-resource'
 import { Feedback, WorkspaceBoot } from '@/components/workspace-loading'
 import { useSession } from '@/lib/use-session'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowUpRight, Check, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, Package, Plug, RefreshCw, Search, ShieldCheck, Sun, Moon, MessageCircle, ChartNoAxesCombined } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Check, ChevronDown, ClipboardList, FileText, LayoutDashboard, LogOut, Mail, Package, Plug, RefreshCw, Search, ShieldCheck, Sun, Moon, MessageCircle, ChartNoAxesCombined } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/copy-button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@base-ui/react/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import RefundsPage from './RefundsPage'
 import PartnersPage from './PartnersPage'
@@ -41,7 +38,7 @@ import { VisitorStats } from '@/components/visitor-stats'
 import { OrderActionForm } from './OrderActionForm'
 import { Users } from 'lucide-react'
 import { SupportContactsPanel } from '@/components/support-contacts'
-import { api, errorMessage, type CatalogPlan } from '@/lib/api'
+import { api, errorMessage } from '@/lib/api'
 import { orderLabel, ORDER_LABELS } from '@/lib/demo-orders'
 import type { ServerOrder } from '@/lib/use-store'
 import '../App.css'
@@ -53,8 +50,7 @@ const time = (value: number | string) => new Date(typeof value === 'string' && !
 const productName = (plan: string) => emailProduct(plan) ? productNameForId(emailProduct(plan)!.productId) : productNameForPlan(plan)
 const views = [
   { id: 'my-shop', label: '我的店铺', icon: Package },
-  { id: 'sms', label: '接码管理', icon: MessageCircle },
-  { id: 'hanfolk', label: '代理商品', icon: Package },
+  { id: 'products', label: '商品管理', icon: Package },
   { id: 'security', label: '安全审计', icon: ShieldCheck },
   { id: 'overview', label: '运营概览', icon: LayoutDashboard }, { id: 'orders', label: '订单管理', icon: ClipboardList },
   { id: 'tickets', label: '代理工单', icon: MessageCircle },
@@ -62,7 +58,7 @@ const views = [
   { id: 'accounting', label: '清账统计', icon: ChartNoAxesCombined },
   { id: 'customers', label: '客户管理', icon: Users },
   { id: 'invoices', label: '开票管理', icon: FileText },
-  { id: 'plans', label: '商品与套餐', icon: Package }, { id: 'interest', label: '上线提醒', icon: Mail },
+  { id: 'interest', label: '上线提醒', icon: Mail },
   { id: 'contacts', label: '联系方式', icon: MessageCircle }, { id: 'integrations', label: '服务接入', icon: Plug }, { id: 'partners', label: '代理管理', icon: Users }, { id: 'visitors', label: '访客统计', icon: ChartNoAxesCombined },
 ]
 type Session = { authenticated: boolean; configured: boolean; mailReady: boolean; username?: string }
@@ -134,27 +130,6 @@ function OrderDetail({ id, onClose, onUpdated }: { id: string; onClose: () => vo
     </DialogContent>
   </Dialog>
 }
-function PlanEditor({ plan, onClose, onUpdated }: { plan: CatalogPlan; onClose: () => void; onUpdated: () => void }) {
-  const [price, setPrice] = useState(String(plan.price_cents / 100)); const [enabled, setEnabled] = useState(Boolean(plan.enabled)); const [note, setNote] = useState(''); const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
-  const [partnerEnabled, setPartnerEnabled] = useState(plan.partner_enabled !== 0)
-  const [supportsWarranty, setSupportsWarranty] = useState(plan.supports_warranty !== false)
-  const [purchaseNote, setPurchaseNote] = useState(plan.purchase_note ?? '')
-  const [deliveryInstructions, setDeliveryInstructions] = useState(plan.delivery_instructions ?? '')
-  async function save() {
-    if (busy) return
-    if (!/^\d+(\.\d{1,2})?$/.test(price) || Number(price) <= 0 || Number(price) > 100000) { setError('请输入 0.01–100000 元的价格，最多两位小数。'); return }
-    setBusy(true); setError('')
-    try { await api(`/api/admin/plans/${plan.id}`, { priceCents: Math.round(Number(price) * 100), enabled, note, purchaseNote, deliveryInstructions, partnerEnabled, supportsWarranty, version: plan.version }); onUpdated(); onClose() }
-    catch (e) { setError(errorMessage(e)) } finally { setBusy(false) }
-  }
-  return <Dialog open onOpenChange={open => { if (!open) onClose() }}><DialogContent className="admin-edit motion-dialog"><DialogHeader><DialogTitle>编辑 {plan.name}</DialogTitle><DialogDescription>售后质保设置对该商品的所有订单立即生效，包含历史订单。</DialogDescription></DialogHeader><form className="admin-edit-form" onSubmit={e => { e.preventDefault(); void save() }}><label htmlFor="admin-plan-price">售价（元）</label><Input id="admin-plan-price" value={price} onChange={e => setPrice(e.target.value)} inputMode="decimal" disabled={busy} /><label className="admin-checkbox"><Checkbox.Root className="admin-check-control" checked={enabled} onCheckedChange={value => setEnabled(Boolean(value))} disabled={busy}><Checkbox.Indicator><Check size={13} /></Checkbox.Indicator></Checkbox.Root>允许创建新订单</label><label className="admin-checkbox"><Checkbox.Root className="admin-check-control" checked={supportsWarranty} onCheckedChange={value => setSupportsWarranty(Boolean(value))} disabled={busy}><Checkbox.Indicator><Check size={13} /></Checkbox.Indicator></Checkbox.Root>支持售后质保</label><p className="admin-subtle">关闭后，购买前会明确提示不支持售后质保，该商品的所有订单均无法提交新的售后申请。重新开启后，所有订单同步恢复售后申请入口。</p>{Boolean(plan.renewal_only) && <p className="admin-subtle">该套餐仅支持已有订阅续费。</p>}{(emailProduct(plan.id) || isXGiftPlan(plan.id)) && <label className="admin-checkbox"><input type="checkbox" checked={partnerEnabled} onChange={e => setPartnerEnabled(e.target.checked)} disabled={busy} />开放代理销售（请先核对代理供货价）</label>}{emailProduct(plan.id) && <><label htmlFor="admin-purchase-note">购买说明（客户下单前可见）</label><textarea id="admin-purchase-note" rows={4} value={purchaseNote} onChange={e => setPurchaseNote(e.target.value)} maxLength={2000} disabled={busy} placeholder="账号要求、适用地区、领取限制及预计人工处理时间" /><label htmlFor="admin-delivery-instructions">默认领取说明（发货时可再修改）</label><textarea id="admin-delivery-instructions" rows={4} value={deliveryInstructions} onChange={e => setDeliveryInstructions(e.target.value)} maxLength={2000} disabled={busy} placeholder="兑换步骤、领取页面与注意事项。不要在此填写客户专属 CDK。" /></>}<label htmlFor="admin-plan-note">修改说明</label><Input id="admin-plan-note" value={note} onChange={e => setNote(e.target.value)} maxLength={500} placeholder="例如：调整售价或暂停销售" disabled={busy} /><Feedback error={error} /><Button type="submit" disabled={busy || !note.trim()}>{busy ? '保存中…' : '保存修改'}</Button></form></DialogContent></Dialog>
-}
-function PlansPage({ revision, onUpdated }: { revision: number; onUpdated: () => void }) {
-  const { data, error, loading } = useResource<{ plans: CatalogPlan[] }>('/api/admin/plans', revision)
-  const [edit, setEdit] = useState<CatalogPlan>()
-  const audit = useResource<{ rows: { id: string; target_id: string; note: string; created_at: number }[] }>('/api/admin/audit', revision)
-  return <><GmailSupplierPanel revision={revision} /><section className="admin-panel"><div className="admin-panel-title"><h2>在售套餐</h2><span>修改后同步至前台</span><ProductArtworkSettingsButton onSaved={onUpdated} /></div><Feedback error={error} loading={loading} data={data} />{data && <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>商品</th><th>套餐</th><th>售价</th><th>销售状态</th><th>适用范围</th><th /></tr></thead><tbody>{data.plans.map(p => <tr key={p.id}><td>{productNameForId(p.product_id)}</td><td>{p.name}</td><td className="admin-numeric">{money(p.price_cents)}<small>/ {emailProduct(p.id)?.duration ?? (p.product_id === 'chatgpt' ? '月' : '次')}</small></td><td><span className={`admin-pill ${p.enabled ? 'available' : ''}`}>{p.enabled ? '可购买' : '已暂停'}</span></td><td>{p.renewal_only ? '仅续费' : '常规服务'}</td><td><Button variant="outline" onClick={() => setEdit(p)}>编辑</Button></td></tr>)}</tbody></table></div>}<p className="admin-panel-footnote">Claude / Grok 仍为待上架商品，尚未设置可购买套餐。</p></section><section className="admin-panel"><div className="admin-panel-title"><h2>套餐修改记录</h2></div><Feedback error={audit.error} loading={audit.loading} data={audit.data} shape="compact" /><div className="admin-audit-list">{audit.data?.rows.length ? audit.data.rows.map(row => <div key={row.id}><strong>{row.target_id}</strong><span>{row.note}</span><time>{time(row.created_at)}</time></div>) : audit.data ? <p>暂无修改记录。</p> : null}</div></section>{edit && <PlanEditor plan={edit} onClose={() => setEdit(undefined)} onUpdated={onUpdated} />}</>
-}
 function InterestPage({ revision }: { revision: number }) {
   const [page, setPage] = useState(1)
   const { data, error, loading } = useResource<{ rows: { id: string; product: string; email: string; consent_version: string; created_at: string }[]; total: number }>(`/api/admin/interest?page=${page}`, revision)
@@ -164,27 +139,11 @@ function IntegrationsPage({ revision }: { revision: number }) {
   return <div className="integration-workspace"><PaymentChannelsPanel revision={revision} /><div className="integration-services"><RechargeIntegrationsPage revision={revision} /><XGiftPanel revision={revision} /></div></div>
 }
 function RechargeIntegrationsPage({ revision }: { revision: number }) {
-  const { data, error, loading } = useResource<{ integrations: { resend: boolean; alipay: boolean; supplier: boolean; supplierCheckout: boolean } }>('/api/admin/overview', revision)
-  const [reconciling, setReconciling] = useState(false); const [result, setResult] = useState(''); const [syncError, setSyncError] = useState('')
-  const running = useRef(false)
-  const reconcile = async () => {
-    if (running.current) return
-    running.current = true; setReconciling(true); setResult(''); setSyncError('')
-    try { const response = await api<{ checked: number; failed: number }>('/api/admin/recharge/reconcile', {}); setResult(`已核对 ${response.checked} 笔订单，${response.failed} 笔等待重试。`) }
-    catch (e) { setSyncError(errorMessage(e)) }
-    finally { running.current = false; setReconciling(false) }
-  }
-  const status = (ready: boolean | undefined) => !data ? error ? '暂不可用' : '读取中' : ready ? '已配置' : '待配置'
-  const services = [
-    { name: 'Recharge 平台代收 / 充值', detail: 'ChatGPT 收款与自动充值', state: data?.integrations.supplierCheckout ? '已开放' : status(data?.integrations.supplier), icon: Package },
-    { name: 'Resend 邮件', detail: '登录验证码与订单邮件', state: status(data?.integrations.resend), icon: Mail },
-    { name: 'Codex 接码', detail: '接码供应商尚未接入', state: '待接入', icon: MessageCircle },
-  ]
+  const { data, error, loading } = useResource<{ integrations: { resend: boolean } }>('/api/admin/overview', revision)
   return <section className="integration-service-section">
-    <div className="integration-section-title"><div><h2>业务服务</h2><p>充值、交付与通知服务的接入状态。</p></div><Button variant="outline" disabled={reconciling || !data?.integrations.supplier} onClick={() => void reconcile()}><RefreshCw size={14} className={reconciling ? 'integration-spinning' : undefined} />{reconciling ? '核对中…' : '核对充值订单'}</Button></div>
-    <Feedback error={error || syncError} loading={loading} data={data} shape="compact" />
-    {result && <p className="admin-success" role="status">{result}</p>}
-    <div className="integration-service-rows">{services.map(({name, detail, state, icon: Icon}) => <div key={name}><div className="integration-service-icon"><Icon size={19} /></div><div><h3>{name}</h3><p>{detail}</p></div><span className={`connection-state ${['已配置', '已开放'].includes(state) ? 'is-ready' : ''}`}>{state}</span></div>)}</div>
+    <div className="integration-section-title"><div><h2>邮件通知服务</h2><p>登录验证码与订单邮件。供货 API 已移至「商品管理」对应服务商。</p></div></div>
+    <Feedback error={error} loading={loading} data={data} shape="compact" />
+    <div className="integration-service-rows"><div><div className="integration-service-icon"><Mail size={19} /></div><div><h3>Resend 邮件</h3><p>登录验证码与订单邮件</p></div><span className={'connection-state ' + (data?.integrations.resend ? 'is-ready' : '')}>{data ? data.integrations.resend ? '已配置' : '待配置' : '读取中'}</span></div></div>
   </section>
 }
 export default function Admin() {
@@ -213,13 +172,47 @@ export default function Admin() {
   const { session, error: sessionError, setError: setSessionError, check: checkSession, clear: clearSession } = useSession<Session>('/api/admin/session', 'admin', !accessRequired)
   const [username, setUsername] = useState(''); const [code, setCode] = useState(''); const [busy, setBusy] = useState(false)
   const [emailCode, setEmailCode] = useState(''); const [challenge, setChallenge] = useState<{ id: string; username: string }>(); const [sending, setSending] = useState(false); const [cooldown, setCooldown] = useState(0); const [mailNotice, setMailNotice] = useState('')
-  const [view, setView] = useState(() => views.find(v => v.id === new URLSearchParams(location.search).get('view'))?.id ?? 'overview'); const [revision, setRevision] = useState(0); const [detail, setDetail] = useState<string>()
+  const [route, setRoute] = useState(() => {
+    const initial = adminProductRoute(location.search)
+    return views.some(v => v.id === initial.view) ? initial : { view: 'overview', supplier: 'all' as ProductSection }
+  })
+  const view = route.view, supplier = route.supplier
+  const [productsOpen, setProductsOpen] = useState(true)
+  const [revision, setRevision] = useState(0)
+  const [detail, setDetail] = useState<string>()
+  function navigate(nextView: string, nextSupplier: ProductSection = 'all') {
+    const next = { view: nextView, supplier: nextView === 'products' ? nextSupplier : 'all' as ProductSection }
+    const url = new URL(location.href)
+    url.searchParams.set('view', next.view)
+    if (next.view === 'products' && next.supplier !== 'all') url.searchParams.set('supplier', next.supplier)
+    else url.searchParams.delete('supplier')
+    if (url.href !== location.href) history.pushState(null, '', url)
+    setRoute(next)
+    if (nextView === 'products') setProductsOpen(true)
+  }
+  const setView = (nextView: string) => navigate(nextView)
+  useEffect(() => {
+    const restore = () => {
+      const next = adminProductRoute(location.search)
+      setRoute(views.some(v => v.id === next.view) ? next : { view: 'overview', supplier: 'all' })
+      if (next.view === 'products') setProductsOpen(true)
+    }
+    window.addEventListener('popstate', restore)
+    return () => window.removeEventListener('popstate', restore)
+  }, [])
+  useEffect(() => {
+    const url = new URL(location.href)
+    url.searchParams.set('view', view)
+    if (view === 'products' && supplier !== 'all') url.searchParams.set('supplier', supplier)
+    else url.searchParams.delete('supplier')
+    history.replaceState(null, '', url)
+  }, [view, supplier])
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   const {data: shopIdentity} = useResource<{shop:{brandName:string;logo:string}}>('/api/catalog?identity=1',revision)
   const shopName = shopIdentity?.shop.brandName || 'GPTibo'
   useEffect(() => { document.title=shopName+' · 管理后台'; const icon=document.querySelector<HTMLLinkElement>('link[rel=icon]'); if(icon)icon.href=shopIdentity?.shop.logo||'/favicon.svg' }, [shopName,shopIdentity?.shop.logo])
   const heading = useRef<HTMLHeadingElement>(null)
-  useEffect(() => { heading.current?.focus() }, [view])
+  useEffect(() => { heading.current?.focus() }, [view, supplier])
   useEffect(() => applyAppearance(dark), [dark])
   useEffect(() => { if (cooldown <= 0) return; const timer = setTimeout(() => setCooldown(v => v - 1), 1000); return () => clearTimeout(timer) }, [cooldown])
   async function sendCode() {
@@ -255,5 +248,41 @@ export default function Admin() {
       <Button type="submit" disabled={!loginHuman.ready || busy || sending || !session.mailReady || !username.trim() || !challenge || challenge.username !== username.trim() || emailCode.length !== 6 || code.length !== 6}>{busy ? '正在登录…' : '登录后台'}</Button>
     </form>}<small>仅授权管理员可访问</small></div></main>
   const current = views.find(v => v.id === view)!
-  return <div className="admin-shell"><aside className="admin-sidebar"><a className="admin-brand" href="/admin"><ShopBrand platform name={shopName} logo={shopIdentity?.shop.logo} /></a><span className="admin-workspace-label">管理工作台</span><nav aria-label="后台导航">{views.map(item => <Button variant="ghost" key={item.id} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><item.icon size={17} />{item.label}</Button>)}</nav><div className="admin-sidebar-bottom"><span><ShieldCheck size={15} />{session.username}</span><Button variant="ghost" onClick={() => void logout()} disabled={busy}><LogOut size={15} />退出登录</Button></div></aside><div className="admin-workspace"><header className="admin-topbar"><span>{shopName} / {current.label}</span><div><a href="/" target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header><main className="admin-main"><div className="admin-page-heading"><div><span>WORKSPACE</span><h1 ref={heading} tabIndex={-1}>{current.label}</h1><p>{view === 'hanfolk' ? '只读同步商品与规格，整理详情并逐项确认零售价。' : view === 'sms' ? '集中管理接码项目、号码池与订单，核对两笔独立资金。' : view === 'orders' ? '从创建到完成，查看订单与处理记录。' : view === 'plans' ? '管理售价与销售状态，变更保留记录。' : view === 'accounting' ? '筛选订单查看净利润，按清账周期保存统计。' : view === 'invoices' ? '管理代理开票申请与手续费收款，登记平台提交进度。' : view === 'customers' ? '查看全部客户的会员账号、到期时间与续费记录。' : view === 'contacts' ? '设置平台商店向客户展示的联系方式。' : view === 'integrations' ? '管理收款方式、平台手续费与业务服务。' : '基于服务器记录，了解服务与订单进展。'}</p></div><Button variant="outline" onClick={() => { setRevision(v => v + 1); void checkSession() }}><RefreshCw size={15} />刷新</Button></div><TicketAlerts onOpen={() => setView('tickets')} onRefunds={() => { setView('refunds'); setRevision(v => v + 1) }} /><Feedback error={sessionError} />{view === 'tickets' && <TicketWorkspace admin revision={revision} onOrder={setDetail} />}{view === 'sms' && <SmsManagement revision={revision} onOrder={setDetail} />}{view === 'hanfolk' && <HanfolkCatalog revision={revision} />}{view === 'security' && <SecurityPage revision={revision} />}{view === 'overview' && <OverviewPage revision={revision} onSelect={setDetail} onOrders={() => setView('orders')} onVisitors={() => setView('visitors')} />}{view === 'my-shop' && <MyShop revision={revision} onSaved={() => setRevision(v => v + 1)} orders={<OrdersPage revision={revision} onSelect={setDetail} />} customers={<CustomerManagement admin revision={revision} />} accounting={<AccountingPage revision={revision} />} refunds={<RefundsPage revision={revision} />} />}{view === 'orders' && <OrdersPage revision={revision} onSelect={setDetail} />}{view === 'refunds' && <RefundsPage revision={revision} />}{view === 'plans' && <PlansPage revision={revision} onUpdated={() => setRevision(v => v + 1)} />}{view === 'interest' && <InterestPage revision={revision} />}{view === 'contacts' && <SupportContactsPanel endpoint="/api/admin/support-contacts" revision={revision} />}{view === 'integrations' && <IntegrationsPage revision={revision} />}{view === 'partners' && <PartnersPage revision={revision} />}{view === 'visitors' && <AdminVisitorsPage revision={revision} />}{view === 'accounting' && <AccountingPage revision={revision} />}{view === 'invoices' && <InvoiceWorkspace admin revision={revision} />}{view === 'customers' && <CustomerManagement admin revision={revision} />}<footer className="admin-footer"><Check size={13} />订单与操作记录可追溯</footer></main></div>{detail && <OrderDetail key={detail} id={detail} onClose={() => setDetail(undefined)} onUpdated={() => setRevision(v => v + 1)} />}</div>
+  const productLabel = ADMIN_SUPPLIERS.find(s => s.id === supplier)?.name ?? (supplier === 'other' ? '自营及其他' : '商品总览')
+  return <div className="admin-shell">
+    <aside className="admin-sidebar">
+      <a className="admin-brand" href="/admin"><ShopBrand platform name={shopName} logo={shopIdentity?.shop.logo} /></a>
+      <span className="admin-workspace-label">管理工作台</span>
+      <nav aria-label="后台导航">{views.map(item => item.id === 'products' ? <div className="admin-product-nav" key={item.id}>
+        <Button variant="ghost" className="admin-product-toggle" data-active={view === 'products'} aria-expanded={productsOpen} aria-controls="admin-product-children" onClick={() => view === 'products' ? setProductsOpen(v => !v) : navigate('products')}><Package size={17} />商品管理<ChevronDown size={14} /></Button>
+        {productsOpen && <div id="admin-product-children" className="admin-product-children">{[{ id: 'all', name: '商品总览' }, ...ADMIN_SUPPLIERS, { id: 'other', name: '自营及其他' }].map(s => <Button variant="ghost" key={s.id} aria-current={view === 'products' && supplier === s.id ? 'page' : undefined} onClick={() => navigate('products', s.id as ProductSection)}><span className="admin-product-dot" />{s.name}</Button>)}</div>}
+      </div> : <Button variant="ghost" key={item.id} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><item.icon size={17} />{item.label}</Button>)}</nav>
+      <div className="admin-sidebar-bottom"><span><ShieldCheck size={15} />{session.username}</span><Button variant="ghost" onClick={() => void logout()} disabled={busy}><LogOut size={15} />退出登录</Button></div>
+    </aside>
+    <div className="admin-workspace">
+      <header className="admin-topbar"><span>{shopName} / {current.label}{view === 'products' ? ' / ' + productLabel : ''}</span><div><a href="/" target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
+      <main className="admin-main">
+        <div className="admin-page-heading"><div><span>WORKSPACE</span><h1 ref={heading} tabIndex={-1}>{current.label}</h1><p>{view === 'products' ? '按上游服务商统一管理商品、规格、定价与 API 配置。' : view === 'orders' ? '从创建到完成，查看订单与处理记录。' : view === 'accounting' ? '筛选订单查看净利润，按清账周期保存统计。' : view === 'invoices' ? '管理代理开票申请与手续费收款，登记平台提交进度。' : view === 'customers' ? '查看全部客户的会员账号、到期时间与续费记录。' : view === 'contacts' ? '设置平台商店向客户展示的联系方式。' : view === 'integrations' ? '管理收款方式、平台手续费与通知服务。' : '基于服务器记录，了解服务与订单进展。'}</p></div><Button variant="outline" onClick={() => { setRevision(v => v + 1); void checkSession() }}><RefreshCw size={15} />刷新</Button></div>
+        <TicketAlerts onOpen={() => setView('tickets')} onRefunds={() => { setView('refunds'); setRevision(v => v + 1) }} />
+        <Feedback error={sessionError} />
+        {view === 'products' && <ProductCatalog key={supplier} revision={revision} supplier={supplier} onSupplier={next => navigate('products', next)} onSaved={() => setRevision(v => v + 1)} onOrder={setDetail} />}
+        {view === 'tickets' && <TicketWorkspace admin revision={revision} onOrder={setDetail} />}
+        {view === 'security' && <SecurityPage revision={revision} />}
+        {view === 'overview' && <OverviewPage revision={revision} onSelect={setDetail} onOrders={() => setView('orders')} onVisitors={() => setView('visitors')} />}
+        {view === 'my-shop' && <MyShop revision={revision} onManageProducts={() => navigate('products')} onSaved={() => setRevision(v => v + 1)} orders={<OrdersPage revision={revision} onSelect={setDetail} />} customers={<CustomerManagement admin revision={revision} />} accounting={<AccountingPage revision={revision} />} refunds={<RefundsPage revision={revision} />} />}
+        {view === 'orders' && <OrdersPage revision={revision} onSelect={setDetail} />}
+        {view === 'refunds' && <RefundsPage revision={revision} />}
+        {view === 'interest' && <InterestPage revision={revision} />}
+        {view === 'contacts' && <SupportContactsPanel endpoint="/api/admin/support-contacts" revision={revision} />}
+        {view === 'integrations' && <IntegrationsPage revision={revision} />}
+        {view === 'partners' && <PartnersPage revision={revision} />}
+        {view === 'visitors' && <AdminVisitorsPage revision={revision} />}
+        {view === 'accounting' && <AccountingPage revision={revision} />}
+        {view === 'invoices' && <InvoiceWorkspace admin revision={revision} />}
+        {view === 'customers' && <CustomerManagement admin revision={revision} />}
+        <footer className="admin-footer"><Check size={13} />订单与操作记录可追溯</footer>
+      </main>
+    </div>
+    {detail && <OrderDetail key={detail} id={detail} onClose={() => setDetail(undefined)} onUpdated={() => setRevision(v => v + 1)} />}
+  </div>
 }
