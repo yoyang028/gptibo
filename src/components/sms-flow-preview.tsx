@@ -1,10 +1,11 @@
 import '@/styles/sms.css'
+import { ProductLogo } from './brand'
 import {
   ArrowRight,
   Check,
-  KeyRound,
+  Copy,
   MessageSquareText,
-  Phone,
+  Smartphone,
 } from 'lucide-react'
 
 // A labelled process illustration, with no simulated orders, numbers or stock.
@@ -18,10 +19,15 @@ export function SmsFlowPreview({ compact = false }: { compact?: boolean }) {
         <span>SMS / UNITED STATES</span>
         <span>流程示意</span>
       </div>
+      <div className="sms-flow-platforms" aria-label="支持的验证平台">
+        <span><ProductLogo productId="codex" />Codex</span>
+        <span><ProductLogo productId="claude" />Claude</span>
+        <span><ProductLogo productId="gmail" />Google / Gmail</span>
+      </div>
       <div className="sms-flow-track" aria-hidden="true">
         <div className="sms-flow-step sms-flow-phone">
           <span className="sms-flow-icon">
-            <Phone size={22} />
+            <Smartphone size={22} />
           </span>
           <strong>获取手机号</strong>
           <span>美国号码 · 单次使用</span>
@@ -41,7 +47,7 @@ export function SmsFlowPreview({ compact = false }: { compact?: boolean }) {
         <ArrowRight className="sms-flow-arrow" size={16} />
         <div className="sms-flow-step sms-flow-code">
           <span className="sms-flow-icon">
-            <KeyRound size={22} />
+            <Copy size={22} />
           </span>
           <strong>复制验证码</strong>
           <span>完成本次验证</span>

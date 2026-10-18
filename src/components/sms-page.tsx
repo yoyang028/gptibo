@@ -5,7 +5,6 @@ import {
   Check,
   ChevronRight,
   Clock3,
-  Mail,
   ShieldCheck,
 } from 'lucide-react'
 import { Button } from './ui/button'
@@ -45,6 +44,11 @@ const scope = {
   dr: 'codex 对应的 AI 聊天短信验证',
   acz: 'Claude 短信验证',
   go: 'Google / Gmail 短信验证',
+}
+const projectBrands: Record<GrizzlyService, string> = {
+  dr: 'codex',
+  acz: 'claude',
+  go: 'gmail',
 }
 export function SmsPage({
   catalog,
@@ -204,15 +208,7 @@ export function SmsPage({
                 }}
               >
                 <div className="sms-project-top">
-                  {p.service === 'go' ? (
-                    <span className="sms-google-mark">
-                      <Mail size={24} />
-                    </span>
-                  ) : (
-                    <ProductMark
-                      productId={p.service === 'dr' ? 'codex-sms' : 'claude'}
-                    />
-                  )}
+                  <ProductMark productId={projectBrands[p.service]} />
                   <span className="sms-radio-indicator">
                     {p.service === service && <Check size={12} />}
                   </span>
@@ -250,7 +246,10 @@ export function SmsPage({
           </div>
           <div className="sms-summary-project">
             <span>当前项目</span>
-            <strong>{project.name}</strong>
+            <div className="sms-summary-brand">
+              <ProductMark small productId={projectBrands[service]} />
+              <strong>{project.name}</strong>
+            </div>
           </div>
           <dl className="summary-details">
             <div>

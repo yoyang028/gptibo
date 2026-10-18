@@ -2,6 +2,7 @@ import { useStorefrontI18n } from '@/lib/storefront-i18n'
 import { useEffect, useRef } from 'react'
 import { formatCatalogPrice } from '@/lib/catalog-display'
 import { DECK_CYCLE_MS, deckFrame, deckTimeline, fanFrame, mixPose } from '@/lib/subscription-motion'
+import { ProductLogo } from './brand'
 
 export type DeckPlan = { id: string; name: string; price: number | null; unit?: string }
 
@@ -63,7 +64,7 @@ export function SubscriptionDeck({ plans, brand = 'ChatGPT', productId = 'chatgp
     onBlur={() => { focused.current = false }}>
     {plans.map((plan, i) => <div className="store-tier" data-tier={i} key={plan.id}>
       <div className="store-tier-face">
-      <span className="store-tier-copy"><span className="store-tier-brand">{brand}</span><strong className={'store-tier-name' + (plan.name.length > 12 ? ' store-tier-name-long' : '')}>{plan.name}</strong></span>
+      <span className="store-tier-copy"><span className="store-tier-brand">{productId === 'codex-credits' && <ProductLogo productId="codex" />}{brand}</span><strong className={'store-tier-name' + (plan.name.length > 12 ? ' store-tier-name-long' : '')}>{plan.name}</strong></span>
       <span className="store-tier-price">{plan.price === null ? <small>{t('待定价')}</small> : <>¥{formatCatalogPrice(plan.price)}<small>{t('/ ' + (plan.unit || '月'))}</small></>}</span>
       </div>
     </div>)}

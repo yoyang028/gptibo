@@ -77,13 +77,13 @@ export function ProductLogo({ productId }: { productId: string }) {
         aria-hidden="true"
       />
     )
-  if (brand === 'muse')
+  if (brand === 'muse' || brand === 'codex')
     return (
       <img
         className="product-logo"
         data-brand={brand}
         style={{ background: 'none' }}
-        src="/brands/muse.svg"
+        src={brand === 'codex' ? '/brands/codex-blue.svg' : '/brands/muse.svg'}
         alt=""
         aria-hidden="true"
       />
@@ -94,7 +94,7 @@ export function ProductLogo({ productId }: { productId: string }) {
         className="product-logo"
         data-brand={brand}
         style={{
-          maskImage: `url(/brands/${brand === 'chatgpt' ? 'openai' : 'codex'}.svg)`,
+          maskImage: `url(/brands/${brand === 'chatgpt' ? 'openai' : brand}.svg)`,
         }}
         aria-hidden="true"
       />

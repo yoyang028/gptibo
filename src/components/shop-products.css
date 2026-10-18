@@ -39,7 +39,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--family-border, var(--border));
   border-radius: 14px;
   padding: 17px 18px;
   cursor: pointer;
@@ -100,9 +100,12 @@
 }
 .shop-product-workspace { --family-accent: var(--primary); }
 .shop-product-workspace.family-claude { --family-accent: #b76c47; }
-.shop-product-workspace.family-codex-credits, .shop-product-workspace.family-muse { --family-accent: #7c6aba; }
+.shop-product-workspace.family-codex-credits { --family-accent: var(--codex-blue); --family-border: color-mix(in srgb, var(--family-accent) 24%, var(--border)); }
+.shop-product-workspace.family-muse { --family-accent: #7c6aba; }
 .dark .shop-product-workspace.family-claude { --family-accent: #d79b77; }
-.dark .shop-product-workspace.family-codex-credits, .dark .shop-product-workspace.family-muse { --family-accent: #b7a4ef; }
+.dark .shop-product-workspace.family-codex-credits { --family-accent: var(--codex-blue-bright); }
+.dark .shop-product-workspace.family-muse { --family-accent: #b7a4ef; }
+.family-codex-credits .shop-variant:focus-within { outline-color: var(--family-accent); }
 .shop-product-workspace .product-heading { margin-bottom: 24px; }
 .shop-product-workspace .product-heading .personal-badge { display: inline-block; margin: 6px 0 0; font-size: 10px; }
 .shop-product-workspace .product-area { padding-bottom: 28px; }

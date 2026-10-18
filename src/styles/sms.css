@@ -1,3 +1,13 @@
+.sms-workspace,
+.sms-flow-preview {
+  --sms-accent: var(--codex-blue);
+  --sms-accent-foreground: #fff;
+}
+.dark .sms-workspace,
+.dark .sms-flow-preview {
+  --sms-accent: var(--codex-blue-bright);
+  --sms-accent-foreground: #10224f;
+}
 .sms-intro {
   padding-top: 52px;
   padding-bottom: 30px;
@@ -81,15 +91,15 @@
   transform: translateY(-3px);
 }
 .sms-project-card:focus-visible {
-  outline: 3px solid color-mix(in srgb, #007aff 35%, transparent);
+  outline: 3px solid color-mix(in srgb, var(--sms-accent) 35%, transparent);
   outline-offset: 3px;
 }
 .sms-project-card[aria-checked='true'] {
-  border-color: #3185e8;
+  border-color: var(--sms-accent);
   box-shadow:
-    0 0 0 1px #3185e8,
-    0 9px 30px #007aff0a;
-  background: color-mix(in srgb, #007aff 4%, var(--background));
+    0 0 0 1px var(--sms-accent),
+    0 9px 30px color-mix(in srgb, var(--sms-accent) 4%, transparent);
+  background: color-mix(in srgb, var(--sms-accent) 4%, var(--background));
 }
 .sms-project-top {
   display: flex;
@@ -101,15 +111,6 @@
   width: 30px;
   height: 30px;
 }
-.sms-google-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: color-mix(in srgb, #4285f4 8%, var(--background));
-  color: #4285f4;
-  display: grid;
-  place-items: center;
-}
 .sms-radio-indicator {
   width: 18px;
   height: 18px;
@@ -117,11 +118,11 @@
   place-items: center;
   border-radius: 50%;
   border: 1px solid var(--border);
-  color: white;
+  color: var(--sms-accent-foreground);
 }
 [aria-checked='true'] .sms-radio-indicator {
-  border-color: #007aff;
-  background: #007aff;
+  border-color: var(--sms-accent);
+  background: var(--sms-accent);
 }
 .sms-project-card > strong {
   font-size: 19px;
@@ -155,7 +156,7 @@
   border: 1px solid var(--border);
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, #007aff 4%, var(--background)),
+    color-mix(in srgb, var(--sms-accent) 4%, var(--background)),
     var(--background)
   );
 }
@@ -176,6 +177,26 @@
   border: 1px solid var(--border);
   border-radius: 20px;
   padding: 3px 7px;
+}
+.sms-flow-platforms {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px 18px;
+  margin-top: 18px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.sms-flow-platforms > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.sms-flow-platforms .product-logo {
+  width: 17px;
+  height: 17px;
 }
 .sms-flow-track {
   display: grid;
@@ -207,9 +228,7 @@
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
-  color: #3185e8;
-  background: color-mix(in srgb, #007aff 8%, var(--background));
+  color: var(--sms-accent);
 }
 .sms-flow-step strong {
   font-size: 13px;
@@ -225,7 +244,7 @@
   gap: 4px;
   font-size: 10px;
   margin-top: 3px;
-  color: #3185e8;
+  color: var(--sms-accent);
   white-space: nowrap;
 }
 .sms-flow-arrow {
@@ -282,6 +301,11 @@
 .sms-summary-project strong {
   font-size: 25px;
   letter-spacing: -0.05em;
+}
+.sms-summary-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .sms-summary .summary-details div {
   align-items: start;
@@ -341,7 +365,7 @@
   margin: 32px 0;
 }
 .sms-guide-grid article svg {
-  color: #3185e8;
+  color: var(--codex-blue);
 }
 .sms-guide-grid h3 {
   font-size: 14px;
@@ -377,8 +401,8 @@
   30%,
   55% {
     transform: translateY(-5px);
-    border-color: color-mix(in srgb, #007aff 50%, var(--border));
-    box-shadow: 0 10px 24px #007aff10;
+    border-color: color-mix(in srgb, var(--sms-accent) 50%, var(--border));
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--sms-accent) 6%, transparent);
   }
 }
 @media (max-width: 1000px) {
@@ -461,8 +485,7 @@
     grid-row: 1/4;
     margin: 0;
   }
-  .sms-project-top .product-mark,
-  .sms-google-mark {
+  .sms-project-top .product-mark {
     width: 40px;
     height: 40px;
     border-radius: 12px;
