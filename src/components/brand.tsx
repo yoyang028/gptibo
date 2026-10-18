@@ -59,7 +59,24 @@ export function XLogoPath() {
 export function ProductLogo({ productId }: { productId: string }) {
   const brand = clearProductBrand(productId)
   const official = officialBrand(productId)
-  if (official) return official.mono ? <span className="product-logo" style={{maskImage:`url(/brands/${official.file})`}} aria-hidden="true"/> : <img className="product-logo" style={{background:'none'}} src={'/brands/'+official.file} alt="" aria-hidden="true"/>
+  if (official)
+    return official.mono ? (
+      <span
+        className="product-logo"
+        data-brand={productId}
+        style={{ maskImage: `url(/brands/${official.file})` }}
+        aria-hidden="true"
+      />
+    ) : (
+      <img
+        className="product-logo"
+        data-brand={productId}
+        style={{ background: 'none' }}
+        src={'/brands/' + official.file}
+        alt=""
+        aria-hidden="true"
+      />
+    )
   if (brand === 'muse')
     return (
       <img
@@ -118,14 +135,6 @@ export function ProductLogo({ productId }: { productId: string }) {
     )
   if (productId === 'duolingo') return <DuoMark />
   if (productId === 'gemini') return <GeminiMark />
-  if (productId === 'gmail')
-    return (
-      <Mail
-        className="product-logo"
-        style={{ background: 'none' }}
-        aria-hidden="true"
-      />
-    )
   if (productId === 'student-verification')
     return (
       <GraduationCap

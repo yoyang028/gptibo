@@ -6,11 +6,12 @@ OpenAI, Codex, Claude and Grok SVG marks are sourced from [Lobe Icons](https://g
 
 ## Single official marks (2026-10-17)
 
-Six catalog families use one first-party SVG each, with distinct slow transform loops, no surrounding deck or decorative frame. Motion pauses offscreen and when the document is hidden; reduced-motion disables it. The previously established ChatGPT, Claude, SMS, Codex credits, Plus student, Muse and remote-deployment card compositions are retained. Gmail reuses its original envelope scene; Duolingo uses the original official Duo animation below.
+Six catalog families use one first-party SVG each, with distinct slow transform loops and small independent scene accents: Grok stars, Gemini sparkles, Express creative marks, Music notes and rhythm, Apple Account colored dots, and CapCut editing guides. Logo geometry and colors stay intact, without a surrounding deck or tile. All motion pauses offscreen and when the document is hidden; reduced-motion disables both the logo and accent animations. The previously established ChatGPT, Claude, SMS, Codex credits, Plus student, Muse and remote-deployment card compositions are retained. Gmail reuses its original envelope scene; Duolingo uses the original official Duo animation below.
 
 | Local asset | Verified first-party source | Preparation |
 | --- | --- | --- |
-| grok-official.svg | https://grok.com/images/favicon.svg | Original three light symbol paths; crop to the symbol and remove the favicon backdrop/foreignObject. Render as a theme-aware mask. |
+| grok-official.svg | https://grok.com/images/favicon.svg | Original two filled symbol paths, with the complete bounds (48 48 416 416), including both diagonal tips. Remove the favicon backdrop/foreignObject and its redundant contour; render as a theme-aware mask. Corrected 2026-10-18. |
+| gmail-official.svg | https://www.gstatic.com/images/branding/productlogos/gmail_2026/v2/web/192px.svg | Unchanged current official Gmail SVG, verified on https://workspace.google.com/products/gmail/ on 2026-10-18. Heading/summary marks retain the full-color original in light mode and use the same transparent silhouette in pure white in dark mode. |
 | gemini-official.svg | https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg | Official Gemini page asset; retain original geometry and self-contained gradient image. |
 | adobe-express-official.svg | https://www.adobe.com/express/code/icons/adobe-express-logo.svg | Asset selected by the official Express homepage icon utility. Keep the original colored A symbol, remove the app-tile backdrop and crop to the symbol; retain its original color image and vectors. |
 | apple-account-official.svg | https://appleid.cdn-apple.com/static/bin/cb2291598332/images/accountIcons/icon.svg | Apple Account page's official multicolor account icon, unchanged. |
