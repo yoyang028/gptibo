@@ -40,9 +40,17 @@ async function waitFor(read, predicate, description, timeout = 30000) {
   throw new Error('Timed out: ' + description)
 }
 async function api(context, route, data, expected = 200, retries = 0) {
-  const response = await context.request.fetch(route, {method: data === undefined ? 'GET' : 'POST', ...(data === undefined ? {} : {data}), headers: {Origin: origin, ...(cloudflare ? {Connection: 'close'} : {})}}).catch(error => {
+  const response = await context.request.fetch(route, {method: data === undefined ? 'GET' : 'POST', ...(data === undefined ? {} : {data}), headers: {Origin: origin, ...(cloudflare ? {Connection: 'close'} : {})}}).catch(async error => {
+    // workerd may close a reused loopback test connection. Retry one safe read;
+    // never replay order creation, credential submission or refund writes.
+    const safeRead = data === undefined || (route.endsWith('/fulfillment') && ['poll', 'query'].includes(data?.action))
+    if (cloudflare && safeRead && retries === 0 && /socket hang up|ECONNRESET/.test(String(error))) {
+      await pause(300)
+      return null
+    }
     throw new Error(`${data === undefined ? 'GET' : 'POST'} ${route}: ${String(error).split('\nCall log:')[0]}`)
   })
+  if (!response) return api(context, route, data, expected, retries + 1)
   const body = await response.json()
   // Duplicate-key recovery may meet the page's automatic reconciliation lease.
   // Retry only that explicit busy response, with the identical authorized body.

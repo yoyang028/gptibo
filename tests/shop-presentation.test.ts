@@ -35,7 +35,7 @@ test('Customer-facing names remove the requested Google prefixes without rewriti
   assert.equal(customerProductName('Google Gemini'), 'Gemini')
   assert.equal(customerProductName('Google Gmail · 2020-2024 · 随机'), 'Gmail · 2020-2024 · 随机')
   assert.equal(customerProductCopy('Google Gmail 账号，不含 Google AI Pro。'), 'Gmail 账号，不含 Google AI Pro。')
-  assert.equal(customerProductName('Google AI Pro · https://accounts.google.com/'), 'Google AI Pro · https://accounts.google.com/')
+  assert.equal(customerProductName('Google AI Pro · https://accounts.example.com/'), 'Google AI Pro · https://accounts.example.com/')
 })
 
 test('Shortened choices keep the existing Claude and Codex tier labels', () => {
