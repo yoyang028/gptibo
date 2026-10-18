@@ -53,6 +53,7 @@ export function ShopProductGroupPage({
   initialProductId,
   onHome,
   onCreated,
+  onSupport,
 }: {
   group: ReturnType<typeof groupShopProducts>[number]
   offers: { id: string; enabled: number }[]
@@ -61,6 +62,7 @@ export function ShopProductGroupPage({
   initialProductId?: string
   onHome: () => void
   onCreated: (order: ServerOrder) => void
+  onSupport: () => void
 }) {
   const [selected, setSelected] = useState(
     initialProductId ?? group.products[0].id,
@@ -81,6 +83,7 @@ export function ShopProductGroupPage({
       }
       onHome={onHome}
       onCreated={onCreated}
+      onSupport={onSupport}
     />
   )
 }
@@ -95,6 +98,7 @@ export function ShopProductPage({
   variants,
   onVariantChange,
   onHome,
+  onSupport,
 }: {
   product: ShopProduct
   artwork?: ProductArtworkConfig
@@ -105,6 +109,7 @@ export function ShopProductPage({
   variants?: ShopProduct[]
   onVariantChange?: (id: string) => void
   onHome?: () => void
+  onSupport?: () => void
 }) {
   const [open, setOpen] = useState(false),
     [email, setEmail] = useState(''),
@@ -114,6 +119,7 @@ export function ShopProductPage({
     [error, setError] = useState('')
   const requestKey = useRef<{ identity: string; key: string } | null>(null)
   const displayOnly = product.status === 'listed'
+  const contactPurchase = !available || product.pricePending || product.stock === 0
   const familyId = product.groupId ?? product.id
   const buyerName = customerProductName(product.name)
   const familyName = customerProductName(displayName || product.name || '商品名称')
@@ -216,9 +222,11 @@ export function ShopProductPage({
             <span className="availability">
               {product.stock === 0
                 ? '暂时售罄'
-                : available
-                  ? '可购买'
-                  : '暂停售卖'}
+                : product.pricePending
+                  ? '价格请咨询'
+                  : available
+                    ? '可购买'
+                    : '支持客服下单'}
             </span>
           </div>
           <div className="product-heading">
@@ -326,22 +334,22 @@ export function ShopProductPage({
           </div>
           <Button
             className="primary-action summary-cta"
-            disabled={preview || product.pricePending || !available || product.stock === 0}
-            onClick={() => setOpen(true)}
+            disabled={preview || (contactPurchase && !onSupport)}
+            aria-haspopup="dialog"
+            onClick={() => contactPurchase ? onSupport?.() : setOpen(true)}
           >
             {preview
               ? '商品预览'
-              : product.pricePending ? '待定价，暂不可购买'
+              : product.stock === 0 ? '咨询补货'
+              : product.pricePending ? '咨询价格'
               : !available
-                ? '暂停售卖'
-                : product.stock === 0
-                  ? '暂时售罄'
-                  : '立即购买'}
+                ? '联系客服购买'
+                : '立即购买'}
             <ArrowRight size={16} />
           </Button>
           <p className="summary-note">
-            {product.pricePending ? '资料已公开，售价尚未确认，当前不能下单。' : displayOnly || !available
-              ? '当前可查看商品与规格，恢复售卖后可在此下单。'
+            {product.stock === 0 ? '当前规格暂时售罄，可联系客服咨询补货。' : product.pricePending ? '售价请联系客服确认，目前可通过客服下单。' : !available
+              ? '在线支付开通中，目前可通过客服下单。'
               : '付款确认后，交付内容可在原订单中查看。'}
           </p>
           <p className="summary-footnote shop-product-copy">

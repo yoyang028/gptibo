@@ -57,6 +57,7 @@ export function SmsPage({
   onCreated,
   hidden = false,
   initialService,
+  onSupport,
 }: {
   catalog?: SmsPublicCatalog
   ready: boolean
@@ -64,6 +65,7 @@ export function SmsPage({
   onCreated: (order: ServerOrder) => void
   hidden?: boolean
   initialService?: GrizzlyService
+  onSupport: () => void
 }) {
   const projects = (catalog?.projects ?? defaults).filter((p) => p.visible)
   const [selected, setSelected] = useState(() => {
@@ -278,20 +280,22 @@ export function SmsPage({
           </div>
           <Button
             className="summary-cta"
-            disabled={!enabled}
+            disabled={!ready}
+            aria-haspopup="dialog"
             onClick={() => {
+              if (!enabled) { onSupport(); return }
               setOpen(true)
               setAccepted(false)
               setError('')
             }}
           >
-            {!ready ? '正在读取…' : enabled ? '下单并付款' : '暂未开放购买'}
-            {enabled && <ArrowRight size={16} />}
+            {!ready ? '正在读取…' : enabled ? '下单并付款' : '联系客服购买'}
+            <ArrowRight size={16} />
           </Button>
           <p className="sms-sale-note">
             {enabled
               ? '确认到账后自动发号，请在原订单等待验证码。'
-              : '可先浏览项目和购买说明，服务准备好后开放购买。'}
+              : '在线支付开通中，目前可通过客服下单。'}
           </p>
           <button
             className="text-button"
