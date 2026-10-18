@@ -32,6 +32,7 @@ PUBLIC_DOC_REFERENCES = {
     'public/brands/README.md': {
         'muse.gptibo.com', 'grok.com', 'www.gstatic.com', 'www.adobe.com',
         'account.apple.com', 'appleid.cdn-apple.com', 'music.apple.com', 'www.capcut.com',
+        'workspace.google.com',  # Official Gmail artwork reference in the shared baseline.
     },
     'docs/GRIZZLY_SMS.md': {'shop.scholai.top'},
     'docs/HANFOLK_BUYER_DETAILS.md': {
