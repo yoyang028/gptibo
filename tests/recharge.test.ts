@@ -13,6 +13,7 @@ import { confirmedRefundLabel } from '../shared/platform-order-status.ts'
 import { reconcileRechargeRefunds } from '../worker/refunds.ts'
 import { totpCode } from '../worker/totp.ts'
 import { QUEFA_GPT_PRODUCT_MAP } from '../shared/quefa-gpt-products.ts'
+import { checkoutSession } from '../src/lib/checkout-session.ts'
 import type { Env, Statement, Value } from '../worker/platform.ts'
 
 type Context = Parameters<Parameters<typeof test>[1]>[0]
@@ -104,6 +105,28 @@ function setup(t: Context) {
   }
   return { db, env, call, buyer, create, query, submit, login, partner, notice, calls, products, remoteOrder, redemption, faceToFace: () => { faceToFace = true }, quote: (patch: Record<string, unknown>) => { quotePatch = patch }, setExpiry: (value: number) => { expiry = new Date(value).toISOString() }, setQr: (value: string | null) => { qr = value }, setPayment: (v: string) => { payment = v }, setTask: (v: string, retry = false) => { taskStatus = v; fallback = retry }, setRefund: (v: string) => { refundStatus = v }, override: (v: typeof override) => { override = v } }
 }
+
+test('a large pasted Session reaches the paid original order using the supported token mode and recovers without a duplicate task', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  const raw = JSON.stringify({ ...JSON.parse(session), featureFlags: 'synthetic-extra-session-data'.repeat(12000) }, null, 2)
+  const parsed = checkoutSession(raw)
+  assert.equal(parsed.email, 'target@example.test'); assert.equal(parsed.credential?.mode, 'access_token')
+  const request = { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: parsed.credential }
+  const response = await s.call(`/api/orders/${order.id}/fulfillment`, request, buyer)
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).order.status, 'processing')
+  const forwarded = s.calls.filter(c => c.path === '/v1/redemptions')
+  assert.equal(forwarded.length, 1)
+  assert.deepEqual(JSON.parse(forwarded[0].body).credential, { mode: 'access_token', access_token: JSON.parse(session).accessToken })
+  assert(forwarded[0].body.length < 40000)
+  const recovered = checkoutSession(raw.replace('synthetic-extra-session-data', 'changed-extra-session-data'), 'access_token')
+  assert.equal((await s.call(`/api/orders/${order.id}/fulfillment`, { ...request, credential: recovered.credential }, buyer)).status, 200)
+  assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 1)
+  assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions WHERE order_id=?').get(order.id)!.n, 1)
+  assert.doesNotMatch(JSON.stringify(s.db.prepare('SELECT * FROM recharge_redemptions').all()) + JSON.stringify(s.db.prepare('SELECT * FROM order_events').all()), /PRIVATE-TOKEN|synthetic-extra-session-data/)
+})
 
 test('admin can read and search the stored upstream order without contacting the supplier', async t => {
   const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer); const admin = await s.login()

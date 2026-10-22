@@ -9,6 +9,7 @@ import {latestCode, totp} from './auth.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const cloudflare = process.argv.includes('--cloudflare')
+const longSession = process.argv.includes('--long-session')
 const origin = cloudflare ? 'https://127.0.0.1:8771' : 'http://127.0.0.1:5176'
 const control = cloudflare ? 'http://127.0.0.1:8772' : 'http://127.0.0.1:8765'
 const evidence = path.join(root, 'artifacts/local/evidence', cloudflare ? 'cloudflare-round1' : 'quefa-round1')
@@ -123,18 +124,36 @@ try {
   await act(upstream.order.order_id, 'pay')
   await waitFor(poll, order => order.paymentStatus === 'paid', 'verified mock payment')
   await page.locator('#live-session').waitFor({timeout: 15000})
-  async function submit(label) {
-    await page.locator('#live-session').fill(session())
+  async function submit(label, large = false) {
+    const raw = large ? JSON.stringify({ ...JSON.parse(session()), featureFlags: 'synthetic-extra-session-data'.repeat(12000) }, null, 2) : session()
+    if (large) {
+      const input = page.locator('#live-session')
+      await input.focus()
+      const keyboard = await customer.newCDPSession(page)
+      try { await keyboard.send('Input.insertText', { text: raw }) } finally { await keyboard.detach() }
+      assert.equal(await input.inputValue(), raw, 'native insertion must retain the complete Session, including its tail')
+      assert.equal(await input.getAttribute('maxlength'), null)
+      await page.setViewportSize({width:390,height:844})
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
+      await page.setViewportSize({width:1440,height:1000})
+    } else await page.locator('#live-session').fill(raw)
     await page.getByRole('checkbox', {name: '我已核对账号，并授权本次充值'}).check()
     const submitting = page.waitForResponse(response => new URL(response.url()).pathname === route + '/fulfillment' && response.request().postDataJSON()?.action === 'submit')
     await page.getByRole('button', {name: label, exact: true}).click()
     const response = await submitting
     assert.equal(response.status(), 200, await response.text())
     const body = response.request().postDataJSON()
+    if (large) {
+      assert.equal(body.credential.mode, 'access_token')
+      assert.equal(body.credential.access_token, JSON.parse(raw).accessToken)
+      assert.equal(body.credential.session, undefined)
+      assert(Buffer.byteLength(JSON.stringify(body)) < 40000)
+      record('Native insertion retains a 300 KB Session; the confirmed account submits its exact token within upstream and HTTP limits')
+    }
     await api(customer, route + '/fulfillment', body)
     return body
   }
-  const firstSubmission = await submit('提交并充值')
+  const firstSubmission = await submit('提交并充值', longSession)
   await waitFor(read, order => order.fulfillment?.rechargeStatus === 'queued', 'queued task')
   upstream = (await mockState()).orders.find(item => item.order.merchant_order_no === initial.id)
   assert.equal(upstream.tasks.length, 1)
