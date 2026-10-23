@@ -294,7 +294,7 @@ export function ProductEditor({
                   <option value="invitation">词元服务 · 已有账号邀请助力</option>
                 </select>
                 <small>两类在同一 Muse 入口分开展示，供货规格、售价与交付分别管理。</small>
-                {product.museKind === 'invitation' && <small>词元源商品 #69 未提供邀请码提交字段、实际交付物及专用办理接口。当前仅公开资料；确认交付链路、零售价和售后后再开放销售，不能把收款或采购成功视为邀请完成。</small>}
+                {product.museKind === 'invitation' && <small>1B 对应源商品 #69 / SKU 0；5B、10B、30B 是本地展示规格，尚无供货映射。上游未提供邀请码提交和任务执行接口，当前均仅展示。确认各档货源、交付和收款后再启售，不能按倍数自动采购。</small>}
               </label>}
               <div className="owner-editor-grid">
                 <label>

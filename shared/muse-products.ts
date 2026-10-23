@@ -12,7 +12,10 @@ export function museKind(product: Pick<ShopProduct, 'groupId' | 'museKind' | 'na
 
 export function museVariants(products: readonly ShopProduct[], kind: MuseKind) {
   return products.filter(p => museKind(p) === kind).sort((a, b) => {
-    const amount = (p: ShopProduct) => Number(p.name.match(/(\d+)\s*亿/)?.[1] ?? 0)
+    const amount = (p: ShopProduct) => {
+      const billions = p.name.match(/(\d+)\s*B\b/i)
+      return billions ? Number(billions[1]) * 10 : Number(p.name.match(/(\d+)\s*亿/)?.[1] ?? 0)
+    }
     return amount(a) - amount(b) || a.id.localeCompare(b.id)
   })
 }

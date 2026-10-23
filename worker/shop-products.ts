@@ -30,6 +30,7 @@ import { recordSupplierRefund } from './grizzly/management.ts'
 import { affordablePools, poolQuotes } from './grizzly/pools.ts'
 import { assertHanfolkStock, availableHanfolkProducts } from './hanfolk/availability.ts'
 import { publicBuyerProduct } from '../shared/redemption-copy.ts'
+import { museKind } from '../shared/muse-products.ts'
 import { editableProducts, guideSaveStatement, deliveredRedemptionGuide, privateProductGuide } from './redemption-guides.ts'
 import {
   XiaojiuPurchaseClient,
@@ -445,6 +446,10 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
     api.verified = true
   } else if (suffix) throw new ApiError('未找到商品操作。', 404)
   const finalProblems = productProblems(product)
+  // The invitation catalog has no documented execution/delivery contract yet.
+  // In particular, a priced, unlinked display variant must not become a manual order.
+  if (product.status === 'published' && museKind(product) === 'invitation')
+    throw new ApiError('词元规格仅可展示；请先核实并接通该规格的货源、邀请码提交与交付链路。', 409)
   if (
     product.status === 'published' &&
     (await env.INTEREST_DB.prepare(
@@ -632,6 +637,8 @@ export async function createCustomOrder(
   )
     throw new ApiError('该商品暂未开放购买。', 409)
   const p = rowProduct(row)
+  if (museKind(p) === 'invitation')
+    throw new ApiError('该词元规格暂不可购买。', 409)
   if (p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env))
     throw new ApiError('接码服务暂未开放购买。', 409)
   if (shop.hiddenProductIds.includes(shopProductDisplayId(p)))

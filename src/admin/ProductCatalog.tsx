@@ -25,14 +25,14 @@ type Inventory = {
   bugan: { configured: boolean; salesEnabled: boolean; origin: string; productMap: Record<string, string> }
   xiaojiuEnabled: boolean
 }
-type InventoryRow = { id: string; name: string; detail: string; supplier: ProductSection; priceCents: number; pricePending?: boolean; status: string; stock?: number; product?: ShopProduct; plan?: CatalogPlan }
+type InventoryRow = { id: string; name: string; detail: string; supplier: ProductSection; priceCents: number; pricePending?: boolean; status: string; stock?: number; unlinkedPreview?: boolean; product?: ShopProduct; plan?: CatalogPlan }
 const money = (cents: number) => '¥' + (cents / 100).toFixed(2)
 const statusNames: Record<string, string> = { draft: '草稿', listed: '仅展示', published: '已发布', archived: '已下架', paused: '已暂停' }
 const supplierName = (id: ProductSection) => ADMIN_SUPPLIERS.find(s => s.id === id)?.name ?? '自营及其他'
 
 function rowsFor(data: Inventory): InventoryRow[] {
   return [
-    ...data.products.map(p => ({ id: p.id, name: p.name, detail: p.api?.productCode ? '上游规格 ' + p.api.productCode : p.category, supplier: productSupplier(p, data.linkedSuppliers), priceCents: p.priceCents, pricePending: p.pricePending, status: p.status, stock: p.stock, product: p })),
+    ...data.products.map(p => ({ id: p.id, name: p.name, detail: p.api?.productCode ? '上游规格 ' + p.api.productCode : p.category, supplier: productSupplier(p, data.linkedSuppliers), priceCents: p.priceCents, pricePending: p.pricePending, status: p.status, stock: p.stock, unlinkedPreview: p.groupId === 'muse' && p.museKind === 'invitation' && p.catalogPreview && !data.linkedSuppliers[p.id], product: p })),
     ...data.plans.map(p => ({ id: p.id, name: productNameForId(p.product_id), detail: p.name, supplier: p.id in data.bugan.productMap ? 'bugan' as const : 'other' as const, priceCents: p.price_cents, status: p.enabled ? 'published' : 'paused', plan: p })),
   ]
 }
@@ -47,7 +47,7 @@ function InventoryTable({ rows, onEdit, busy }: { rows: InventoryRow[]; onEdit: 
       <label className="admin-search"><Search size={16} /><Input aria-label="搜索商品或规格" placeholder="搜索商品、规格或服务商" value={query} onChange={e => { setQuery(e.target.value); setPage(1) }} /></label>
       <select aria-label="商品展示状态" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="all">全部状态</option><option value="pending">待定价</option>{Object.entries(statusNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
     </div>
-    {!filtered.length ? <div className="admin-empty"><Package size={26} /><h3>{rows.length ? '没有匹配的商品' : '暂无已整理商品'}</h3><p>{rows.length ? '调整搜索词或展示状态后重试。' : '从上游目录选品，或创建该服务商的商品草稿。'}</p></div> : <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>商品 / 规格</th><th>服务商</th><th>零售价</th><th>库存</th><th>展示状态</th><th>操作</th></tr></thead><tbody>{filtered.slice((currentPage - 1) * 15, currentPage * 15).map(r => <tr key={r.id} data-product-id={r.id}><td><strong>{r.name}</strong><small>{r.detail}</small></td><td>{supplierName(r.supplier)}</td><td>{r.pricePending ? '待定价' : money(r.priceCents)}</td><td>{r.stock === undefined ? '按上游实时核对' : r.stock < 0 ? '不限量' : r.stock}</td><td><span className={'admin-pill ' + (r.status === 'published' ? 'available' : '')}>{statusNames[r.status] ?? r.status}</span></td><td><Button variant="outline" disabled={busy} onClick={() => onEdit(r)}>{r.supplier === 'grizzly' ? '管理接码项目' : '编辑与定价'}</Button></td></tr>)}</tbody></table></div>}
+    {!filtered.length ? <div className="admin-empty"><Package size={26} /><h3>{rows.length ? '没有匹配的商品' : '暂无已整理商品'}</h3><p>{rows.length ? '调整搜索词或展示状态后重试。' : '从上游目录选品，或创建该服务商的商品草稿。'}</p></div> : <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>商品 / 规格</th><th>服务商</th><th>零售价</th><th>库存</th><th>展示状态</th><th>操作</th></tr></thead><tbody>{filtered.slice((currentPage - 1) * 15, currentPage * 15).map(r => <tr key={r.id} data-product-id={r.id}><td><strong>{r.name}</strong><small>{r.detail}</small></td><td>{supplierName(r.supplier)}</td><td>{r.pricePending ? '待定价' : money(r.priceCents)}</td><td>{r.unlinkedPreview ? '未关联货源' : r.stock === undefined ? '按上游实时核对' : r.stock < 0 ? '不限量' : r.stock}</td><td><span className={'admin-pill ' + (r.status === 'published' ? 'available' : '')}>{statusNames[r.status] ?? r.status}</span></td><td><Button variant="outline" disabled={busy} onClick={() => onEdit(r)}>{r.supplier === 'grizzly' ? '管理接码项目' : '编辑与定价'}</Button></td></tr>)}</tbody></table></div>}
     {filtered.length > 15 && <div className="admin-pagination"><span>第 {currentPage} / {Math.ceil(filtered.length / 15)} 页</span><div><Button variant="outline" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>上一页</Button><Button variant="outline" disabled={currentPage * 15 >= filtered.length} onClick={() => setPage(currentPage + 1)}>下一页</Button></div></div>}
   </section>
 }

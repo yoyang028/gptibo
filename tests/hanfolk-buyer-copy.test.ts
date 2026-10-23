@@ -81,8 +81,8 @@ test('Muse selected allowance, Gmail SKU years and CapCut team periods are not r
   )
   assert.match(muse.name, /50亿/)
   assert(!muse.name.includes('10亿'))
-  assert.match(muse.duration, /有效期未注明/)
-  assert.match(muse.deliveryInstructions, /https:\/\/muse.ai\//)
+  assert.match(muse.duration, /5B（50 亿）/)
+  assert.match(muse.description, /https:\/\/muse.ai\//)
   assert.match(muse.steps[1].description, /验证码登录/)
   assert.match(muse.buyerHighlights!.join(' '), /凭码自行/)
   const gmail = hanfolkBuyerCopy(

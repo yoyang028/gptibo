@@ -47,7 +47,7 @@ test('Invitation metadata and editorial copy do not claim a live task API or reu
   assert.equal(product.pricePending, true)
   assert.equal(product.status, 'draft')
   assert.deepEqual(productProblems(product), [])
-  assert.match(product.description, /暂未开放下单/)
+  assert.doesNotMatch(product.description + product.purchaseNote + JSON.stringify(product.faq), /暂未开放|准备中|未核实|现在可以购买/)
   assert.match(product.description, /6 位邀请码/)
   assert.doesNotMatch(product.purchaseNote, /首次登录|首登保障/)
   assert.doesNotMatch(JSON.stringify(publicBuyerProduct(product)), /dajuxai\.com|¥3|3元/)

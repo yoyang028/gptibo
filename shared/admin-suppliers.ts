@@ -12,6 +12,8 @@ export type ProductSection = AdminSupplier | 'all' | 'other'
 export function productSupplier(product: ShopProduct, linkedSuppliers: Record<string, AdminSupplier>): AdminSupplier | 'other' {
   // Explicit import links take precedence: imported items can use manual delivery.
   if (linkedSuppliers[product.id]) return linkedSuppliers[product.id]
+  // These are catalog-managed previews, not verified procurement links.
+  if (product.groupId === 'muse' && product.museKind === 'invitation' && product.catalogPreview) return 'daju'
   if (product.api?.provider === 'xiaojiu') return 'xiaojiu'
   if (product.api?.provider === 'grizzly') return 'grizzly'
   return 'other'

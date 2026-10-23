@@ -8,6 +8,18 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.product-copy-link, .shop-product-workspace a.product-copy-link[target='_blank'], .shop-delivery-guide a.product-copy-link[target='_blank'], .faq-list a.product-copy-link[target='_blank'] {
+  display: inline;
+  color: #1d4ed8;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.dark .product-copy-link, .dark .shop-product-workspace a.product-copy-link[target='_blank'], .dark .shop-delivery-guide a.product-copy-link[target='_blank'], .dark .faq-list a.product-copy-link[target='_blank'] { color: #93c5fd; }
+.product-copy-link svg { display: inline-block; vertical-align: -1px; margin-left: 3px; }
+.product-copy-link:hover { text-decoration-thickness: 2px; }
+.product-copy-link:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 2px; }
 .shop-product-option {
   border: 1px solid var(--border);
   border-radius: 16px;

@@ -63,7 +63,7 @@ export function MuseGuidePage({ kind, onSupport }: { kind: 'email' | 'invitation
             </li>)}
           </ol>
         </> : <>
-          <div className="muse-guide-callout"><strong>当前仅展示资料，词元服务暂未开放下单</strong><p>无需在教程中提交邀请码，也不要向他人提供密码或登录验证码。开售后以本站商品页的交付说明为准。</p></div>
+          <div className="muse-guide-callout"><strong>邀请码与登录验证码不同</strong><p>使用目标账号自己的 6 位邀请码。无需在教程中提交，也不要向他人提供密码或登录验证码。</p></div>
           <div className="muse-invite-flow" aria-label="邀请词元办理流程"><span>自己的邀请码</span><ArrowRight size={16} /><span>核对订单与次数</span><ArrowRight size={16} /><span>Muse 查看奖励</span></div>
           {MUSE_INVITE_SECTIONS.map((section, i) => <section key={section.id} id={section.id} className="muse-guide-section"><div className="muse-step-heading"><span>{String(i + 1).padStart(2, '0')}</span><h2>{section.title}</h2></div>{section.paragraphs.map(p => <p key={p}>{p}</p>)}</section>)}
         </>}

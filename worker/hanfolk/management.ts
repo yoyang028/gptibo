@@ -37,6 +37,11 @@ async function state(env: Env, s: Settings) {
       match_note: string
     }>()
   ).results
+  // Local invitation variants share the Muse editor, without inventing source
+  // SKU, procurement cost or inventory for an unconnected package.
+  const previews = (await env.INTEREST_DB.prepare(
+    "SELECT p.id,p.public_json,c.price_cents FROM shop_products p JOIN catalog_plans c ON c.id=p.id WHERE json_extract(p.public_json,'$.groupId')='muse' AND json_extract(p.public_json,'$.museKind')='invitation' AND json_extract(p.public_json,'$.catalogPreview')=1 AND NOT EXISTS(SELECT 1 FROM hanfolk_product_links l WHERE l.local_id=p.id) ORDER BY c.price_cents,p.id",
+  ).all<{ id: string; public_json: string; price_cents: number }>()).results
   return {
     version: s.version,
     configured: Boolean(s.api_secret),
@@ -54,7 +59,7 @@ async function state(env: Env, s: Settings) {
         checkedAt: r.checked_at,
       }
     }),
-    drafts: links.map((r) => {
+    drafts: [...links.map((r) => {
       const p = JSON.parse(r.public_json)
       return {
         id: r.local_id,
@@ -71,7 +76,10 @@ async function state(env: Env, s: Settings) {
         sourceStock: availability.stock.get(r.local_id) ?? 0,
         inventory: availability.states.get(r.local_id),
       }
-    }),
+    }), ...previews.map(r => {
+      const p = JSON.parse(r.public_json)
+      return { id: r.id, productId: null, sku: '', relatedPlanId: null, matchNote: '本地展示规格，未关联货源', costCents: null, name: p.name, family: p.groupId, status: p.status, pricePending: p.pricePending === true, priceCents: r.price_cents, sourceStock: null }
+    })],
     procurementEnabled: false,
   }
 }

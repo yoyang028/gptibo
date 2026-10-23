@@ -5,7 +5,7 @@ const families: Record<string, { tagline: string; intro: string; category: strin
   'codex-credits': { tagline: '给下一段代码，留足空间。', intro: '250、500、1000、2500 四档额度，为你的 Codex 编程任务按需补充。', category: '编程额度' },
   grok: { tagline: '灵感、社交与代码，一起连接。', intro: 'Grok、X、Cursor 与 Bot，一份组合订阅。Plus 不含 Bot，Premium 及以上包含，按需选择。', category: 'AI 订阅' },
   'student-verification': { tagline: '为学习，打开更多可能。', intro: '面向符合资格的学生，提供 Plus 四个月活动的认证服务。', category: '学生认证' },
-  muse: { tagline: '把想法，交给你的智能体。', intro: '选择带词元的成品账号，或为已有账号了解邀请码助力。两种方式，分别说明。', category: 'AI 工具' },
+  muse: { tagline: '把想法，交给你的智能体。', intro: '成品账号与词元服务，一个入口，按需选择。', category: 'AI 工具' },
   gemini: {tagline:'思考、创作，找到新的可能。',intro:'成品账号与 AI Pro 兑换链接，先核对开通方式和账号条件。',category:'AI 订阅'},
   duolingo: {tagline:'让每天的练习，多一点动力。',intro:'查看会员周期、兑换步骤与账号适用条件。',category:'语言学习'},
   'adobe-express': {tagline:'把想法，变成作品。',intro:'Adobe Express 会员兑换，查看周期与开通条件。',category:'创作工具'},
@@ -25,6 +25,9 @@ export function customerProductName(value: string) {
 
 export function variantLabel(product: ShopProduct, brand: string, siblings: readonly ShopProduct[] = []) {
   const name = customerProductName(product.name)
+  if (product.groupId === 'muse' && product.museKind === 'invitation') {
+    return name.match(/\d+\s*B\b/i)?.[0] ?? name
+  }
   if (product.groupId === 'apple-id') {
     return name.replace(/Apple\s*ID/gi, '').replace(/[（(][^）)]*[）)]/g, '').replace(/已购\s*/g, '').replace(/\s*·\s*/g, ' · ').trim()
   }
