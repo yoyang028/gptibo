@@ -17,6 +17,7 @@ Six catalog families use one first-party SVG each, with distinct slow transform 
 | Local asset | Verified first-party source | Preparation |
 | --- | --- | --- |
 | grok-official.svg | https://grok.com/images/favicon.svg | Original two filled symbol paths, with the complete bounds (48 48 416 416), including both diagonal tips. Remove the favicon backdrop/foreignObject and its redundant contour; render as a theme-aware mask. Corrected 2026-10-18. |
+| grok-color.svg | Derived from the existing grok-official.svg paths | Same complete symbol geometry, with a local blue/cyan gradient and transparent background. Used for the Grok four-tier bundle, 2026-10-24. |
 | gmail-official.svg | https://www.gstatic.com/images/branding/productlogos/gmail_2026/v2/web/192px.svg | Unchanged current official Gmail SVG, verified on https://workspace.google.com/products/gmail/ on 2026-10-18. Retain the full-color original and transparent background in both themes, including headings, summaries, envelope illustrations and SMS platform icons. |
 | gemini-official.svg | https://www.gstatic.com/lamda/images/gemini_sparkle_aurora_33f86dc0c0257da337c63.svg | Official Gemini page asset; retain original geometry and self-contained gradient image. |
 | adobe-express-official.svg | https://www.adobe.com/express/code/icons/adobe-express-logo.svg | Asset selected by the official Express homepage icon utility. Keep the original colored A symbol, remove the app-tile backdrop and crop to the symbol; retain its original color image and vectors. |

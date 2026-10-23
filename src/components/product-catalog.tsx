@@ -3,6 +3,7 @@ import type { SmsPublicCatalog } from '../../shared/grizzly-sms'
 import { MuseLogoMotion } from './muse-logo-motion'
 import { ProductArtwork } from './product-artwork'
 import { OfficialLogoMotion } from './official-logo-motion'
+import { GrokBundleScene } from './grok-bundle-scene'
 import { officialBrand } from './official-brand'
 import { GmailScene } from './gmail-scene'
 import { ProductServiceScene } from './product-service-scene'
@@ -97,9 +98,9 @@ export function ProductCatalog({ managedProductGroups = [], smsCatalog, onHelp, 
       const stockState = g.products.every(p => Boolean(inventoryLabel(p))) ? g.products.some(p => p.inventory?.status === 'checking') ? '库存待确认' : '补货中' : ''
       const available = g.products.some(p => p.status === 'published' && !inventoryLabel(p) && offers.some(o => o.id === p.id && o.enabled))
       return { id: g.id, node: <article className={`store-product service-${g.id}`} data-product-group={g.id}>
-        <div className="store-product-heading"><h3>{g.name}</h3><span className={stockState ? 'product-inventory-state' : undefined}>{stockState || (available ? p.badge : !priced.length ? '价格请咨询' : '支持客服下单')}</span></div>
+        <div className="store-product-heading"><h3>{g.name}</h3><span className={stockState ? 'product-inventory-state' : undefined}>{stockState || (available ? p.badge : g.id === 'grok' ? '暂停售卖' : !priced.length ? '价格请咨询' : '支持客服下单')}</span></div>
         <p className="store-spec">{multiple ? `${g.products.length} 个规格可选` : p.duration} · {presentation.tagline}</p>
-        {g.id === 'muse' ? <MuseLogoMotion /> : g.id === 'duolingo' ? <MembershipScene productId='duolingo'/> : g.id === 'gmail' ? <GmailScene/> : officialBrand(g.id) ? <OfficialLogoMotion productId={g.id}/> : multiple ? <SubscriptionDeck brand={g.name} productId={g.id} plans={g.products.map(p => ({ id: p.id, name: variantLabel(p, g.name), price: p.pricePending ? null : p.priceCents / 100, unit: p.unit }))} /> : <ProductArtwork config={productArtwork[g.id] ?? productArtwork[p.id]} name={g.name} caption={p.duration} fallback={<ProductServiceScene productId={g.id} name={g.name} duration={p.duration} />} />}
+        {g.id === 'grok' ? <GrokBundleScene /> : g.id === 'muse' ? <MuseLogoMotion /> : g.id === 'duolingo' ? <MembershipScene productId='duolingo'/> : g.id === 'gmail' ? <GmailScene/> : officialBrand(g.id) ? <OfficialLogoMotion productId={g.id}/> : multiple ? <SubscriptionDeck brand={g.name} productId={g.id} plans={g.products.map(p => ({ id: p.id, name: variantLabel(p, g.name), price: p.pricePending ? null : p.priceCents / 100, unit: p.unit }))} /> : <ProductArtwork config={productArtwork[g.id] ?? productArtwork[p.id]} name={g.name} caption={p.duration} fallback={<ProductServiceScene productId={g.id} name={g.name} duration={p.duration} />} />}
         <div className="store-product-bottom"><span className="store-starting-price">{starting ? <>¥{formatCatalogPrice(starting.priceCents / 100)}<small>{multiple ? ' 起' : '／' + p.unit}</small></> : <small>待定价</small>}</span><a className="store-action" href={storefrontHref('product/' + g.id)} onClick={e => navigate(e, 'product/' + g.id)}>{multiple ? '选择规格' : '查看商品'}</a></div>
       </article> }
     }),

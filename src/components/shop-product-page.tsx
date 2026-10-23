@@ -39,6 +39,7 @@ import './shop-products.css'
 import { GrizzlyOrderContent } from './grizzly-order-content'
 import { ProductKeyFacts } from './product-key-facts'
 import { OfficialLogoMotion } from './official-logo-motion'
+import { GrokBundleScene } from './grok-bundle-scene'
 import { officialBrand } from './official-brand'
 import { GmailScene } from './gmail-scene'
 import { MembershipScene } from './membership-scene'
@@ -124,6 +125,7 @@ export function ShopProductPage({
   const stockState = inventoryLabel(product)
   const contactPurchase = !available || product.pricePending || product.stock === 0
   const familyId = product.groupId ?? product.id
+  const grokPaused = familyId === 'grok' && !available
   const buyerName = customerProductName(product.name)
   const familyName = customerProductName(displayName || product.name || '商品名称')
   const compactVariants = familyId === 'apple-id' || familyId === 'gemini'
@@ -223,7 +225,7 @@ export function ShopProductPage({
               {presentation.category || '商品服务'}
             </span>
             <span className="availability" role="status">
-              {stockState || (product.pricePending
+              {stockState || (grokPaused ? '暂停售卖' : product.pricePending
                   ? '价格请咨询'
                   : available
                     ? '可购买'
@@ -244,7 +246,7 @@ export function ShopProductPage({
             </div>
           </div>
           <ProductKeyFacts highlights={product.buyerHighlights} warnings={product.buyerWarnings}/>
-          {familyId === 'muse' ? <MuseLogoMotion detail /> : familyId === 'duolingo' ? <MembershipScene productId="duolingo"/> : familyId === 'gmail' ? <GmailScene/> : officialBrand(familyId) ? <OfficialLogoMotion productId={familyId} detail/> : <ProductArtwork
+          {familyId === 'grok' ? <GrokBundleScene detail selectedTier={product.name.replace(/^Grok\s+/i, '')} /> : familyId === 'muse' ? <MuseLogoMotion detail /> : familyId === 'duolingo' ? <MembershipScene productId="duolingo"/> : familyId === 'gmail' ? <GmailScene/> : officialBrand(familyId) ? <OfficialLogoMotion productId={familyId} detail/> : <ProductArtwork
             config={artwork}
             name={buyerName}
             caption={product.duration}
@@ -253,7 +255,7 @@ export function ShopProductPage({
           />
           }
           <div className="product-pitch">
-            <h3>{familyId === 'claude' ? '找到适合你的用量。' : familyId === 'codex-credits' ? '按需补充，继续创造。' : compactVariants ? familyId === 'apple-id' ? '选择适合你的账号。' : '选择适合你的开通方式。' : buyerName}</h3>
+            <h3>{familyId === 'grok' ? '灵感、社交与代码，一起连接。' : familyId === 'claude' ? '找到适合你的用量。' : familyId === 'codex-credits' ? '按需补充，继续创造。' : compactVariants ? familyId === 'apple-id' ? '选择适合你的账号。' : '选择适合你的开通方式。' : buyerName}</h3>
             <p>{compactVariants ? familyId === 'apple-id' ? '按地区和类型选择，查看所选账号的完整条件。' : '选择成品账号或激活链接，查看对应的会员与开通条件。' : customerProductCopy(product.tagline)}</p>
           </div>
           {variants && variants.length > 1 && (
@@ -336,20 +338,20 @@ export function ShopProductPage({
           </div>
           <Button
             className="primary-action summary-cta"
-            disabled={preview || Boolean(stockState) || (contactPurchase && !onSupport)}
-            aria-haspopup={stockState ? undefined : 'dialog'}
+            disabled={preview || grokPaused || Boolean(stockState) || (contactPurchase && !onSupport)}
+            aria-haspopup={stockState || grokPaused ? undefined : 'dialog'}
             onClick={() => contactPurchase ? onSupport?.() : setOpen(true)}
           >
             {preview
               ? '商品预览'
-              : stockState || (product.pricePending ? '咨询价格'
+              : stockState || (grokPaused ? '暂停售卖' : product.pricePending ? '咨询价格'
               : !available
                 ? '联系客服购买'
                 : '立即购买')}
             <ArrowRight size={16} />
           </Button>
           <p className="summary-note">
-            {stockState === '库存待确认' ? '正在核对库存，请稍后再来。商品与规格继续保留。' : stockState ? '当前规格补货中，恢复供货后将自动更新。' : product.pricePending ? '售价请联系客服确认，目前可通过客服下单。' : !available
+            {stockState === '库存待确认' ? '正在核对库存，请稍后再来。商品与规格继续保留。' : stockState ? '当前规格补货中，恢复供货后将自动更新。' : grokPaused ? '当前可查看四档规格与价格，暂未开放购买。' : product.pricePending ? '售价请联系客服确认，目前可通过客服下单。' : !available
               ? '在线支付开通中，目前可通过客服下单。'
               : '付款确认后，交付内容可在原订单中查看。'}
           </p>

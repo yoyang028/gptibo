@@ -3,7 +3,7 @@ import type { ShopProduct } from '../../shared/shop-products'
 const families: Record<string, { tagline: string; intro: string; category: string }> = {
   claude: { tagline: '写作、分析与编程，按用量选择。', intro: 'Pro、Max 5× 与 Max 20×，为你的 Claude 账号选择适合的订阅。', category: 'AI 订阅' },
   'codex-credits': { tagline: '给下一段代码，留足空间。', intro: '250、500、1000、2500 四档额度，为你的 Codex 编程任务按需补充。', category: '编程额度' },
-  grok: { tagline: '让好奇，走得更远。', intro: '成品账号与订阅兑换码，按使用方式和服务周期选择。', category: 'AI 订阅' },
+  grok: { tagline: '灵感、社交与代码，一起连接。', intro: 'Grok、X Premium 与 Cursor 组合订阅。Plus、Premium、Super、Ultra 四档，按需选择。', category: 'AI 订阅' },
   'student-verification': { tagline: '为学习，打开更多可能。', intro: '面向符合资格的学生，提供 Plus 四个月活动的认证服务。', category: '学生认证' },
   muse: { tagline: '把想法，交给你的智能体。', intro: '按词元额度选择，领取登录与接码资料后，自行前往 Muse 官网使用。', category: 'AI 工具' },
   gemini: {tagline:'思考、创作，找到新的可能。',intro:'成品账号与 AI Pro 兑换链接，先核对开通方式和账号条件。',category:'AI 订阅'},

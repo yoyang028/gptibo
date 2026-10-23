@@ -76,8 +76,8 @@ export async function refreshHanfolkStock(env: Env, trigger: 'manual' | 'schedul
       const name = String(JSON.parse(link.public_json).name)
       if (state === 'removed' && previous?.source_state !== 'removed') change(link.product_id, link.sku, name, 'removed', before, 0, null, null, link.local_id)
       else if (variant && (before !== after || previous?.source_state === 'removed')) change(link.product_id, link.sku, name, after > 0 && (before === 0 || previous?.source_state === 'removed') ? 'restocked' : 'stock', before, after, null, null, link.local_id)
-      snapshots.push(db.prepare(`INSERT INTO hanfolk_inventory(local_id,stock,source_state,checked_at,key_hash) SELECT ?,?,?,?,? WHERE ${valid} ON CONFLICT(local_id) DO UPDATE SET stock=excluded.stock,source_state=excluded.source_state,checked_at=excluded.checked_at,key_hash=excluded.key_hash`)
-        .bind(link.local_id, after, state, now, settings.key_hash, id))
+      snapshots.push(db.prepare(`INSERT INTO hanfolk_inventory(local_id,stock,source_state,checked_at,key_hash) SELECT ?,?,?,?,? WHERE ${valid} AND EXISTS(SELECT 1 FROM hanfolk_product_links WHERE local_id=? AND product_id=? AND sku=?) ON CONFLICT(local_id) DO UPDATE SET stock=excluded.stock,source_state=excluded.source_state,checked_at=excluded.checked_at,key_hash=excluded.key_hash`)
+        .bind(link.local_id, after, state, now, settings.key_hash, id, link.local_id, link.product_id, link.sku))
     }
     await db.batch([
       db.prepare("UPDATE hanfolk_settings SET checked_key_hash=key_hash,balance_cents=?,checked_at=?,version=version+1,change_id=? WHERE id='main' AND version=? AND key_hash=? AND EXISTS(SELECT 1 FROM hanfolk_sync_settings WHERE lease_token=? AND lease_until>?)")

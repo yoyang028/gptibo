@@ -201,3 +201,25 @@ test('Monitoring records paginate and retain history without touching owner or o
   assert(first.history.some(change => change.id === 'retained-change'), '90-day changes stay accessible after their 30-day run expires')
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 0)
 })
+
+test('A detached source cannot restore inventory when an in-flight stock sync commits', async t => {
+  const f = await fixture(t)
+  await f.sync()
+  const original = f.env.INTEREST_DB.batch.bind(f.env.INTEREST_DB)
+  let detached = false
+  t.mock.method(f.env.INTEREST_DB, 'batch', async statements => {
+    // Detach after the sync has captured its links, just before its final batch.
+    if (statements.length > 2 && !detached) {
+      detached = true
+      f.db.prepare('DELETE FROM hanfolk_product_links WHERE local_id=?').run(f.ids[0])
+      f.db.prepare('DELETE FROM hanfolk_inventory WHERE local_id=?').run(f.ids[0])
+    }
+    return original(statements)
+  })
+  f.stocks(17)
+  await f.sync()
+  assert(detached)
+  assert(!f.db.prepare('SELECT local_id FROM hanfolk_inventory WHERE local_id=?').get(f.ids[0]))
+  assert.equal(f.db.prepare('SELECT stock FROM hanfolk_inventory WHERE local_id=?').get(f.ids[1])?.stock, 17)
+  assert(f.db.prepare('SELECT id FROM shop_products WHERE id=?').get(f.ids[0]), 'source detach preserves the original product and order identity')
+})
