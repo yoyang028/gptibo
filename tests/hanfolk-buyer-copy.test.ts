@@ -83,7 +83,7 @@ test('Muse selected allowance, Gmail SKU years and CapCut team periods are not r
   assert(!muse.name.includes('10亿'))
   assert.match(muse.duration, /有效期未注明/)
   assert.match(muse.deliveryInstructions, /https:\/\/muse.ai\//)
-  assert.match(muse.steps[1].description, /Log in/)
+  assert.match(muse.steps[1].description, /验证码登录/)
   assert.match(muse.buyerHighlights!.join(' '), /凭码自行/)
   const gmail = hanfolkBuyerCopy(
     source(
@@ -233,7 +233,7 @@ test('Custom order brand comes from its historical snapshot and remains private 
   const {order}=await created.json() as {order:{id:string;custom:{groupId:string}}}
   assert.equal(order.custom.groupId,'muse')
   const current=(((await (await f.request('/api/admin/my-shop/products',undefined,f.admin)).json()) as {products:typeof product[]}).products).find(p=>p.id===stored.id)!
-  assert.equal((await f.request('/api/admin/my-shop/products',{...current,groupId:'grok',status:'listed'},f.admin)).status,200)
+  assert.equal((await f.request('/api/admin/my-shop/products',{...current,groupId:'grok',museKind:undefined,status:'listed'},f.admin)).status,200)
   const read=await f.request('/api/orders/'+order.id,undefined,cookie)
   assert.equal(read.status,200)
   assert.equal(((await read.json()) as {order:{custom:{groupId:string}}}).order.custom.groupId,'muse')

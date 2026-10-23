@@ -4,6 +4,7 @@ import {
   type HanfolkDetail,
 } from './hanfolk-catalog.ts'
 import type { ShopProduct } from './shop-products.ts'
+import { museBuyerCopy } from './muse-buyer-copy.ts'
 
 export type HanfolkBuyerCopy = Pick<
   ShopProduct,
@@ -54,6 +55,7 @@ export function hanfolkBuyerCopy(
     )
   const family = hanfolkFamily(product.title),
     label = skuName(product, sku).trim()
+  if (family === 'muse' && (product.id === 57 || product.id === 69)) return museBuyerCopy(product.id, label)
   const account = /成品|账户|账号|Apple\s*ID/i.test(product.title)
   let name =
     label === product.title ? product.title : product.title + ' · ' + label
@@ -185,33 +187,6 @@ export function hanfolkBuyerCopy(
       question: '老账号就包含更长会员吗？',
       answer:
         '不是。注册年份只描述账号年龄；供货方没有给出本规格的会员剩余周期，须核对实际权益。',
-    })
-  }
-  if (product.id === 57 && family === 'muse') {
-    name = 'Muse 成品账号 · ' + label
-    introduction =
-      '提供可用于 Muse 的成品账号，按本次所选词元额度区分。每个词元档位独立核对，不把额度当作会员时长。'
-    rights = '当前选择 ' + label + '；附收件入口，可更换邮箱。'
-    duration = label + ' · 有效期未注明'
-    conditions =
-      '按交付的账号和收件入口登录；是否有到期时间、额度适用范围需核对本账号的实际权益。'
-    delivered = 'Muse 成品账号及收件入口；不是为已有账号充值的 CDK。'
-    use =
-      '在原订单领取登录资料与接码入口，自行前往 [Muse 官网](https://muse.ai/) 点击 Log in，在 Mobile number or email 输入本单交付邮箱，再点 Continue。登录页要求验证码时，通过本单收件入口获取并填写最新验证码，完成后核对词元额度。按账号设置将邮箱改为自己可控制的邮箱。这里的码用于登录验证，不是向已有账号充值的兑换 CDK，也不需要到其他卡密兑换站操作。'
-    redemption = '买家需自行到 [Muse 官网](https://muse.ai/) 登录并按页面完成验证码验证，无需第三方 CDK 兑换。'
-    highlights[0] = '交付登录与接码资料，买家凭码自行到 Muse 官网登录'
-    highlights.push('本规格额度：' + label, '附收件入口，可改邮箱')
-    warnings.push('词元额度不等于固定会员时长；未承诺无限使用')
-    steps = [
-      { title: '领取本单资料', description: '从原订单保存交付的登录资料、接码入口及该规格额度。请勿把完整资料或验证码公开发送。' },
-      { title: '自行到 Muse 官网登录', description: '打开 [Muse 官网](https://muse.ai/)，点 Log in，在 Mobile number or email 填入本单交付邮箱，再点 Continue。不要使用自己原有账号来尝试充值。' },
-      { title: '凭验证码完成验证', description: '当登录页要求验证码时，从本单收件入口获取最新验证码，由自己填写到官网；验证码不交给商家，交付资料不能当作第三方兑换站 CDK。' },
-      { title: '核对额度并保管账号', description: '登录后核对所选词元额度，按账号设置更换为自己的邮箱；遇到登录或额度不符，保留脱敏提示，从原订单联系售后核对。' },
-    ]
-    faq.push({
-      question: '是否沿用旧单账号商品的首次登录质保？',
-      answer:
-        '不能自动沿用。这个词元规格的供货资料没有明确质保细则，旧单账号商品和本规格分别适用各自的购买须知。',
     })
   }
   if (product.id === 55 && family === 'duolingo') {

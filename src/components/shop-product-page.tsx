@@ -46,6 +46,8 @@ import { MembershipScene } from './membership-scene'
 import { ProductCopyText, ProductDescription } from './product-buyer-details'
 import { productCopyBlocks } from '../../shared/product-copy'
 import { inventoryLabel } from '../../shared/product-inventory'
+import { museKind, museVariants, MUSE_ACCOUNT_GUIDE, MUSE_INVITE_GUIDE } from '../../shared/muse-products'
+import './muse-guides.css'
 
 export function ShopProductGroupPage({
   group,
@@ -67,7 +69,7 @@ export function ShopProductGroupPage({
   onSupport: () => void
 }) {
   const [selected, setSelected] = useState(
-    initialProductId ?? group.products[0].id,
+    group.products.find(p => p.id === initialProductId)?.id ?? (group.id === 'muse' ? museVariants(group.products, 'account')[0]?.id : undefined) ?? group.products[0].id,
   )
   const product =
     group.products.find((p) => p.id === selected) ?? group.products[0]
@@ -125,6 +127,9 @@ export function ShopProductPage({
   const stockState = inventoryLabel(product)
   const contactPurchase = !available || product.pricePending || product.stock === 0
   const familyId = product.groupId ?? product.id
+  const museType = museKind(product)
+  const musePending = familyId === 'muse' && product.pricePending
+  const shownVariants = familyId === 'muse' && variants ? museVariants(variants, museType ?? 'account') : variants
   const grokPaused = familyId === 'grok' && !available
   const buyerName = customerProductName(product.name)
   const familyName = customerProductName(displayName || product.name || '商品名称')
@@ -258,10 +263,23 @@ export function ShopProductPage({
             <h3>{familyId === 'grok' ? '灵感、社交与代码，一起连接。' : familyId === 'claude' ? '找到适合你的用量。' : familyId === 'codex-credits' ? '按需补充，继续创造。' : compactVariants ? familyId === 'apple-id' ? '选择适合你的账号。' : '选择适合你的开通方式。' : buyerName}</h3>
             <p>{compactVariants ? familyId === 'apple-id' ? '按地区和类型选择，查看所选账号的完整条件。' : '选择成品账号或激活链接，查看对应的会员与开通条件。' : customerProductCopy(product.tagline)}</p>
           </div>
-          {variants && variants.length > 1 && (
+          {familyId === 'muse' && variants && onVariantChange && <div className="muse-purchase-types">
+            <span className="section-kicker">先选择购买方式</span>
+            <div className="muse-kind-options" role="group" aria-label="Muse 购买方式">
+              {(['account', 'invitation'] as const).map(kind => {
+                const items = museVariants(variants, kind)
+                return items.length > 0 && <button key={kind} type="button" aria-pressed={museType === kind} onClick={() => { setCoupon(null); onVariantChange(items[0].id) }}>
+                  <strong>{kind === 'account' ? '成品账号' : '词元服务'}</strong>
+                  <small>{kind === 'account' ? '独立账号 · 四档额度' : '已有账号 · 邀请助力'}</small>
+                </button>
+              })}
+            </div>
+            <p>{museType === 'invitation' ? '使用自己的 6 位邀请码；先核对活动资格，无需账号密码。' : '交付账号与收件资料，买家自行登录；不是为原账号充值。'}</p>
+          </div>}
+          {shownVariants && shownVariants.length > 0 && (shownVariants.length > 1 || familyId === 'muse') && (
             <fieldset className={'shop-product-variants' + (compactVariants ? ' shop-product-variants-compact' : '')}>
-              <legend>选择适合你的规格<span>{variants.length} 个规格可选</span></legend>
-              {variants.map((variant) => (
+              <legend>{museType === 'account' ? '选择账号词元额度' : '选择适合你的规格'}<span>{shownVariants.length} 个规格可选</span></legend>
+              {shownVariants.map((variant) => (
                 <label
                   key={variant.id}
                   className="shop-variant"
@@ -288,7 +306,11 @@ export function ShopProductPage({
               ))}
             </fieldset>
           )}
-          <div className="shop-product-option" role={compactVariants ? 'region' : undefined} aria-label={compactVariants ? '已选规格详情' : undefined} aria-live={compactVariants ? 'polite' : undefined}>
+          {familyId === 'muse' && <nav className="muse-detail-guides" aria-label="Muse 使用教程">
+            <a href={storefrontHref(MUSE_ACCOUNT_GUIDE.slice(1))}>查看邮箱更换完整图解 · 15 张步骤图 <ArrowRight size={14} /></a>
+            <a href={storefrontHref(MUSE_INVITE_GUIDE.slice(1))}>Muse 邀请码与词元购买教程 <ArrowRight size={14} /></a>
+          </nav>}
+          <div className="shop-product-option" role={compactVariants || museType ? 'region' : undefined} aria-label={compactVariants || museType ? '已选规格详情' : undefined} aria-live={compactVariants || museType ? 'polite' : undefined}>
             <span className="section-kicker">{compactVariants ? '已选规格详情' : '商品详情'}</span>
             <div className="plan-option-top">
               <h3>{buyerName || '商品规格'}</h3>
@@ -321,7 +343,7 @@ export function ShopProductPage({
             </div>
             <div>
               <dt>交付方式</dt>
-              <dd>{product.requiresRedemption ? '兑换码 + 使用指引' : product.delivery === 'api' ? '卡密 / 兑换信息' : '按商品说明交付'}</dd>
+              <dd>{museType === 'account' ? '账号 + 收件资料' : museType === 'invitation' ? '邀请助力 · 开售前确认' : product.requiresRedemption ? '兑换码 + 使用指引' : product.delivery === 'api' ? '卡密 / 兑换信息' : '按商品说明交付'}</dd>
             </div>
             {!displayOnly && available && (
               <div>
@@ -338,20 +360,20 @@ export function ShopProductPage({
           </div>
           <Button
             className="primary-action summary-cta"
-            disabled={preview || grokPaused || Boolean(stockState) || (contactPurchase && !onSupport)}
-            aria-haspopup={stockState || grokPaused ? undefined : 'dialog'}
+            disabled={preview || grokPaused || musePending || Boolean(stockState) || (contactPurchase && !onSupport)}
+            aria-haspopup={stockState || grokPaused || musePending ? undefined : 'dialog'}
             onClick={() => contactPurchase ? onSupport?.() : setOpen(true)}
           >
             {preview
               ? '商品预览'
-              : stockState || (grokPaused ? '暂停售卖' : product.pricePending ? '咨询价格'
+              : stockState || (musePending ? '待定价，暂未开售' : grokPaused ? '暂停售卖' : product.pricePending ? '咨询价格'
               : !available
                 ? '联系客服购买'
                 : '立即购买')}
             <ArrowRight size={16} />
           </Button>
           <p className="summary-note">
-            {stockState === '库存待确认' ? '正在核对库存，请稍后再来。商品与规格继续保留。' : stockState ? '当前规格补货中，恢复供货后将自动更新。' : grokPaused ? '当前可查看四档规格与价格，暂未开放购买。' : product.pricePending ? '售价请联系客服确认，目前可通过客服下单。' : !available
+            {stockState === '库存待确认' ? '正在核对库存，请稍后再来。商品与规格继续保留。' : stockState ? '当前规格补货中，恢复供货后将自动更新。' : musePending ? '当前可阅读商品资料和教程，售价确认后再开放购买。' : grokPaused ? '当前可查看四档规格与价格，暂未开放购买。' : product.pricePending ? '售价请联系客服确认，目前可通过客服下单。' : !available
               ? '在线支付开通中，目前可通过客服下单。'
               : '付款确认后，交付内容可在原订单中查看。'}
           </p>

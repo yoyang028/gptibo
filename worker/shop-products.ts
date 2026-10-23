@@ -287,6 +287,7 @@ export async function shopProductRoutes(request: Request, env: Env, url: URL) {
       ? { buyerWarnings: input.buyerWarnings }
       : {}),
     ...(input.requiresRedemption !== undefined ? { requiresRedemption: input.requiresRedemption } : {}),
+    ...(input.museKind !== undefined ? { museKind: input.museKind } : {}),
     stock: input.stock,
     features: input.features,
     purchaseNote: input.purchaseNote,

@@ -288,6 +288,14 @@ export function ProductEditor({
           >
             <fieldset disabled={busy} className="owner-editor-section">
               <legend>商品展示</legend>
+              {product.groupId === 'muse' && <label>Muse 商品类型
+                <select aria-label="Muse 商品类型" value={product.museKind ?? 'account'} onChange={e => update('museKind', e.target.value as 'account' | 'invitation')}>
+                  <option value="account">成品账号 · 交付账号与收件资料</option>
+                  <option value="invitation">词元服务 · 已有账号邀请助力</option>
+                </select>
+                <small>两类在同一 Muse 入口分开展示，供货规格、售价与交付分别管理。</small>
+                {product.museKind === 'invitation' && <small>词元源商品 #69 未提供邀请码提交字段、实际交付物及专用办理接口。当前仅公开资料；确认交付链路、零售价和售后后再开放销售，不能把收款或采购成功视为邀请完成。</small>}
+              </label>}
               <div className="owner-editor-grid">
                 <label>
                   重点信息（每行一项，最多6项）

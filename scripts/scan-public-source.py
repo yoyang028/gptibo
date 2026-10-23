@@ -32,14 +32,17 @@ PUBLIC_DOC_REFERENCES = {
     'public/brands/README.md': {
         'muse.gptibo.com', 'grok.com', 'www.gstatic.com', 'www.adobe.com',
         'account.apple.com', 'appleid.cdn-apple.com', 'music.apple.com', 'www.capcut.com',
-        'workspace.google.com',  # Official Gmail artwork reference in the shared baseline.
+        'workspace.google.com', 'cursor.com',  # Reviewed official artwork references.
     },
     'docs/GRIZZLY_SMS.md': {'shop.scholai.top'},
+    'docs/GROK_XIAOJIU.md': {'x.ai', 'docs.x.ai', 'help.x.com'},
     'docs/HANFOLK_BUYER_DETAILS.md': {
         'vip.dajuai.us', 'owlduo.com', 'muse.ai', 'grok.com',
         'gemini.google.com', 'accounts.google.com', 'express.adobe.com',
         'www.capcut.com', 'www.jio.com',
     },
+    'docs/MUSE_PRODUCTS.md': {'muse.dajuxai.com', 'muse.ai'},
+    'public/guides/muse-change-email/README.md': {'muse.dajuxai.com'},
 }
 # Verified buyer-facing links, scoped to editorial copy and its tests. They do
 # not expand the API client's allowlist or authorize backend requests.
@@ -49,9 +52,11 @@ PUBLIC_BUYER_REFERENCES = {
         'gemini.google.com', 'accounts.google.com', 'express.adobe.com',
         'www.capcut.com', 'www.jio.com',
     },
+    'shared/muse-buyer-copy.ts': {'muse.ai'},
     'tests/hanfolk-buyer-copy.test.ts': {'vip.dajuai.us', 'owlduo.com', 'grok.com'},
 }
 BINARY_ASSETS = {'public/email-logo.png', 'public/email-shop.png', 'src/assets/hero.png'}
+MUSE_GUIDE_IMAGES = {f'public/guides/muse-change-email/{i:02d}.jpg' for i in range(1, 16)}
 FORBIDDEN_PARTS = {'.git', '.secrets', '.imports', '.admin-auth', '.xgift-private',
                    'node_modules', 'dist', '.preview', '.wrangler', 'artifacts', '__pycache__'}
 FORBIDDEN_SUFFIXES = {'.pem', '.key', '.p12', '.pfx', '.sqlite', '.db', '.dump',
@@ -99,7 +104,8 @@ def scan(root, files):
         try:
             source = data.decode('utf-8')
         except UnicodeDecodeError:
-            if name not in BINARY_ASSETS or not data.startswith(b'\x89PNG\r\n\x1a\n'):
+            if not ((name in BINARY_ASSETS and data.startswith(b'\x89PNG\r\n\x1a\n'))
+                    or (name in MUSE_GUIDE_IMAGES and data.startswith(b'\xff\xd8\xff'))):
                 findings.append((name, 0, 'unreviewed binary asset'))
             continue
         for rule, pattern in [('private key', SECRET), ('credential token', TOKEN)]:

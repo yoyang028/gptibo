@@ -42,6 +42,7 @@ export async function hanfolkDraft(
     id:
       'custom-' + (await hash('hanfolk:' + detail.id + ':' + sku)).slice(0, 32),
     groupId: family,
+    ...(family === 'muse' && [57, 69].includes(detail.id) ? { museKind: detail.id === 69 ? 'invitation' as const : 'account' as const } : {}),
     category:
       family === 'gmail'
         ? '邮箱账号'

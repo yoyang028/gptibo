@@ -47,6 +47,8 @@ export type ShopProduct = {
   buyerHighlights?: string[]
   buyerWarnings?: string[]
   requiresRedemption?: boolean
+  /** Muse account delivery and invitation service remain separate SKUs. */
+  museKind?: 'account' | 'invitation'
   stock: number
   /** Public availability from the last confirmed supplier read. */
   inventory?: { status: 'available' | 'replenishing' | 'checking'; checkedAt: number }
@@ -174,6 +176,7 @@ export function productProblems(
   if (!['draft', 'listed', 'published', 'archived'].includes(product.status))
     errors.push('发布状态')
   if (product.requiresRedemption !== undefined && typeof product.requiresRedemption !== 'boolean') errors.push('站外兑换设置')
+  if (product.museKind !== undefined && (product.groupId !== 'muse' || !['account', 'invitation'].includes(product.museKind))) errors.push('Muse 商品类型')
   if (
     product.pricePending !== undefined &&
     typeof product.pricePending !== 'boolean'
