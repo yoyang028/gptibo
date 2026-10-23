@@ -31,9 +31,9 @@ export default {
   async scheduled(event: { scheduledTime?: number }, env: Env) {
     // Telegram's durable queue is independent of supplier reconciliation failures.
     await retryTelegramInvitations(env).catch(() => { console.error('Telegram invitation queue temporarily unavailable') })
+    await refreshHanfolkStock(env).catch(() => { console.error('Hanfolk stock refresh temporarily unavailable; see inventory monitor') })
     // Reminders run every minute; preserve the existing five-minute reconciliation cadence.
     if (event.scheduledTime === undefined || Math.floor(event.scheduledTime / 60_000) % 5 === 0) {
-      await refreshHanfolkStock(env).catch(() => { console.error('Hanfolk stock refresh temporarily unavailable') })
       await Promise.all([reconcilePayments(env), reconcileRecharge(env), retryPayoutNotifications(env), reconcileInvoicePayments(env)])
       await reconcileRechargeRefunds(env)
     }

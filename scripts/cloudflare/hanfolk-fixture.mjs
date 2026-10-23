@@ -41,7 +41,14 @@ export const hanfolkFixtureProducts = [
 export function createHanfolkFixture() {
   let reads = 0
   const products = structuredClone(hanfolkFixtureProducts)
+  const hidden = new Set()
+  let failed = false
   return {
+    setVisible(productId, visible) {
+      if (!products.some(p => p.id === productId) || typeof visible !== 'boolean') throw new Error('Invalid synthetic product')
+      if (visible) hidden.delete(productId); else hidden.add(productId)
+    },
+    setFailure(value) { if (typeof value !== 'boolean') throw new Error('Invalid synthetic failure'); failed = value },
     setStock(productId, sku, stock) {
       const variant = products.find(p => p.id === productId)?.sku_variants.find(v => v.sku === sku)
       if (!variant || !Number.isSafeInteger(stock) || stock < 0) throw new Error('Invalid synthetic stock')
@@ -58,14 +65,15 @@ export function createHanfolkFixture() {
       )
         throw new Error('Only synthetic read-only Hanfolk requests are allowed')
       reads++
+      if (failed) return Response.json({ success: false }, { status: 503 })
       const action = url.searchParams.get('do')
       if (action === 'balance')
         return Response.json({ success: true, balance: 123.45 })
       if (action === 'products')
         return Response.json({
           success: true,
-          count: products.length,
-          products,
+          count: products.filter(p => !hidden.has(p.id)).length,
+          products: products.filter(p => !hidden.has(p.id)),
         })
       if (action === 'product') {
         const p = products.find(

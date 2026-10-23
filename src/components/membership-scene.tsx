@@ -1,5 +1,5 @@
 import { useStorefrontI18n } from '@/lib/storefront-i18n'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DuoAnimation } from './duo-animation'
 import '@/styles/membership-products.css'
 
@@ -7,8 +7,7 @@ export function DuoMark() {
   return <img src="/brands/duolingo-duo-home.svg" alt="" aria-hidden="true" className="duo-art" />
 }
 export function GeminiMark() {
-  const id = useId().replaceAll(':', '')
-  return <svg viewBox="0 0 160 160" aria-hidden="true" className="gemini-art"><defs><linearGradient id={id} x1="0" y1="1" x2="1" y2="0"><stop stopColor="#4888ee" /><stop offset=".5" stopColor="#7e78ee" /><stop offset="1" stopColor="#dd85aa" /></linearGradient></defs><path fill={`url(#${id})`} d="M80 5C91 48 112 69 155 80C112 91 91 112 80 155C69 112 48 91 5 80C48 69 69 48 80 5Z" /></svg>
+  return <img src="/brands/gemini-official.svg" alt="" aria-hidden="true" className="gemini-art" />
 }
 export function ProductSceneFrame({ className, children, label, template }: { className: string; children: ReactNode | ((visible: boolean) => ReactNode); label?: string; template?: string }) {
   const ref = useRef<HTMLDivElement>(null)

@@ -39,6 +39,7 @@ import { smsAdminInfo, smsRefundProblem } from './grizzly/service.ts'
 import { smsManagement, smsPublicCatalog } from './grizzly/management.ts'
 import { hanfolkManagement } from './hanfolk/management.ts'
 import { hanfolkAvailability } from './hanfolk/availability.ts'
+import { inventoryLabel } from '../shared/product-inventory.ts'
 import { concealRedemptionLinks } from '../shared/redemption-copy.ts'
 import { supplierManagement } from './supplier-management.ts'
 
@@ -92,7 +93,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     if (path.startsWith('/api/admin/')) {
       await requireAdmin(request, env)
       if (path === '/api/admin/sms') return await smsManagement(request,env,url)
-      if (path === '/api/admin/hanfolk') return await hanfolkManagement(request,env)
+      if (path === '/api/admin/hanfolk' || path === '/api/admin/hanfolk/monitor') return await hanfolkManagement(request,env)
       if (path.startsWith('/api/admin/my-shop/products')) return await shopProductRoutes(request,env,url)
       if (path.startsWith('/api/admin/my-shop/orders')) {
         const customMatch=path.match(/^\/api\/admin\/my-shop\/orders\/([A-Z0-9-]+)$/)
@@ -148,7 +149,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       const coupons=partner?[]:(await env.INTEREST_DB.prepare('SELECT settings FROM shop_coupons').all<{settings:string}>()).results.map(r=>JSON.parse(r.settings)).filter(c=>c.active&&Date.parse(c.starts_at)<=Date.now()&&Date.parse(c.ends_at)>Date.now())
       // Storefront prices are configured retail prices, independent of supplier latency.
       const offers = (catalog.plans as Plan[]).filter(plan=>(!managedProductGroups.includes(plan.product_id)||products.some(p=>p.id===plan.id))&&(!customProductId.test(plan.id)||products.some(p=>p.id===plan.id&&!p.pricePending))).map(plan => { const product=products.find(p=>p.id===plan.id); return ({ ...plan,purchase_note:product?.purchaseNote??quefaPurchaseNote(mapped[plan.id],plan.purchase_note),delivery_instructions:product?.deliveryInstructions??plan.delivery_instructions,has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId==='platform'&&t.plan===plan.id)), enabled: plan.enabled && (
-        customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.status==='published'&&p.stock!==0) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
+        customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.status==='published'&&!inventoryLabel(p)) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
       ) ? 1 : 0 }) })
       return json({ ...catalog,...owner, managedProductGroups, products, sms: {...sms,projects:sms.projects.map(p=>({...p,enabled:owner?.active!==false && p.enabled && Boolean(offers.find(o=>o.id===p.planId)?.enabled)}))}, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
     }

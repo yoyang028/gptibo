@@ -84,8 +84,6 @@ export async function importHanfolkDrafts(
         variant = detail?.sku_variants.find((v) => v.sku === item.sku)
       if (!detail || !variant)
         throw new ApiError('商品规格缓存已变化，请重新读取。', 409)
-      if (variant.stock <= 0)
-        throw new ApiError('Daju 该规格当前无货，不能导入商品。', 409)
       const p = await hanfolkDraft(detail, item.sku),
         errors = productProblems(p)
       if (errors.length)

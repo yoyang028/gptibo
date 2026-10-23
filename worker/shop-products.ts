@@ -28,7 +28,7 @@ import {
 } from '../shared/grizzly-sms.ts'
 import { recordSupplierRefund } from './grizzly/management.ts'
 import { affordablePools, poolQuotes } from './grizzly/pools.ts'
-import { availableHanfolkProducts } from './hanfolk/availability.ts'
+import { assertHanfolkStock, availableHanfolkProducts } from './hanfolk/availability.ts'
 import { publicBuyerProduct } from '../shared/redemption-copy.ts'
 import { editableProducts, guideSaveStatement, deliveredRedemptionGuide, privateProductGuide } from './redemption-guides.ts'
 import {
@@ -641,6 +641,7 @@ export async function createCustomOrder(
     env.XIAOJIU_PURCHASE_ENABLED !== 'true'
   )
     throw new ApiError('小久商品暂未开放余额采购。', 409)
+  await assertHanfolkStock(env, id)
   const coupon = data.couponCode
     ? await couponQuote(env, id, email, data.couponCode)
     : null

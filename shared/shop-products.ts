@@ -48,6 +48,8 @@ export type ShopProduct = {
   buyerWarnings?: string[]
   requiresRedemption?: boolean
   stock: number
+  /** Public availability from the last confirmed supplier read. */
+  inventory?: { status: 'available' | 'replenishing' | 'checking'; checkedAt: number }
   features: string[]
   purchaseNote: string
   deliveryInstructions: string

@@ -4,22 +4,10 @@ import { seal, unseal } from '../product-secrets.ts'
 import { HanfolkClient, HanfolkError, hanfolkKey } from './client.ts'
 import { importHanfolkDrafts } from './importer.ts'
 import { hanfolkAvailability } from './availability.ts'
-import { prepareDajuCleanup } from './cleanup.ts'
-type Settings = {
-  api_secret: string
-  key_hash: string
-  checked_key_hash: string
-  balance_cents: number | null
-  checked_at: number
-  version: number
-}
-async function settings(env: Env) {
-  const s = await env.INTEREST_DB.prepare(
-    "SELECT * FROM hanfolk_settings WHERE id='main'",
-  ).first<Settings>()
-  if (!s) throw new ApiError('代理商品数据库尚未迁移。', 503)
-  return s
-}
+import { hanfolkSettings as settings, type HanfolkSettings as Settings } from './settings.ts'
+import { refreshHanfolkStock, syncOptions } from './sync.ts'
+import { confirmRemoval, inventoryMonitor, saveSyncOptions } from './monitor.ts'
+export { refreshHanfolkStock } from './sync.ts'
 async function state(env: Env, s: Settings) {
   const availability = await hanfolkAvailability(env)
   const rows = (
@@ -55,6 +43,7 @@ async function state(env: Env, s: Settings) {
     verified: Boolean(s.key_hash && s.key_hash === s.checked_key_hash),
     balanceCents: s.balance_cents,
     checkedAt: s.checked_at,
+    sync: await syncOptions(env),
     products: rows.map((r) => {
       const p = JSON.parse(r.summary),
         d = r.detail ? JSON.parse(r.detail) : null
@@ -80,66 +69,29 @@ async function state(env: Env, s: Settings) {
         pricePending: p.pricePending === true,
         priceCents: r.price_cents,
         sourceStock: availability.stock.get(r.local_id) ?? 0,
+        inventory: availability.states.get(r.local_id),
       }
     }),
     procurementEnabled: false,
   }
 }
-async function refreshCatalog(env: Env, s: Settings) {
-  const client = new HanfolkClient(env, await unseal(env, s.api_secret))
-  const balance = await client.balance(),
-    products = (await client.products()).filter((p) =>
-      hanfolkFamily(p.title),
-    ),
-    now = Date.now(),
-    event = crypto.randomUUID()
-  const details = []
-  for (let start = 0; start < products.length; start += 4)
-    details.push(...await Promise.all(products.slice(start,start+4).map(p=>client.detail(p.id))))
-  const cleanup = await prepareDajuCleanup(env, details, event, now)
-  await env.INTEREST_DB.batch([
-    env.INTEREST_DB.prepare(
-      "UPDATE hanfolk_settings SET checked_key_hash=key_hash,balance_cents=?,checked_at=?,version=version+1,change_id=? WHERE id='main' AND version=?",
-    ).bind(balance.balanceCents, now, event, s.version),
-    ...details.map((p) =>
-      env.INTEREST_DB.prepare(
-        'INSERT INTO hanfolk_catalog(product_id,summary,detail,key_hash,checked_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM hanfolk_settings WHERE change_id=?) ON CONFLICT(product_id) DO UPDATE SET summary=excluded.summary,detail=excluded.detail,key_hash=excluded.key_hash,checked_at=excluded.checked_at',
-      ).bind(p.id, JSON.stringify(p), JSON.stringify(p), s.key_hash, now, event),
-    ),
-    env.INTEREST_DB.prepare(
-      'DELETE FROM hanfolk_catalog WHERE (key_hash<>? OR checked_at<>?) AND EXISTS(SELECT 1 FROM hanfolk_settings WHERE change_id=?)',
-    ).bind(s.key_hash, now, event),
-    env.INTEREST_DB.prepare(
-      "INSERT INTO admin_audit(id,target_id,action,note,created_at) SELECT ?,'hanfolk','hanfolk-refresh','只读更新商品目录和余额；未采购',? FROM hanfolk_settings WHERE change_id=?",
-    ).bind(event, now, event),
-    ...cleanup,
-  ])
-  if (
-    !(await env.INTEREST_DB.prepare(
-      'SELECT id FROM admin_audit WHERE id=?',
-    )
-      .bind(event)
-      .first())
-  )
-    throw new ApiError('设置已更新，请重新读取。', 409)
-}
-
-/** A complete stock sync also removes unavailable listings; sales and orders remain unchanged. */
-export async function refreshHanfolkStock(env: Env) {
-  const s = await settings(env)
-  if (!s.api_secret || s.checked_at > Date.now() - 5 * 60_000) return
-  await refreshCatalog(env, s)
-}
-
 export async function hanfolkManagement(request: Request, env: Env) {
   let s = await settings(env)
+  if (new URL(request.url).pathname.endsWith('/monitor')) {
+    if (request.method !== 'GET') throw new ApiError('请求方式不支持。', 405)
+    return json(await inventoryMonitor(env, new URL(request.url)))
+  }
   if (request.method === 'GET') return json(await state(env, s))
   if (request.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
   const data = await body(request, 50000)
-  if (data.version !== s.version)
+  if ((!['sync-settings', 'confirm-remove', 'refresh'].includes(String(data.action)) || data.action === 'refresh' && data.version !== undefined) && data.version !== s.version)
     throw new ApiError('代理商品设置已更新，请重新读取。', 409)
   try {
-    if (data.action === 'save-key') {
+    if (data.action === 'sync-settings') {
+      await saveSyncOptions(env, data)
+    } else if (data.action === 'confirm-remove') {
+      await confirmRemoval(env, data)
+    } else if (data.action === 'save-key') {
       const key = hanfolkKey(data.apiKey),
         event = crypto.randomUUID()
       await env.INTEREST_DB.batch([
@@ -161,7 +113,7 @@ export async function hanfolkManagement(request: Request, env: Env) {
         throw new ApiError('请先在遮蔽输入框保存Daju API Key。', 409)
       const client = new HanfolkClient(env, await unseal(env, s.api_secret))
       if (data.action === 'refresh') {
-        await refreshCatalog(env, s)
+        await refreshHanfolkStock(env, 'manual')
       } else if (data.action === 'detail') {
         const id = Number(data.productId),
           cached = await env.INTEREST_DB.prepare(

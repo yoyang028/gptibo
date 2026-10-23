@@ -8,12 +8,13 @@ import { useResource } from '@/lib/use-resource'
 import { WorkspaceTabs } from '@/partner/workspace-ui'
 import { ProductEditor } from './ProductPublisher'
 import { ProductArtworkSettingsButton } from './ProductArtworkSettings'
+import { InventoryMonitor } from './InventoryMonitor'
 import { HANFOLK_FAMILIES, skuName, type HanfolkFamily, type HanfolkProduct, type HanfolkDetail } from '../../shared/hanfolk-catalog'
 import type { ShopProductInput } from '../../shared/shop-products'
 import './hanfolk-catalog.css'
 
 type SourceProduct = HanfolkProduct & { family: HanfolkFamily; detail: HanfolkDetail | null; checkedAt: number }
-type Draft = { id: string; productId: number; sku: string; costCents: number; name: string; family: HanfolkFamily; status: string; pricePending: boolean; priceCents: number; sourceStock: number }
+type Draft = { id: string; productId: number; sku: string; costCents: number; name: string; family: HanfolkFamily; status: string; pricePending: boolean; priceCents: number; sourceStock: number; inventory?: ShopProductInput['inventory'] }
 type State = { version: number; configured: boolean; verified: boolean; balanceCents: number | null; checkedAt: number; products: SourceProduct[]; drafts: Draft[]; result?: { imported: string[]; existing: string[] } }
 const money = (cents: number) => '¥' + (cents / 100).toFixed(2)
 const statuses: Record<string, string> = { draft: '草稿', listed: '仅展示', published: '已发布', archived: '已下架' }
@@ -24,8 +25,8 @@ export default function HanfolkCatalog({ revision, onSaved }: { revision: number
   const running = useRef(false)
   const { data, error: readError, loading } = useResource<State>('/api/admin/hanfolk', revision + local)
   const search = query.trim().toLowerCase()
-  const products = (data?.products ?? []).map(p => ({ ...p, detail: p.detail ? { ...p.detail, sku_variants: p.detail.sku_variants.filter(s => s.stock > 0) } : null })).filter(p => (!p.detail || p.detail.sku_variants.length > 0) && (family === 'all' || p.family === family) && (!search || [p.title, HANFOLK_FAMILIES[p.family], String(p.id)].join(' ').toLowerCase().includes(search)))
-  const drafts = (data?.drafts ?? []).filter(p => p.sourceStock > 0 && (family === 'all' || p.family === family) && (!search || [p.name, HANFOLK_FAMILIES[p.family], p.sku].join(' ').toLowerCase().includes(search)) && (status === 'all' || (status === 'pending' ? p.pricePending : p.status === status)))
+  const products = (data?.products ?? []).filter(p => (family === 'all' || p.family === family) && (!search || [p.title, HANFOLK_FAMILIES[p.family], String(p.id)].join(' ').toLowerCase().includes(search)))
+  const drafts = (data?.drafts ?? []).filter(p => (family === 'all' || p.family === family) && (!search || [p.name, HANFOLK_FAMILIES[p.family], p.sku].join(' ').toLowerCase().includes(search)) && (status === 'all' || (status === 'pending' ? p.pricePending : p.status === status)))
   const reload = () => { setLocal(v => v + 1); onSaved?.() }
   function toggle(value: string) { setSelection(values => values.includes(value) ? values.filter(v => v !== value) : [...values, value]) }
   async function action(name: string, extra: Record<string, unknown> = {}) {
@@ -37,9 +38,9 @@ export default function HanfolkCatalog({ revision, onSaved }: { revision: number
       if (result.result) {
         setMessage(`已新增 ${result.result.imported.length} 个待定价草稿，${result.result.existing.length} 个已有规格保留原售价与内容。`)
         setSelection([]); setTab('products')
-      } else setMessage(name === 'refresh' ? '商品与库存已同步，无效、无货和旧重复商品已清理。' : name === 'detail' ? '商品详情与规格已更新。' : 'API 密钥已加密保存。')
+      } else setMessage(name === 'refresh' ? '商品与库存已同步；缺货保留展示，新增和下架由你确认。' : name === 'detail' ? '商品详情与规格已更新。' : 'API 密钥已加密保存。')
       reload()
-    } catch (e) { setError(errorMessage(e)) }
+    } catch (e) { setError(errorMessage(e)); reload() }
     finally { running.current = false; setBusy('') }
   }
   async function editor(id: string) {
@@ -59,6 +60,7 @@ export default function HanfolkCatalog({ revision, onSaved }: { revision: number
     <Feedback error={error || readError} loading={loading} data={data} />
     {message && <p role="status" className="hanfolk-message">{message}</p>}
     <WorkspaceTabs label="Daju商品工作台" value={tab} onValueChange={setTab} items={[
+      { value: 'inventory', label: '库存同步与记录', content: <InventoryMonitor revision={revision + local} configured={Boolean(data?.configured)} onSaved={reload} onSource={() => setTab('source')} /> },
       { value: 'products', label: '已整理商品', content: <section className="hanfolk-listing">
         <div className="hanfolk-toolbar"><label className="admin-search"><Search size={16} /><Input aria-label="搜索Daju商品" placeholder="搜索商品名称或规格" value={query} onChange={e => setQuery(e.target.value)} /></label><select aria-label="Daju商品状态" value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部状态</option><option value="pending">待定价</option>{Object.entries(statuses).map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select><ProductArtworkSettingsButton onSaved={reload} /></div>
         <FamilyFilter family={family} onChange={setFamily} />
@@ -66,9 +68,9 @@ export default function HanfolkCatalog({ revision, onSaved }: { revision: number
         {Object.entries(HANFOLK_FAMILIES).map(([id, label]) => {
           const rows = drafts.filter(p => p.family === id)
           if (!rows.length) return null
-          return <section key={id} className="admin-panel hanfolk-group"><div className="admin-panel-title"><h3>{label}</h3><span>{rows.length} 个规格</span></div><div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>商品 / 上游规格</th><th>采购成本</th><th>本站零售价</th><th>上游库存</th><th>展示状态</th><th>操作</th></tr></thead><tbody>{rows.map(p => <tr key={p.id} data-product-id={p.id}><td><strong>{p.name}</strong><small>#{p.productId} · SKU {p.sku}</small></td><td>{money(p.costCents)}</td><td>{p.pricePending ? <span className="hanfolk-pending">待定价</span> : money(p.priceCents)}</td><td>{p.sourceStock}<small>{p.sourceStock > 0 ? '有货' : '前台自动隐藏'}</small></td><td><span className="admin-pill">{statuses[p.status] ?? p.status}</span></td><td><Button variant="outline" disabled={Boolean(busy)} onClick={() => void editor(p.id)}>编辑与定价</Button></td></tr>)}</tbody></table></div></section>
+          return <section key={id} className="admin-panel hanfolk-group"><div className="admin-panel-title"><h3>{label}</h3><span>{rows.length} 个规格</span></div><div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>商品 / 上游规格</th><th>采购成本</th><th>本站零售价</th><th>上游库存</th><th>展示状态</th><th>操作</th></tr></thead><tbody>{rows.map(p => <tr key={p.id} data-product-id={p.id}><td><strong>{p.name}</strong><small>#{p.productId} · SKU {p.sku}</small></td><td>{money(p.costCents)}</td><td>{p.pricePending ? <span className="hanfolk-pending">待定价</span> : money(p.priceCents)}</td><td>{p.sourceStock}<small>{p.inventory?.status === 'checking' ? '库存待确认' : p.sourceStock > 0 ? '有货' : '补货中'}</small></td><td><span className="admin-pill">{statuses[p.status] ?? p.status}</span></td><td><Button variant="outline" disabled={Boolean(busy)} onClick={() => void editor(p.id)}>编辑与定价</Button></td></tr>)}</tbody></table></div></section>
         })}
-        <p className="supplier-help">仅保留上游在售且有库存的规格。待定价商品需确认零售价后开售。</p>
+<p className="supplier-help">缺货规格保留展示并显示补货中。新增商品需定价确认，正式下架由你决定。</p>
       </section> },
       { value: 'source', label: '上游目录与选品', content: <section className="supplier-card">
         <div className="supplier-card-heading"><div><h2>上游商品目录</h2><p>展开商品查看规格和说明，选择后导入为待定价草稿。</p></div><span className="admin-pill">{products.length} 个商品</span></div>

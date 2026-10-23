@@ -7,7 +7,7 @@ import type { HanfolkDetail } from '../shared/hanfolk-catalog.ts'
 // @ts-ignore -- read-only loopback supplier, no live credentials.
 import { createHanfolkFixture, hanfolkFixtureProducts, hanfolkFixtureKey } from '../scripts/cloudflare/hanfolk-fixture.mjs'
 
-test('Only exact in-stock source SKUs are public; removed SKUs, missing products and old offers never fall back', async t => {
+test('Approved SKUs stay public with stock state, while missing source data cannot revive old offers', async t => {
   const f = await customerFixture()
   t.after(() => f.db.close())
   const source: HanfolkDetail = { ...hanfolkFixtureProducts.find((p: HanfolkDetail) => /gmail/i.test(p.title)),
@@ -22,21 +22,23 @@ test('Only exact in-stock source SKUs are public; removed SKUs, missing products
     f.db.prepare('UPDATE shop_products SET public_json=? WHERE id=?').run(JSON.stringify(p),id)
   }
   const cache = (detail: HanfolkDetail, key = '') => f.db.prepare('INSERT INTO hanfolk_catalog(product_id,summary,detail,key_hash,checked_at) VALUES(?,?,?,?,?) ON CONFLICT(product_id) DO UPDATE SET detail=excluded.detail,key_hash=excluded.key_hash').run(source.id,JSON.stringify(detail),JSON.stringify(detail),key,Date.now())
-  const read = async () => (await (await f.request('/api/catalog')).json()) as {products:{id:string;stock:number}[]; plans:{id:string}[];managedProductGroups:string[]}
-  // Import stock is not enough: a verified source cache must still contain the SKU.
-  assert.equal((await read()).products.filter(p=>imported.imported.includes(p.id)).length,0)
+  const read = async () => (await (await f.request('/api/catalog')).json()) as {products:{id:string;stock:number;inventory:{status:string}}[]; plans:{id:string}[];managedProductGroups:string[]}
+  // Without a confirmed source snapshot, approved listings remain visible but unbuyable.
+  assert((await read()).products.filter(p=>imported.imported.includes(p.id)).every(p=>p.inventory.status==='checking'))
   cache({...source,sku_variants:source.sku_variants.slice(0,2)})
   let catalog=await read()
-  assert.deepEqual(catalog.products.filter(p=>imported.imported.includes(p.id)).map(p=>p.id),[imported.imported[0]])
+  assert.equal(catalog.products.filter(p=>imported.imported.includes(p.id)).length,3)
+  assert.equal(catalog.products.find(p=>p.id===imported.imported[1])!.inventory.status,'replenishing')
+  assert.equal(catalog.products.find(p=>p.id===imported.imported[2])!.inventory.status,'checking')
   assert.equal(catalog.products.find(p=>p.id===imported.imported[0])!.stock,5)
   assert(catalog.managedProductGroups.includes('gmail'))
   assert(!catalog.plans.some(p=>p.id==='gmail-account'))
   cache({...source,sku_variants:[{sku:'1',price:1,stock:0}]})
   catalog=await read()
-  assert.equal(catalog.products.filter(p=>imported.imported.includes(p.id)).length,0)
+  assert.equal(catalog.products.filter(p=>imported.imported.includes(p.id)).length,3)
   assert(!catalog.products.some(p=>p.id==='gmail-account'))
   cache(source,'previous-key')
-  assert.equal((await read()).products.filter(p=>imported.imported.includes(p.id)).length,0)
+  assert.equal((await read()).products.filter(p=>imported.imported.includes(p.id)).length,3)
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n,0)
 })
 

@@ -15,11 +15,12 @@ import { createHanfolkFixture } from './hanfolk-fixture.mjs'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 if (process.platform === 'win32' && !/^D:\\/i.test(root)) throw new Error('Local artifacts must stay on D:')
 const xiaojiuVariant = process.env.GPTIBO_LOCAL_VARIANT === 'xiaojiu'
-const grizzlyVariant = process.env.GPTIBO_LOCAL_VARIANT === 'grizzly'
-const runtime = path.join(root, grizzlyVariant ? 'artifacts/local/cloudflare-grizzly' : xiaojiuVariant ? 'artifacts/local/cloudflare-xiaojiu' : 'artifacts/local/cloudflare')
-const privateRoot = path.join(root, grizzlyVariant ? 'artifacts/local/.secrets/grizzly-cloudflare-mock' : xiaojiuVariant ? 'artifacts/local/.secrets/xiaojiu-cloudflare-mock' : 'artifacts/local/.secrets/quefa-cloudflare-mock')
+const inventoryVariant = process.env.GPTIBO_LOCAL_VARIANT === 'inventory'
+const grizzlyVariant = process.env.GPTIBO_LOCAL_VARIANT === 'grizzly' || inventoryVariant
+const runtime = path.join(root, inventoryVariant ? 'artifacts/local/cloudflare-inventory' : grizzlyVariant ? 'artifacts/local/cloudflare-grizzly' : xiaojiuVariant ? 'artifacts/local/cloudflare-xiaojiu' : 'artifacts/local/cloudflare')
+const privateRoot = path.join(root, inventoryVariant ? 'artifacts/local/.secrets/inventory-cloudflare-mock' : grizzlyVariant ? 'artifacts/local/.secrets/grizzly-cloudflare-mock' : xiaojiuVariant ? 'artifacts/local/.secrets/xiaojiu-cloudflare-mock' : 'artifacts/local/.secrets/quefa-cloudflare-mock')
 const tlsRoot = path.join(root, 'artifacts/local/.secrets/quefa-cloudflare-mock')
-const port = grizzlyVariant ? 8791 : xiaojiuVariant ? 8781 : 8771, controlPort = grizzlyVariant ? 8794 : xiaojiuVariant ? 8784 : 8774
+const port = inventoryVariant ? 8796 : grizzlyVariant ? 8791 : xiaojiuVariant ? 8781 : 8771, controlPort = inventoryVariant ? 8797 : grizzlyVariant ? 8794 : xiaojiuVariant ? 8784 : 8774
 const origin = 'https://127.0.0.1:' + port
 const grizzlyFixture = createGrizzlyFixture(origin)
 const hanfolkFixture = createHanfolkFixture()
@@ -105,7 +106,7 @@ for (const line of fs.readFileSync(path.join(root, 'public/_headers'), 'utf8').s
 const config = {
   host: '127.0.0.1', port, https: true, httpsCert: ca.toString(), httpsKey: key,
   modules: true, scriptPath: path.join(runtime, 'worker.mjs'), compatibilityDate: '2026-09-26', compatibilityFlags: ['nodejs_compat', 'service_binding_extra_handlers'],
-  d1Databases: { INTEREST_DB: grizzlyVariant ? 'gptibo-cloudflare-grizzly-local' : xiaojiuVariant ? 'gptibo-cloudflare-xiaojiu-local' : 'gptibo-cloudflare-local' },
+  d1Databases: { INTEREST_DB: inventoryVariant ? 'gptibo-cloudflare-inventory-local' : grizzlyVariant ? 'gptibo-cloudflare-grizzly-local' : xiaojiuVariant ? 'gptibo-cloudflare-xiaojiu-local' : 'gptibo-cloudflare-local' },
   ratelimits: {
     INTEREST_LIMITER: { namespace_id: '2001', simple: { limit: 30, period: 60 } },
     API_LIMITER: { namespace_id: '2002', simple: { limit: 120, period: 60 } },
@@ -160,6 +161,16 @@ try {
     }
     if (request.method !== 'POST' || request.headers.origin !== 'http://127.0.0.1:' + controlPort || !authorized) { response.writeHead(403).end(); return }
     if (request.url === '/shutdown') { response.writeHead(204).end(); await shutdown(); return }
+    if (inventoryVariant && ['/inventory/source-visibility', '/inventory/failure'].includes(request.url)) {
+      let raw = ''; for await (const chunk of request) { raw += chunk; if (raw.length > 500) { response.writeHead(413).end(); return } }
+      try {
+        const input = JSON.parse(raw)
+        if (request.url === '/inventory/source-visibility') hanfolkFixture.setVisible(input.productId, input.visible)
+        else hanfolkFixture.setFailure(input.failed)
+        response.writeHead(204).end()
+      } catch { response.writeHead(400).end() }
+      return
+    }
     if (grizzlyVariant && request.url === '/daju/stock') {
       let raw = ''; for await (const chunk of request) { raw += chunk; if (raw.length > 500) { response.writeHead(413).end(); return } }
       try { const input = JSON.parse(raw); hanfolkFixture.setStock(input.productId, input.sku, input.stock); response.writeHead(204).end() }

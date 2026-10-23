@@ -89,6 +89,8 @@ export class HanfolkClient {
     if (!Array.isArray(data.products) || data.products.length > 2000)
       throw new HanfolkError('INVALID')
     const products = data.products.map((value) => this.product(value))
+    if (data.count !== undefined && (!(typeof data.count === 'number' || typeof data.count === 'string' && /^\d+$/.test(data.count)) || !Number.isSafeInteger(Number(data.count)) || Number(data.count) !== products.length))
+      throw new HanfolkError('INVALID')
     if (new Set(products.map((p) => p.id)).size !== products.length)
       throw new HanfolkError('INVALID')
     return products

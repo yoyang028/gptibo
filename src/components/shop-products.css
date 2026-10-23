@@ -389,6 +389,8 @@
 .owner-shop-canvas .partner-page-tabs {
   width: 100%;
 }
+.product-inventory-state { color:var(--muted-foreground); font-size:11px; line-height:1.5; }
+.shop-variant .product-inventory-state { display:block; margin-top:5px; }
 @media (max-width: 640px) {
   .owner-editor-grid {
     grid-template-columns: 1fr;

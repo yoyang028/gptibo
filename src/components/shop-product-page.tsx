@@ -44,6 +44,7 @@ import { GmailScene } from './gmail-scene'
 import { MembershipScene } from './membership-scene'
 import { ProductCopyText, ProductDescription } from './product-buyer-details'
 import { productCopyBlocks } from '../../shared/product-copy'
+import { inventoryLabel } from '../../shared/product-inventory'
 
 export function ShopProductGroupPage({
   group,
@@ -79,6 +80,7 @@ export function ShopProductGroupPage({
       available={
         checkoutEnabled &&
         product.status === 'published' &&
+        !inventoryLabel(product) &&
         Boolean(offers.find((p) => p.id === product.id)?.enabled)
       }
       onHome={onHome}
@@ -119,6 +121,7 @@ export function ShopProductPage({
     [error, setError] = useState('')
   const requestKey = useRef<{ identity: string; key: string } | null>(null)
   const displayOnly = product.status === 'listed'
+  const stockState = inventoryLabel(product)
   const contactPurchase = !available || product.pricePending || product.stock === 0
   const familyId = product.groupId ?? product.id
   const buyerName = customerProductName(product.name)
@@ -152,7 +155,7 @@ export function ShopProductPage({
     }
   }
   async function purchase() {
-    if (busy || !accepted || preview || product.pricePending || !available) return
+    if (busy || !accepted || preview || product.pricePending || !available || stockState) return
     if (couponCode.trim() && coupon?.code !== couponCode.trim().toUpperCase()) {
       setError('请先应用优惠码，或清空后继续。')
       return
@@ -219,14 +222,12 @@ export function ShopProductPage({
             <span className="section-kicker">
               {presentation.category || '商品服务'}
             </span>
-            <span className="availability">
-              {product.stock === 0
-                ? '暂时售罄'
-                : product.pricePending
+            <span className="availability" role="status">
+              {stockState || (product.pricePending
                   ? '价格请咨询'
                   : available
                     ? '可购买'
-                    : '支持客服下单'}
+                    : '支持客服下单')}
             </span>
           </div>
           <div className="product-heading">
@@ -278,6 +279,7 @@ export function ShopProductPage({
                   <span>
                     <strong>{variantLabel(variant, familyName, variants)}</strong>
                     {!compactVariants && <small>{customerProductCopy(variant.features[0] || variant.duration)}</small>}
+                    {inventoryLabel(variant) && <small className="product-inventory-state">{inventoryLabel(variant)}</small>}
                   </span>
                   <strong>{variant.pricePending ? '待定价' : <><small>¥</small>{(variant.priceCents / 100).toFixed(2)}</>}</strong>
                 </label>
@@ -334,21 +336,20 @@ export function ShopProductPage({
           </div>
           <Button
             className="primary-action summary-cta"
-            disabled={preview || (contactPurchase && !onSupport)}
-            aria-haspopup="dialog"
+            disabled={preview || Boolean(stockState) || (contactPurchase && !onSupport)}
+            aria-haspopup={stockState ? undefined : 'dialog'}
             onClick={() => contactPurchase ? onSupport?.() : setOpen(true)}
           >
             {preview
               ? '商品预览'
-              : product.stock === 0 ? '咨询补货'
-              : product.pricePending ? '咨询价格'
+              : stockState || (product.pricePending ? '咨询价格'
               : !available
                 ? '联系客服购买'
-                : '立即购买'}
+                : '立即购买')}
             <ArrowRight size={16} />
           </Button>
           <p className="summary-note">
-            {product.stock === 0 ? '当前规格暂时售罄，可联系客服咨询补货。' : product.pricePending ? '售价请联系客服确认，目前可通过客服下单。' : !available
+            {stockState === '库存待确认' ? '正在核对库存，请稍后再来。商品与规格继续保留。' : stockState ? '当前规格补货中，恢复供货后将自动更新。' : product.pricePending ? '售价请联系客服确认，目前可通过客服下单。' : !available
               ? '在线支付开通中，目前可通过客服下单。'
               : '付款确认后，交付内容可在原订单中查看。'}
           </p>
@@ -489,7 +490,7 @@ export function ShopProductPage({
               我已阅读并同意购买、收款和售后说明
             </label>
             {error && <p role="alert">{error}</p>}
-            <Button type="submit" disabled={busy || !accepted}>
+            <Button type="submit" disabled={busy || !accepted || Boolean(stockState) || !available || product.pricePending}>
               {busy ? '正在创建订单…' : '确认下单，继续付款'}
             </Button>
           </form>
