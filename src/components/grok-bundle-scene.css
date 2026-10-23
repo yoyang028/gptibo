@@ -1,8 +1,9 @@
-.grok-bundle-scene { position: relative; display: grid; align-content: center; height: 195px; margin-top: 6px; padding: 0 4px 22px; color: var(--foreground); background: transparent; border: 0; box-shadow: none; }
-.grok-bundle-services { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: clamp(10px, 3vw, 24px); width: 100%; max-width: 400px; margin-inline: auto; }
-.grok-bundle-service { display: flex; flex-direction: column; align-items: center; gap: 17px; min-width: 0; padding: 8px 0; color: inherit; border: 0; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.grok-bundle-scene { position: relative; display: grid; align-content: center; height: 166px; margin-top: 4px; padding: 0 0 26px; color: var(--foreground); background: transparent; border: 0; box-shadow: none; }
+.store-product[data-product-group=grok] .grok-bundle-scene { flex-grow: 1; }
+.grok-bundle-services { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: clamp(10px, 2vw, 20px); width: 100%; max-width: 420px; margin-inline: auto; }
+.grok-bundle-service { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 0; padding: 8px 0; color: inherit; border: 0; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .grok-bundle-service:focus-visible { outline: 1px solid currentColor; outline-offset: 6px; border-radius: 3px; }
-.grok-bundle-mark { display: block; width: clamp(42px, 5.8vw, 61px); height: clamp(42px, 5.8vw, 61px); transition: transform .22s ease; }
+.grok-bundle-mark { display: block; width: min(100%, 76px); aspect-ratio: 1; transition: transform .22s ease; }
 .grok-bundle-symbol { display: block; width: 100%; height: 100%; animation: grok-symbol-float 6s ease-in-out infinite; animation-play-state: paused; }
 .grok-bundle-symbol > svg, .grok-bundle-mask { display: block; width: 100%; height: 100%; }
 .grok-bundle-mask { background: currentColor; mask-repeat: no-repeat; mask-size: contain; mask-position: center; }
@@ -10,7 +11,7 @@
 .grok-bundle-cursor { animation-duration: 6.8s; animation-delay: -4s; }
 .grok-bundle-bot { animation-duration: 5.4s; animation-delay: -1s; }
 .grok-bot-eyes { transform-box: fill-box; transform-origin: center; animation: grok-bot-blink 7s ease-in-out infinite; animation-play-state: paused; }
-.grok-bundle-name { font-size: 12px; font-weight: 550; line-height: 1.3; letter-spacing: .1px; }
+.grok-bundle-name { font-size: 13px; font-weight: 600; line-height: 1.3; letter-spacing: -.1px; }
 .grok-bundle-hint { position: absolute; inset: auto 0 0; max-width: 100%; padding-inline: 3px; font-size: 11px; line-height: 1.6; color: var(--muted-foreground); text-align: center; visibility: hidden; opacity: 0; transition: opacity .18s ease; pointer-events: none; }
 .grok-bundle-service:is(:focus, :hover) .grok-bundle-hint { visibility: visible; opacity: 1; }
 .grok-bundle-services:has(.grok-bundle-service:hover) .grok-bundle-service:not(:hover) .grok-bundle-hint { visibility: hidden; opacity: 0; }
@@ -19,10 +20,10 @@
 .grok-bundle-service:is(:hover, :focus-visible) .grok-bundle-symbol { animation-play-state: paused; }
 .grok-bundle-scene[data-active=true] :is(.grok-bundle-symbol, .grok-bot-eyes) { animation-play-state: running; }
 .grok-bundle-scene[data-active=true] .grok-bundle-service:is(:hover, :focus-visible) .grok-bundle-symbol { animation-play-state: paused; }
-.grok-bundle-detail { height: 224px; margin: 0 0 26px; }
-.grok-bundle-detail .grok-bundle-services { max-width: 430px; }
-.grok-bundle-detail .grok-bundle-mark { width: 64px; height: 64px; }
+.grok-bundle-detail { height: 184px; margin: 0 0 16px; }
+.grok-bundle-detail .grok-bundle-services { max-width: 452px; }
+.grok-bundle-detail .grok-bundle-mark { width: min(100%, 82px); }
 @keyframes grok-symbol-float { 0%,100% { transform: translateY(2px); } 50% { transform: translateY(-2px); } }
 @keyframes grok-bot-blink { 0%,43%,47%,100% { transform: scaleY(1); } 45% { transform: scaleY(.18); } }
-@media(max-width:600px) { .grok-bundle-scene { height: 175px; padding-bottom: 28px; } .grok-bundle-detail { height: 184px; } .grok-bundle-services { gap: 13px; } .grok-bundle-mark, .grok-bundle-detail .grok-bundle-mark { width: 45px; height: 45px; } .grok-bundle-name { font-size: 11px; } }
+@media(max-width:600px) { .grok-bundle-scene { height: 150px; padding-bottom: 30px; } .grok-bundle-detail { height: 158px; margin-bottom: 12px; } .grok-bundle-services { gap: 12px; } .grok-bundle-service { gap: 10px; } .grok-bundle-mark, .grok-bundle-detail .grok-bundle-mark { width: min(100%, 54px); } .grok-bundle-name { font-size: 12px; } }
 @media(prefers-reduced-motion:reduce) { .grok-bundle-scene :is(.grok-bundle-symbol, .grok-bot-eyes) { animation: none; transform: none; } .grok-bundle-mark, .grok-bundle-hint { transition: none; } .grok-bundle-service:is(:hover, :focus-visible) .grok-bundle-mark { transform: none; } }

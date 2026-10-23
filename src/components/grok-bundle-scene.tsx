@@ -30,11 +30,15 @@ export function GrokBundleScene({ detail = false, selectedTier }: { detail?: boo
             {service.id === 'grok' ? <span className="grok-bundle-mask" style={{ maskImage: 'url(/brands/grok-official.svg)' }}/>
               : service.id === 'cursor' ? <span className="grok-bundle-mask" style={{ maskImage: 'url(/brands/cursor-official.svg)' }}/>
               : service.id === 'x' ? <svg viewBox="0 0 24 24" fill="currentColor" focusable="false"><path d="M18.9 2H22l-6.77 7.74L23.2 22h-6.24l-4.89-7.4L5.6 22H2.47l7.15-8.17L1.2 2h6.4l4.43 6.77L18.9 2ZM17.8 20h1.73L6.65 3.9H4.8L17.8 20Z"/></svg>
-              : <svg viewBox="0 0 84 84" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" focusable="false">
-                <path d="M42 20V9m-6 0h12"/><rect x="12" y="23" width="60" height="46" rx="16"/>
-                <path d="M5 39v13m74-13v13M26 75v5m32-5v5"/>
-                <g className="grok-bot-eyes"><path d="M30 41v7m24-7v7" strokeWidth="5"/></g>
-                <path d="M32 57c6 4 14 4 20 0" strokeWidth="3"/>
+              : <svg viewBox="0 0 100 100" fill="currentColor" focusable="false">
+                <defs><mask id={id + '-bot-mask'} maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+                  <rect width="100" height="100" fill="white"/>
+                  <g className="grok-bot-eyes" fill="black">
+                    <rect x="55.5" y="22" width="9" height="18.5" rx="4.5" transform="rotate(-24 60 31.25)"/>
+                    <rect x="76.5" y="18" width="6" height="18.5" rx="3" transform="rotate(-24 79.5 27.25)"/>
+                  </g>
+                </mask></defs>
+                <circle cx="50" cy="50" r="46" mask={'url(#' + id + '-bot-mask)'} />
               </svg>}
           </span>
         </span>
