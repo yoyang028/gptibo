@@ -1,29 +1,28 @@
-.grok-bundle-scene { position: relative; display: grid; place-content: center; height: 195px; margin-top: 6px; background: transparent; border: 0; box-shadow: none; }
-.grok-bundle-scene > svg { display: block; width: 100%; max-width: 500px; height: auto; overflow: visible; }
-.grok-bundle-symbol { transform-box: fill-box; transform-origin: center; animation: grok-symbol-float 6s ease-in-out infinite; animation-play-state: paused; }
+.grok-bundle-scene { position: relative; display: grid; align-content: center; height: 195px; margin-top: 6px; padding: 0 4px 22px; color: var(--foreground); background: transparent; border: 0; box-shadow: none; }
+.grok-bundle-services { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: clamp(10px, 3vw, 24px); width: 100%; max-width: 400px; margin-inline: auto; }
+.grok-bundle-service { display: flex; flex-direction: column; align-items: center; gap: 17px; min-width: 0; padding: 8px 0; color: inherit; border: 0; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.grok-bundle-service:focus-visible { outline: 1px solid currentColor; outline-offset: 6px; border-radius: 3px; }
+.grok-bundle-mark { display: block; width: clamp(42px, 5.8vw, 61px); height: clamp(42px, 5.8vw, 61px); transition: transform .22s ease; }
+.grok-bundle-symbol { display: block; width: 100%; height: 100%; animation: grok-symbol-float 6s ease-in-out infinite; animation-play-state: paused; }
+.grok-bundle-symbol > svg, .grok-bundle-mask { display: block; width: 100%; height: 100%; }
+.grok-bundle-mask { background: currentColor; mask-repeat: no-repeat; mask-size: contain; mask-position: center; }
 .grok-bundle-x { animation-duration: 7s; animation-delay: -2s; }
 .grok-bundle-cursor { animation-duration: 6.8s; animation-delay: -4s; }
 .grok-bundle-bot { animation-duration: 5.4s; animation-delay: -1s; }
-.grok-bundle-thread { opacity: .38; }
-.grok-bundle-sparks { opacity: .7; animation: grok-spark-breathe 5s ease-in-out infinite; animation-play-state: paused; }
 .grok-bot-eyes { transform-box: fill-box; transform-origin: center; animation: grok-bot-blink 7s ease-in-out infinite; animation-play-state: paused; }
-.grok-bundle-tiers { position: relative; display: flex; align-items: center; justify-content: center; gap: clamp(13px, 2vw, 27px); margin-top: -27px; padding-bottom: 7px; font-size: 11px; font-weight: 550; letter-spacing: .2px; }
-.grok-bundle-tier { --grok-tier-color: #398dc0; color: var(--grok-tier-color); opacity: .58; animation: grok-tier-cycle 12s ease-in-out infinite; animation-play-state: paused; }
-.grok-bundle-tier:nth-child(2) { --grok-tier-color: #c16c78; }
-.grok-bundle-tier:nth-child(3) { --grok-tier-color: #8b6ac8; }
-.grok-bundle-tier:nth-child(4) { --grok-tier-color: #238f7f; }
-.dark .grok-bundle-tier { filter: brightness(1.35); }
-.grok-bundle-tiers[data-selected=true] .grok-bundle-tier { animation: none; }
-.grok-bundle-tier[data-current=true] { opacity: 1; text-decoration: underline; text-underline-offset: 6px; text-decoration-thickness: 2px; }
-.grok-bundle-scene[data-active=true] :is(.grok-bundle-symbol, .grok-bundle-sparks, .grok-bot-eyes, .grok-bundle-tier) { animation-play-state: running; }
+.grok-bundle-name { font-size: 12px; font-weight: 550; line-height: 1.3; letter-spacing: .1px; }
+.grok-bundle-hint { position: absolute; inset: auto 0 0; max-width: 100%; padding-inline: 3px; font-size: 11px; line-height: 1.6; color: var(--muted-foreground); text-align: center; visibility: hidden; opacity: 0; transition: opacity .18s ease; pointer-events: none; }
+.grok-bundle-service:is(:focus, :hover) .grok-bundle-hint { visibility: visible; opacity: 1; }
+.grok-bundle-services:has(.grok-bundle-service:hover) .grok-bundle-service:not(:hover) .grok-bundle-hint { visibility: hidden; opacity: 0; }
+.grok-bundle-service:is(:hover, :focus-visible) .grok-bundle-mark { transform: translateY(-4px) scale(1.04); }
+.grok-bundle-service:active .grok-bundle-mark { transform: scale(.96); }
+.grok-bundle-service:is(:hover, :focus-visible) .grok-bundle-symbol { animation-play-state: paused; }
+.grok-bundle-scene[data-active=true] :is(.grok-bundle-symbol, .grok-bot-eyes) { animation-play-state: running; }
+.grok-bundle-scene[data-active=true] .grok-bundle-service:is(:hover, :focus-visible) .grok-bundle-symbol { animation-play-state: paused; }
 .grok-bundle-detail { height: 224px; margin: 0 0 26px; }
-.grok-bundle-detail > svg { max-width: 510px; margin-inline: auto; }
-.grok-bundle-detail .grok-bundle-tiers { font-size: 12px; gap: 32px; }
-@keyframes grok-symbol-float { 0%,100% { transform: translateY(4px) rotate(-2deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
-@keyframes grok-spark-breathe { 0%,100% { opacity: .45; } 50% { opacity: .9; } }
+.grok-bundle-detail .grok-bundle-services { max-width: 430px; }
+.grok-bundle-detail .grok-bundle-mark { width: 64px; height: 64px; }
+@keyframes grok-symbol-float { 0%,100% { transform: translateY(2px); } 50% { transform: translateY(-2px); } }
 @keyframes grok-bot-blink { 0%,43%,47%,100% { transform: scaleY(1); } 45% { transform: scaleY(.18); } }
-@keyframes grok-tier-cycle { 0%,20%,100% { opacity: 1; } 26%,92% { opacity: .48; } }
-@media(max-width:600px) { .grok-bundle-scene { height: 175px; } .grok-bundle-detail { height: 184px; } .grok-bundle-detail .grok-bundle-tiers { gap: 22px; font-size: 11px; } }
-@media(prefers-reduced-motion:reduce) {
-  .grok-bundle-scene :is(.grok-bundle-symbol, .grok-bundle-sparks, .grok-bot-eyes, .grok-bundle-tier) { animation: none; transform: none; opacity: 1; }
-}
+@media(max-width:600px) { .grok-bundle-scene { height: 175px; padding-bottom: 28px; } .grok-bundle-detail { height: 184px; } .grok-bundle-services { gap: 13px; } .grok-bundle-mark, .grok-bundle-detail .grok-bundle-mark { width: 45px; height: 45px; } .grok-bundle-name { font-size: 11px; } }
+@media(prefers-reduced-motion:reduce) { .grok-bundle-scene :is(.grok-bundle-symbol, .grok-bot-eyes) { animation: none; transform: none; } .grok-bundle-mark, .grok-bundle-hint { transition: none; } .grok-bundle-service:is(:hover, :focus-visible) .grok-bundle-mark { transform: none; } }
