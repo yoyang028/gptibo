@@ -1,4 +1,3 @@
-import { MuseLogoMotion } from './muse-logo-motion'
 import { ProductArtwork } from './product-artwork'
 import { ProductMark } from './brand'
 import { ProductServiceScene } from './product-service-scene'
@@ -257,7 +256,7 @@ export function ShopProductPage({
             </div>
           </div>
           {!museType && <ProductKeyFacts highlights={product.buyerHighlights} warnings={product.buyerWarnings}/>}
-          {familyId === 'grok' ? <GrokBundleScene detail selectedTier={product.name.replace(/^Grok\s+/i, '')} /> : familyId === 'muse' ? <MuseLogoMotion detail /> : familyId === 'duolingo' ? <MembershipScene productId="duolingo"/> : familyId === 'gmail' ? <GmailScene/> : officialBrand(familyId) ? <OfficialLogoMotion productId={familyId} detail/> : <ProductArtwork
+          {familyId === 'grok' ? <GrokBundleScene detail selectedTier={product.name.replace(/^Grok\s+/i, '')} /> : familyId === 'muse' ? null : familyId === 'duolingo' ? <MembershipScene productId="duolingo"/> : familyId === 'gmail' ? <GmailScene/> : officialBrand(familyId) ? <OfficialLogoMotion productId={familyId} detail/> : <ProductArtwork
             config={artwork}
             name={buyerName}
             caption={product.duration}
@@ -275,7 +274,7 @@ export function ShopProductPage({
               {(['account', 'invitation'] as const).map(kind => {
                 const items = museVariants(variants, kind)
                 return items.length > 0 && <button key={kind} type="button" aria-pressed={museType === kind} onClick={() => { setCoupon(null); onVariantChange(items[0].id) }}>
-                  <strong>{kind === 'account' ? '成品账号' : '词元服务'}</strong>
+                  <strong>{kind === 'account' ? '购买账号' : '购买词元'}</strong>
                   <small>{kind === 'account' ? '独立账号 · 4 档' : '已有账号补充'}</small>
                 </button>
               })}
