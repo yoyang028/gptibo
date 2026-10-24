@@ -5,6 +5,7 @@ import {
 } from './hanfolk-catalog.ts'
 import type { ShopProduct } from './shop-products.ts'
 import { museBuyerCopy } from './muse-buyer-copy.ts'
+import { appleIdBuyerCopy, APPLE_ID_SOURCES } from './apple-id-buyer-copy.ts'
 
 export type HanfolkBuyerCopy = Pick<
   ShopProduct,
@@ -37,6 +38,12 @@ const profileTerms: Record<number, RegExp[]> = {
   3: [/Google AI Pro/, /成品账号/],
   10: [/Gmail/, /密码/, /验证资料/, /不含/],
   23: [/个人版/, /团队版/, /成品账号/],
+  15: [/美国/, /独享/, /密保/],
+  50: [/香港/, /独享/, /密保/],
+  14: [/日本/, /独享/, /密保/],
+  4: [/土耳其/, /独享/, /密保/],
+  5: [/尼日利亚/, /独享/, /密保/],
+  16: [/美国/, /独享/, /Shadowrocket/],
 }
 
 /** Buyer-facing editorial copy. Source identifiers select a verified product
@@ -56,6 +63,7 @@ export function hanfolkBuyerCopy(
   const family = hanfolkFamily(product.title),
     label = skuName(product, sku).trim()
   if (family === 'muse' && (product.id === 57 || product.id === 69)) return museBuyerCopy(product.id, label)
+  if (family === 'apple-id' && Object.hasOwn(APPLE_ID_SOURCES, product.id)) return appleIdBuyerCopy(product.id as keyof typeof APPLE_ID_SOURCES, label)
   const account = /成品|账户|账号|Apple\s*ID/i.test(product.title)
   let name =
     label === product.title ? product.title : product.title + ' · ' + label
@@ -269,47 +277,6 @@ export function hanfolkBuyerCopy(
       question: '是不是无需任何支付方式？',
       answer:
         '不是。供货说明明确要求自备 UPI 或银行卡，请先确认地区、新用户资格和支付条件。',
-    })
-  }
-  if (family === 'apple-id' && [50,4,5,14,15,16].includes(product.id)) {
-    const region =
-        product.title.match(/香港|土耳其|尼日利亚|日本|美国/)?.[0] ??
-        '所选地区',
-      purchased = product.id === 16
-    name = region + ' Apple ID · ' + (purchased ? '已购 Shadowrocket' : label)
-    introduction =
-      '用于所选地区 App Store 的账号资料。先按地区和账号类型选择，再核对是否包含特定应用的已购记录。'
-    rights = purchased
-      ? '美国区独享账号，带 Shadowrocket 已购记录。'
-      : region +
-        '区独享账号，附密保资料，可改密；所选账号类型为 ' +
-        label +
-        '。'
-    duration = purchased ? '账号资料 · 已购应用' : label
-    conditions =
-      '账号地区为' +
-      region +
-      '。' +
-      (purchased
-        ? '只包含本规格明确标注的已购项目。'
-        : '新老号描述注册时间，不代表会员期限；不能默认带其他已购软件。')
-    delivered =
-      '所选地区 Apple ID 及随附密保资料；带已购应用的规格仅以明确标注的项目为准。'
-    use =
-      '按交付指引在 App Store 使用账号并核对地区或已购记录；无需 CDK 兑换。不要在设备 iCloud、查找或个人备份中登录购买账号。请保管密保和登录资料。'
-    highlights.push(
-      region + '区账号；' + (purchased ? '已购 Shadowrocket' : label),
-    )
-    warnings.push(
-      '仅按 App Store 用途使用，勿登录 iCloud / 查找',
-      purchased
-        ? '不是所有 Apple ID 都包含此已购应用'
-        : '账号年龄不等于会员时长；其他已购内容未承诺',
-    )
-    faq.push({
-      question: '新号、老号和已购应用有什么区别？',
-      answer:
-        '新老号按注册时间区分；已购应用是另一项独立条件，只有标题明确写明的规格包含对应已购记录。',
     })
   }
   if (product.id === 10 && family === 'gmail') {

@@ -1,0 +1,101 @@
+.apple-id-choices { margin-top:24px; }
+.apple-id-region-options { display:flex; gap:8px; margin:12px 0 24px; }
+.apple-id-region-options button { display:flex; align-items:center; justify-content:center; gap:8px; flex:1; min-height:44px; padding:9px 12px; border:1px solid var(--border); border-radius:10px; color:var(--muted-foreground); font-size:13px; cursor:pointer; transition:background .15s,border-color .15s; }
+.apple-id-region-options button[aria-pressed=true] { color:var(--foreground); background:color-mix(in srgb,var(--primary) 7%,var(--background)); border-color:var(--primary); }
+.apple-id-region-options small { font-size:10px; font-variant-numeric:tabular-nums; color:var(--muted-foreground); }
+.apple-id-region-options button:focus-visible { outline:2px solid var(--primary); outline-offset:3px; }
+.apple-id-specifications { grid-auto-rows:1fr; }
+.apple-id-specifications .shop-variant { display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:12px; min-height:86px; padding:17px 18px; }
+.apple-id-specifications .shop-variant>strong { grid-column:auto; font-size:24px; }
+.apple-id-specifications .shop-variant span>strong { font-size:14px; line-height:1.6; }
+.apple-id-stock { display:inline; font-style:normal; font-size:11px; font-weight:400; color:var(--muted-foreground); }
+.apple-id-detail-guide { padding:17px 0; border-block:1px solid var(--border); }
+.apple-id-detail-guide a { display:flex; justify-content:space-between; align-items:center; gap:14px; min-height:36px; color:#1d4ed8; font-size:13px; line-height:1.7; }
+.apple-id-detail-guide svg { flex-shrink:0; }
+.dark .apple-id-detail-guide a { color:#93c5fd; }
+.apple-id-detail-guide a:hover { text-decoration:underline; text-underline-offset:4px; }
+.family-apple-id .shop-product-option { margin-top:24px; padding-top:0; border-top:0; }
+.apple-id-buyer-details .shop-product-description { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:26px 32px; }
+.apple-id-buyer-details .shop-description-section { padding:0; border:0; }
+.apple-id-buyer-details .shop-description-section:first-child { grid-column:1/-1; }
+.apple-id-buyer-details .shop-description-section h4 { font-size:14px; margin-bottom:9px; }
+.apple-id-buyer-details .shop-product-copy { font-size:13px; line-height:1.9; white-space:pre-line; }
+@media(max-width:760px) {
+  .apple-id-buyer-details .shop-product-description { grid-template-columns:minmax(0,1fr); gap:22px; }
+}
+@media(max-width:450px) {
+  .apple-id-region-options { gap:6px; }
+  .apple-id-region-options button { padding:8px 6px; font-size:12px; gap:5px; }
+  .apple-id-specifications .shop-variant { padding:14px 12px; min-height:100px; gap:9px; }
+  .apple-id-specifications .shop-variant>strong { font-size:21px; }
+  .apple-id-specifications .shop-variant span>strong { font-size:13px; }
+  .apple-id-specifications legend>span { display:inline; float:right; margin-top:0; }
+}
+@media(prefers-reduced-motion:reduce) { .apple-id-region-options button { transition:none; } }
+@media(max-width:360px) {
+  .apple-id-specifications .shop-variant { min-height:112px; }
+}
+.apple-id-guide { --guide-link:#1d4ed8; padding-top:38px; padding-bottom:65px; }
+.dark .apple-id-guide { --guide-link:#93c5fd; }
+.apple-guide-hero { padding:38px 0; border-bottom:1px solid var(--border); }
+.apple-guide-hero h1 { margin:12px 0 16px; font-size:clamp(28px,3vw,42px); font-weight:600; line-height:1.3; letter-spacing:-1px; }
+.apple-guide-hero p { font-size:15px; line-height:1.9; color:var(--muted-foreground); }
+.apple-guide-hero>span:last-child { display:block; margin-top:18px; font-size:11px; color:var(--muted-foreground); }
+.apple-guide-layout { display:grid; grid-template-columns:200px minmax(0,780px); justify-content:space-between; gap:48px; padding-top:32px; }
+.apple-guide-directory nav { position:sticky; top:105px; display:grid; gap:5px; font-size:12px; }
+.apple-guide-directory strong { color:var(--muted-foreground); font-size:11px; font-weight:500; margin-bottom:9px; }
+.apple-guide-directory a { display:flex; align-items:center; min-height:37px; }
+.apple-id-guide a { color:var(--guide-link); text-underline-offset:4px; }
+.apple-id-guide a:hover { text-decoration:underline; }
+.apple-guide-body { min-width:0; }
+.apple-guide-section { padding:0 0 32px; margin-bottom:32px; border-bottom:1px solid var(--border); scroll-margin-top:105px; }
+.apple-guide-section h2 { margin-bottom:16px; font-size:21px; font-weight:600; line-height:1.6; letter-spacing:-.4px; }
+.apple-guide-section h3 { font-size:16px; font-weight:600; margin:27px 0 10px; }
+.apple-guide-section p,.apple-guide-list { font-size:14px; line-height:1.95; color:var(--muted-foreground); margin:12px 0; overflow-wrap:anywhere; }
+.apple-guide-list { padding-left:22px; display:grid; gap:12px; }
+.apple-guide-callout { padding:20px 22px; margin:22px 0; border-left:3px solid #7c85db; border-radius:0 12px 12px 0; background:color-mix(in srgb,#7c85db 6%,var(--background)); }
+.apple-guide-callout strong { font-size:13px; font-weight:600; }
+.apple-guide-callout p { margin-bottom:0; }
+.apple-guide-format { padding:16px 18px; border:1px solid var(--border); border-radius:10px; font:12px/2 ui-monospace,Consolas,monospace; overflow-wrap:anywhere; }
+.apple-guide-figure { margin:24px auto; max-width:680px; }
+.apple-guide-figure.apple-guide-phone { max-width:340px; }
+.apple-guide-image { display:block; position:relative; width:100%; overflow:hidden; border:1px solid var(--border); border-radius:13px; background:#fff; cursor:zoom-in; }
+.apple-guide-image img { display:block; width:100%; height:auto; }
+.apple-guide-image>span { position:absolute; display:flex; align-items:center; gap:6px; bottom:10px; right:10px; padding:6px 9px; border:1px solid #ddd; border-radius:7px; background:#fff; color:#333; font-size:11px; }
+.apple-guide-figure figcaption { margin-top:9px; font-size:11px; line-height:1.8; color:var(--muted-foreground); }
+.apple-guide-caption { font-size:12px!important; }
+.apple-guide-login-steps { list-style:none; padding:0; margin:0; }
+.apple-guide-login-steps>li { border-bottom:1px solid var(--border); padding:25px 0; }
+.apple-guide-login-steps>li:last-child { border:0; padding-bottom:0; }
+.apple-guide-step-heading { display:flex; align-items:baseline; gap:14px; }
+.apple-guide-step-heading>span { color:var(--guide-link); font-size:12px; font-variant-numeric:tabular-nums; }
+.apple-guide-step-heading h3 { margin:0 0 8px; }
+.apple-guide-image-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.apple-guide-table table { width:100%; border-collapse:collapse; font-size:13px; line-height:1.9; }
+.apple-guide-table th,.apple-guide-table td { padding:14px 12px; text-align:left; border-bottom:1px solid var(--border); vertical-align:top; }
+.apple-guide-table th { font-weight:500; color:var(--foreground); }
+.apple-guide-table td { color:var(--muted-foreground); }
+.apple-guide-table td:first-child { width:38%; }
+.apple-guide-faq { font-size:13px; line-height:1.9; }
+.apple-guide-back a { display:inline-flex; gap:8px; align-items:center; min-height:44px; font-size:13px; }
+.apple-guide-lightbox { width:calc(100vw - 32px); max-width:1100px!important; }
+.apple-guide-zoom { max-height:68vh; overflow:auto; background:#fff; border-radius:8px; }
+.apple-guide-zoom img { display:block; width:100%; height:auto; }
+.apple-guide-zoom-actions { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.apple-guide-zoom-actions a { font-size:12px; color:#1d4ed8; text-decoration:underline; text-underline-offset:3px; }
+.dark .apple-guide-zoom-actions a { color:#93c5fd; }
+.apple-id-guide a:focus-visible,.apple-guide-image:focus-visible { outline:2px solid var(--guide-link); outline-offset:4px; }
+@media(max-width:760px) {
+  .apple-id-guide { padding-top:24px; }
+  .apple-guide-hero { padding:28px 0; }
+  .apple-guide-layout { grid-template-columns:minmax(0,1fr); gap:24px; padding-top:20px; }
+  .apple-guide-directory nav { position:static; display:flex; flex-wrap:wrap; gap:4px 16px; padding-bottom:16px; border-bottom:1px solid var(--border); }
+  .apple-guide-directory strong { width:100%; }
+  .apple-guide-directory a { font-size:11px; }
+  .apple-guide-section h2 { font-size:19px; }
+  .apple-guide-section p,.apple-guide-list { font-size:13px; }
+  .apple-guide-callout { padding:16px; }
+  .apple-guide-image-pair { gap:10px; }
+  .apple-guide-table th,.apple-guide-table td { padding:12px 6px; font-size:12px; }
+  .apple-guide-zoom-actions a { font-size:11px; }
+}

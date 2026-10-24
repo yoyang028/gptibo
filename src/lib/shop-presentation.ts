@@ -10,7 +10,7 @@ const families: Record<string, { tagline: string; intro: string; category: strin
   duolingo: {tagline:'让每天的练习，多一点动力。',intro:'查看会员周期、兑换步骤与账号适用条件。',category:'语言学习'},
   'adobe-express': {tagline:'把想法，变成作品。',intro:'Adobe Express 会员兑换，查看周期与开通条件。',category:'创作工具'},
   'apple-music': {tagline:'让音乐，陪伴每一天。',intro:'音乐会员兑换，先核对账号地区、新用户资格与支付要求。',category:'音乐会员'},
-  'apple-id': {tagline:'选择适合你的应用商店。',intro:'按地区、注册时间和已购项目选择账号，核对登录与安全说明。',category:'账号服务'},
+  'apple-id': {tagline:'选择地区，再选账号类型。',intro:'美国、香港、日本与其他地区；新号、老号和 Shadowrocket 已购账号分别选择。',category:'账号服务'},
   gmail: {tagline:'为你的邮件，准备一个入口。',intro:'按注册年份、地区与渠道选择 Gmail 成品账号；不含 Google 付费订阅。',category:'邮箱账号'},
   'capcut-pro': {tagline:'让每一个镜头，更有表达。',intro:'个人版与团队版，按周卡或月卡选择。',category:'创作工具'},
 }

@@ -1,5 +1,5 @@
 import { referralCodePattern } from '../../shared/partner-link.ts'
-import { MUSE_GUIDE_PATHS } from '../../shared/muse-products.ts'
+import { STOREFRONT_GUIDE_PATHS } from '../../shared/storefront-guides.ts'
 type StorefrontLocation = { pathname: string; search: string; hash: string }
 
 export function storefrontShopSlug(pathname: string) {
@@ -13,7 +13,7 @@ function basePath(pathname: string) {
 }
 
 export function storefrontHref(page: string, current: StorefrontLocation = location) {
-  const suffix = page === 'store' ? '/' : page === 'orders' ? '/orders' : page === 'check' ? '/check' : (MUSE_GUIDE_PATHS as readonly string[]).includes('/' + page) ? '/' + page : `/product/${encodeURIComponent(page.slice('product/'.length))}`
+  const suffix = page === 'store' ? '/' : page === 'orders' ? '/orders' : page === 'check' ? '/check' : (STOREFRONT_GUIDE_PATHS as readonly string[]).includes('/' + page) ? '/' + page : `/product/${encodeURIComponent(page.slice('product/'.length))}`
   const base = basePath(current.pathname)
   return (page === 'store' && base ? base : base + suffix) + current.search
 }
@@ -22,7 +22,7 @@ function pathPage(current: StorefrontLocation) {
   const path = current.pathname.slice(basePath(current.pathname).length).replace(/\/$/, '')
   if (path === '/orders') return 'orders'
   if (path === '/check') return 'check'
-  if ((MUSE_GUIDE_PATHS as readonly string[]).includes(path)) return path.slice(1)
+  if ((STOREFRONT_GUIDE_PATHS as readonly string[]).includes(path)) return path.slice(1)
   const product = path.match(/^\/product\/([^/]+)$/)
   if (product) {
     try { return `product/${decodeURIComponent(product[1])}` } catch { return `product/${product[1]}` }

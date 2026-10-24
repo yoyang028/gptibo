@@ -47,6 +47,9 @@ import { productCopyBlocks } from '../../shared/product-copy'
 import { inventoryLabel } from '../../shared/product-inventory'
 import { museKind, museVariants, MUSE_ACCOUNT_GUIDE, MUSE_INVITE_GUIDE } from '../../shared/muse-products'
 import './muse-guides.css'
+import { AppleIdVariants } from './apple-id-variants'
+import { appleIdVariants } from '../../shared/apple-id-products'
+import { APPLE_ID_GUIDE } from '../../shared/storefront-guides'
 
 export function ShopProductGroupPage({
   group,
@@ -68,7 +71,7 @@ export function ShopProductGroupPage({
   onSupport: () => void
 }) {
   const [selected, setSelected] = useState(
-    group.products.find(p => p.id === initialProductId)?.id ?? (group.id === 'muse' ? museVariants(group.products, 'account')[0]?.id : undefined) ?? group.products[0].id,
+    group.products.find(p => p.id === initialProductId)?.id ?? (group.id === 'muse' ? museVariants(group.products, 'account')[0]?.id : group.id === 'apple-id' ? appleIdVariants(group.products)[0]?.id : undefined) ?? group.products[0].id,
   )
   const product =
     group.products.find((p) => p.id === selected) ?? group.products[0]
@@ -127,6 +130,7 @@ export function ShopProductPage({
   const contactPurchase = !available || product.pricePending || product.stock === 0
   const familyId = product.groupId ?? product.id
   const museType = museKind(product)
+  const appleId = familyId === 'apple-id'
   const museUnavailable = (museType === 'invitation' && !available) || Boolean(museType && product.pricePending)
   const shownVariants = familyId === 'muse' && variants ? museVariants(variants, museType ?? 'account') : variants
   const grokPaused = familyId === 'grok' && !available
@@ -135,8 +139,8 @@ export function ShopProductPage({
   const compactVariants = familyId === 'apple-id' || familyId === 'gemini'
   const presentation = shopPresentation(familyId, product)
   const descriptionBlocks = productCopyBlocks(customerProductCopy(product.description))
-  if (museType) {
-    const headings = museType === 'account' ? ['适用范围', '售后范围'] : ['参与条件', '售后与进度核对']
+  if (museType || appleId) {
+    const headings = appleId ? ['购买前确认', '售后范围'] : museType === 'account' ? ['适用范围', '售后范围'] : ['参与条件', '售后与进度核对']
     descriptionBlocks.push(...productCopyBlocks(customerProductCopy(product.purchaseNote)).map((block, i) => ({
       ...block, title: block.title || headings[i] || '购买须知',
     })))
@@ -250,13 +254,13 @@ export function ShopProductPage({
             )}
             <div>
               <h2>{familyName}</h2>
-              <span className="personal-badge">
+              {!appleId && <span className="personal-badge">
                 {product.badge || '自营商品'}
-              </span>
+              </span>}
             </div>
           </div>
-          {!museType && <ProductKeyFacts highlights={product.buyerHighlights} warnings={product.buyerWarnings}/>}
-          {familyId === 'grok' ? <GrokBundleScene detail selectedTier={product.name.replace(/^Grok\s+/i, '')} /> : familyId === 'muse' ? null : familyId === 'duolingo' ? <MembershipScene productId="duolingo"/> : familyId === 'gmail' ? <GmailScene/> : officialBrand(familyId) ? <OfficialLogoMotion productId={familyId} detail/> : <ProductArtwork
+          {!museType && !appleId && <ProductKeyFacts highlights={product.buyerHighlights} warnings={product.buyerWarnings}/>}
+          {familyId === 'grok' ? <GrokBundleScene detail selectedTier={product.name.replace(/^Grok\s+/i, '')} /> : familyId === 'muse' || appleId ? null : familyId === 'duolingo' ? <MembershipScene productId="duolingo"/> : familyId === 'gmail' ? <GmailScene/> : officialBrand(familyId) ? <OfficialLogoMotion productId={familyId} detail/> : <ProductArtwork
             config={artwork}
             name={buyerName}
             caption={product.duration}
@@ -264,10 +268,10 @@ export function ShopProductPage({
             fallback={(!variants || variants.length === 1) ? <ProductServiceScene productId={familyId} name={familyName} duration={product.duration} /> : null}
           />
           }
-          <div className="product-pitch">
+          {!appleId && <div className="product-pitch">
             <h3>{familyId === 'grok' ? '灵感、社交与代码，一起连接。' : familyId === 'claude' ? '找到适合你的用量。' : familyId === 'codex-credits' ? '按需补充，继续创造。' : compactVariants ? familyId === 'apple-id' ? '选择适合你的账号。' : '选择适合你的开通方式。' : buyerName}</h3>
             <p>{compactVariants ? familyId === 'apple-id' ? '按地区和类型选择，查看所选账号的完整条件。' : '选择成品账号或激活链接，查看对应的会员与开通条件。' : customerProductCopy(product.tagline)}</p>
-          </div>
+          </div>}
           {familyId === 'muse' && variants && onVariantChange && <div className="muse-purchase-types">
             <span className="section-kicker">选择购买类型</span>
             <div className="muse-kind-options" role="group" aria-label="Muse 购买类型">
@@ -281,7 +285,8 @@ export function ShopProductPage({
             </div>
             <p>{museType === 'invitation' ? '使用自己的 6 位邀请码；先核对活动资格，无需账号密码。' : '交付账号与收件资料，买家自行登录；不是为原账号充值。'}</p>
           </div>}
-          {shownVariants && shownVariants.length > 0 && (shownVariants.length > 1 || familyId === 'muse') && (
+          {appleId && variants && <AppleIdVariants products={variants} selected={product} onChange={id => { setCoupon(null); onVariantChange?.(id) }} />}
+          {!appleId && shownVariants && shownVariants.length > 0 && (shownVariants.length > 1 || familyId === 'muse') && (
             <fieldset className={'shop-product-variants' + (compactVariants ? ' shop-product-variants-compact' : '') + (museType ? ' muse-variants muse-variants-' + museType : '')}>
               <legend>{museType === 'account' ? '选择账号词元额度' : museType === 'invitation' ? '选择词元数量' : '选择适合你的规格'}<span>{shownVariants.length} 个规格可选</span></legend>
               {shownVariants.map((variant) => (
@@ -316,6 +321,7 @@ export function ShopProductPage({
               ? <a href={storefrontHref(MUSE_ACCOUNT_GUIDE.slice(1))}>查看邮箱更换完整图解 · 15 张步骤图 <ArrowRight size={14} /></a>
               : <a href={storefrontHref(MUSE_INVITE_GUIDE.slice(1))}>Muse 邀请码与词元购买教程 <ArrowRight size={14} /></a>}
           </nav>}
+          {appleId && <nav className="apple-id-detail-guide" aria-label="Apple ID 使用教程"><a href={storefrontHref(APPLE_ID_GUIDE.slice(1))}>查看 Apple ID 完整使用图文教程<ArrowRight size={14} /></a></nav>}
           <div className="shop-product-option" role={compactVariants || museType ? 'region' : undefined} aria-label={compactVariants || museType ? '已选规格详情' : undefined} aria-live={compactVariants || museType ? 'polite' : undefined}>
             <span className="section-kicker">{compactVariants ? '已选规格详情' : '商品详情'}</span>
             <div className="plan-option-top">
@@ -349,7 +355,7 @@ export function ShopProductPage({
             </div>
             <div>
               <dt>交付方式</dt>
-              <dd>{museType === 'account' ? '账号 + 收件资料' : museType === 'invitation' ? '邀请码助力' : product.requiresRedemption ? '兑换码 + 使用指引' : product.delivery === 'api' ? '卡密 / 兑换信息' : '按商品说明交付'}</dd>
+              <dd>{appleId ? '账号 + 随单安全资料' : museType === 'account' ? '账号 + 收件资料' : museType === 'invitation' ? '邀请码助力' : product.requiresRedemption ? '兑换码 + 使用指引' : product.delivery === 'api' ? '卡密 / 兑换信息' : '按商品说明交付'}</dd>
             </div>
             {!displayOnly && available && (
               <div>
@@ -389,7 +395,7 @@ export function ShopProductPage({
           </p>
         </aside>
       </section>
-      <section className={'shop-buyer-details page-width' + (museType ? ' muse-buyer-details' : '')} id="product-details" aria-label="商品介绍与购买须知">
+      <section className={'shop-buyer-details page-width' + (museType ? ' muse-buyer-details' : appleId ? ' apple-id-buyer-details' : '')} id="product-details" aria-label="商品介绍与购买须知">
         <div className="shop-buyer-heading">
           <span className="section-kicker">PRODUCT DETAILS</span>
           <h2>了解你的选择。</h2>
@@ -397,7 +403,7 @@ export function ShopProductPage({
         </div>
         <div className="shop-buyer-body">
           <ProductDescription blocks={descriptionBlocks} />
-          {!museType && <div className="membership-purchase-note">
+          {!museType && !appleId && <div className="membership-purchase-note">
             <strong>购买须知与售后范围</strong>
             <p className="shop-product-copy"><ProductCopyText text={product.purchaseNote} /></p>
           </div>}

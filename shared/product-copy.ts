@@ -1,5 +1,5 @@
 import { safeHttps } from './shop-products.ts'
-import { MUSE_GUIDE_PATHS } from './muse-products.ts'
+import { STOREFRONT_GUIDE_PATHS } from './storefront-guides.ts'
 
 export const DELIVERY_COPY_HEADING = '卡密交付与站外兑换'
 export const PENDING_COPY_HEADING = '待核实信息'
@@ -24,7 +24,7 @@ export function productCopyLinks(text: string): { text: string; href?: string }[
   for (const match of text.matchAll(links)) {
     if (match.index > 0 && text[match.index - 1] === '!') continue
     parts.push({ text: text.slice(offset, match.index) })
-    parts.push(safeHttps(match[2]) || (MUSE_GUIDE_PATHS as readonly string[]).includes(match[2])
+    parts.push(safeHttps(match[2]) || (STOREFRONT_GUIDE_PATHS as readonly string[]).includes(match[2])
       ? { text: match[1], href: match[2] }
       : { text: match[0] })
     offset = match.index + match[0].length

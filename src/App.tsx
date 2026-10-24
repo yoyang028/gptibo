@@ -2,6 +2,7 @@ import { SmsPage } from '@/components/sms-page'
 import { SMS_PRODUCT_IDS, type GrizzlyService } from '../shared/grizzly-sms'
 import { ShopProductGroupPage, ShopOrderDialog } from '@/components/shop-product-page'
 import { MuseGuidePage } from '@/components/muse-guide-page'
+import { AppleIdGuidePage } from '@/components/apple-id-guide-page'
 import { groupShopProducts, SHOP_PRODUCT_GROUPS } from '../shared/shop-products'
 import { useStorefrontI18n } from '@/lib/storefront-i18n'
 import { useEffect, useState } from 'react'
@@ -74,7 +75,8 @@ function App() {
   const brandLogo = shopIdentity?.logo || ''
   const pageTitle = shopIdentity?.pageTitle
   const description = shopIdentity?.description || t('AI 订阅、语言学习与工具服务，在这里按需选择。')
-  const guideTitle = page === 'guides/muse-change-email' ? 'Muse 邮箱更换完整图解' : page === 'guides/muse-invite-tokens' ? 'Muse 邀请码与词元购买教程' : ''
+  const appleIdGuide = page === 'guides/apple-id'
+  const guideTitle = appleIdGuide ? 'Apple ID 使用图文教程' : page === 'guides/muse-change-email' ? 'Muse 邮箱更换完整图解' : page === 'guides/muse-invite-tokens' ? 'Muse 邀请码与词元购买教程' : ''
   useEffect(() => {
     document.querySelector('meta[name="description"]')?.setAttribute('content', description)
     document.title = (guideTitle ? guideTitle + ' · ' : page === 'check' ? '账号检测 · ' : '') + (pageTitle || (platformBrand ? translateStorefront(locale, 'GPTibo · 会员订阅与工具服务') : brandName))
@@ -145,7 +147,7 @@ function App() {
     </div></header>
     <main id="main-content" tabIndex={-1}>
       {store.error && <div className="storage-warning" role="alert">{t(store.error)} <Button variant="ghost" onClick={() => void store.refresh()}>{t('重试')}</Button></div>}
-      {guideTitle ? <MuseGuidePage key={page} kind={page === 'guides/muse-change-email' ? 'email' : 'invitation'} onSupport={openSupport} /> : page === 'check' ? <AccountCheckPage onNavigate={navigate} /> : page === 'store' ? <><section className="store-intro page-width reveal-in">
+      {appleIdGuide ? <AppleIdGuidePage onSupport={openSupport}/> : guideTitle ? <MuseGuidePage key={page} kind={page === 'guides/muse-change-email' ? 'email' : 'invitation'} onSupport={openSupport} /> : page === 'check' ? <AccountCheckPage onNavigate={navigate} /> : page === 'store' ? <><section className="store-intro page-width reveal-in">
         <div><h1>{shopIdentity?.headline || <>{t('商店。')}<span>{t('找到适合你的服务。')}</span></>}</h1><p>{description}</p></div>
         <div className="store-intro-support"><span>{t('选购遇到问题？')}</span><Button variant="ghost" onClick={openSupport}>{t('联系支持')}<ArrowRight size={14} /></Button></div>
         </section><ProductCatalog managedProductGroups={store.managedProductGroups} smsCatalog={store.sms} productArtwork={store.productArtwork} products={store.products} catalogReady={store.catalogReady} error={store.error} hiddenProductIds={store.hiddenProductIds} productOrder={store.productOrder} offers={store.catalog} onHelp={help} onOrders={() => navigate('orders')} onNavigate={navigate} /></> : unifiedSms ? <SmsPage key={page} initialService={smsAlias} catalog={store.sms} ready={store.catalogReady} hidden={store.hiddenProductIds.includes('codex-sms')} onHome={() => navigate('store')} onSupport={openSupport} onCreated={order => { store.acceptOrder(order); setActiveId(order.id); setCheckoutOpen(true) }} /> : customDetail ? customGroup ? <ShopProductGroupPage key={page} group={customGroup} initialProductId={page.slice('product/'.length)} offers={store.catalog} checkoutEnabled={store.checkoutEnabled} artwork={store.productArtwork} onHome={() => navigate('store')} onSupport={openSupport} onCreated={order => { store.acceptOrder(order); setActiveId(order.id); setCheckoutOpen(true) }} /> : <section className="empty-orders page-width"><h1>{store.catalogReady ? '该商品暂未上架' : '正在读取商品…'}</h1><Button onClick={() => navigate('store')}>返回商店</Button></section> : isDetail && productHidden ? <section className="empty-orders page-width"><h1>{t('该商品已下架')}</h1><p>{t('商店暂不销售此商品，已有订单可在「我的订单」中继续处理。')}</p><Button onClick={() => navigate('store')}>{t('返回商店')}</Button></section> : isDetail ? <>
