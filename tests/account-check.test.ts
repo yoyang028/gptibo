@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import worker from '../worker/index.ts'
 import { accountReport } from '../worker/account-check.ts'
-import { readAccountSession } from '../shared/chatgpt-account.ts'
+import { ACCOUNT_CHECK_BODY_MAX_BYTES, ACCOUNT_SESSION_MAX_BYTES, compactAccountSession, readAccountSession } from '../shared/chatgpt-account.ts'
 import type { Env } from '../worker/platform.ts'
 
 const origin = 'https://shop.example.invalid'
@@ -41,6 +41,51 @@ test('account replies use the requested account and never infer a paid or free s
   assert.equal(accountReport({ accounts: { default: { ...free.accounts.default, entitlement: { has_active_subscription: true } } } }, null).state, 'unknown')
 })
 
+test('large complete Sessions keep their account fields while truncated and oversized input still fail explicitly', () => {
+  const raw = session({ expires: '2099-01-01T00:00:00Z', featureFlags: 'synthetic-extra-session-data'.repeat(12000) })
+  assert(raw.length > 300000)
+  const parsed = readAccountSession(raw)
+  assert(parsed.ok)
+  assert.equal(parsed.session.email, 'account@example.test')
+  assert.equal(parsed.session.accessToken, 'fixture-account-free')
+  assert.equal(parsed.session.accountId, 'account-fixture')
+  const compact = compactAccountSession(parsed.session)
+  assert.deepEqual(JSON.parse(compact), { user: { email: 'account@example.test' }, accessToken: 'fixture-account-free', account: { id: 'account-fixture' }, expires: '2099-01-01T00:00:00.000Z' })
+  assert(compact.length < 1000); assert.doesNotMatch(compact, /featureFlags|synthetic-extra/)
+  const truncated = readAccountSession(raw.slice(0, 32000))
+  assert.equal(truncated.ok ? null : truncated.code, 'format')
+  const oversized = readAccountSession(session({ featureFlags: 'x'.repeat(ACCOUNT_SESSION_MAX_BYTES) }))
+  assert.equal(oversized.ok ? null : oversized.code, 'size')
+  const multibyte = readAccountSession(session({ featureFlags: '测'.repeat(ACCOUNT_SESSION_MAX_BYTES / 2) }))
+  assert.equal(multibyte.ok ? null : multibyte.code, 'size', 'input limits count UTF-8 bytes')
+})
+
+test('a large pasted Session produces one compact, consented provider read without forwarding unrelated data', async t => {
+  const raw = session({ featureFlags: 'synthetic-extra-session-data'.repeat(12000), callback: 'https://evil.test' })
+  const parsed = readAccountSession(raw); assert(parsed.ok)
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (url: string, options: RequestInit) => {
+    calls++; assert.equal(url, 'https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=-480')
+    assert.equal(options.method, 'GET'); assert.equal(options.body, undefined)
+    assert.equal(new Headers(options.headers).get('Authorization'), 'Bearer fixture-account-free')
+    assert.doesNotMatch(JSON.stringify(options), /featureFlags|synthetic-extra|evil/)
+    return Response.json(free)
+  })
+  const response = await worker.fetch(request({ session: compactAccountSession(parsed.session), consent: true }), env())
+  assert.equal(response.status, 200); assert.equal((await response.json()).report.plan, 'free'); assert.equal(calls, 1)
+  assert.equal((await worker.fetch(request({ session: raw, consent: true }), env())).status, 413)
+  assert.equal(calls, 1, 'the server keeps its bounded request budget even though the browser accepts a large paste')
+})
+
+test('JSON escaping of a bounded token cannot exhaust the account-check request budget', async t => {
+  const parsed = readAccountSession(session({ accessToken: '\\'.repeat(16000) })); assert(parsed.ok)
+  const input = { session: compactAccountSession(parsed.session), consent: true }
+  assert(Buffer.byteLength(JSON.stringify(input)) > 34000)
+  assert(Buffer.byteLength(JSON.stringify(input)) < ACCOUNT_CHECK_BODY_MAX_BYTES)
+  t.mock.method(globalThis, 'fetch', async () => Response.json(free))
+  assert.equal((await worker.fetch(request(input), env())).status, 200)
+})
+
 test('known subscription metadata is normalized and extra fields, credentials and identifiers never reach the report', () => {
   const result = accountReport({ accounts: { default: {
     account: { account_id: 'account-fixture', plan_type: 'plus', structure: 'personal', billing_country: 'ph', private_note: 'PRIVATE' },
@@ -63,7 +108,7 @@ test('public account check requires same-origin JSON, explicit consent and rate 
     [request({ session: session(), consent: true }, { 'Content-Type': 'text/plain' }), 415],
     [request({ session: session() }), 400],
     [request({ session: '{', consent: true }), 400],
-    [request({ session: 'x'.repeat(35000), consent: true }), 413],
+    [request({ session: 'x'.repeat(ACCOUNT_CHECK_BODY_MAX_BYTES), consent: true }), 413],
   ] as const) assert.equal((await worker.fetch(r, e)).status, status)
   e.INTEREST_LIMITER.limit = async () => ({ success: false })
   const limited = await worker.fetch(request({ session: session(), consent: true }), e)

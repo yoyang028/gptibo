@@ -1,6 +1,6 @@
 import { ApiError, body, hash, json, type Env } from './platform.ts'
 import { boundedResponseText } from './bounded-response.ts'
-import { readAccountSession, type AccountCheckReport } from '../shared/chatgpt-account.ts'
+import { ACCOUNT_CHECK_BODY_MAX_BYTES, readAccountSession, type AccountCheckReport } from '../shared/chatgpt-account.ts'
 
 const accountEndpoint = 'https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27?timezone_offset_min=-480'
 type ObjectValue = Record<string, unknown>
@@ -53,7 +53,7 @@ export function accountReport(value: unknown, accountId: string | null, now = Da
 export async function checkAccount(request: Request, env: Env) {
   try {
     if (request.method !== 'POST') throw new ApiError('请通过检测页面提交。', 405)
-    const input = await body(request, 34000)
+    const input = await body(request, ACCOUNT_CHECK_BODY_MAX_BYTES)
     if (input.consent !== true) throw new ApiError('请先同意本次只读查询授权。')
     const parsed = readAccountSession(typeof input.session === 'string' ? input.session : '')
     if (!parsed.ok) {

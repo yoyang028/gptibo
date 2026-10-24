@@ -6,8 +6,10 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const origin = 'https://127.0.0.1:8781'
-const state = await (await fetch('http://127.0.0.1:8784/state')).json()
+const origin = process.env.ACCOUNT_CHECK_TEST_ORIGIN || 'https://127.0.0.1:8781'
+const target = new URL(origin)
+assert.equal(target.protocol, 'https:'); assert.equal(target.hostname, '127.0.0.1'); assert(['8771', '8781'].includes(target.port))
+const state = await (await fetch('http://127.0.0.1:' + (Number(target.port) + 3) + '/state')).json()
 assert.equal(state.localMock, true); assert.equal(state.origin, origin)
 const evidence = path.join(root, 'artifacts/local/evidence/account-check')
 fs.mkdirSync(evidence, { recursive: true })
@@ -66,6 +68,47 @@ try {
   assert.equal(await page.locator('#account-check-session').inputValue(), '')
   assert.equal(await page.locator('.check-report').count(), 0)
   record('Explicit clearing removes input, identity and report')
+  const longRaw = fixture('free', { featureFlags: 'synthetic-extra-session-data'.repeat(12000) })
+  async function inspectLong(page) {
+    await page.getByText('account@example.test', { exact: true }).waitFor()
+    await page.locator('.check-consent input').check()
+    const [response] = await Promise.all([
+      page.waitForResponse(r => new URL(r.url()).pathname === '/api/tools/account-check'),
+      page.locator('.check-submit').click(),
+    ])
+    assert.equal(response.status(), 200)
+    const payload = response.request().postDataJSON()
+    assert.equal(JSON.parse(payload.session).accessToken, 'fixture-account-free')
+    assert.equal(JSON.parse(payload.session).account.id, 'account-fixture')
+    assert.doesNotMatch(payload.session, /featureFlags|synthetic-extra/)
+    assert(Buffer.byteLength(JSON.stringify(payload)) < 34000)
+    assert.equal((await response.json()).report.plan, 'free')
+    await page.locator('.check-report').waitFor()
+  }
+  const nativeLong = await fresh(390)
+  assert.equal(await nativeLong.locator('#account-check-session').getAttribute('maxlength'), null)
+  await nativeLong.evaluate(() => document.querySelector('#account-check-session').addEventListener('input', event => { window.nativeSessionLength = event.target.value.length }, { once: true, capture: true }))
+  await nativeLong.locator('#account-check-session').focus()
+  const keyboard = await nativeLong.context().newCDPSession(nativeLong)
+  try { await keyboard.send('Input.insertText', { text: longRaw }) } finally { await keyboard.detach() }
+  assert.equal(await nativeLong.evaluate(() => window.nativeSessionLength), longRaw.length)
+  await inspectLong(nativeLong)
+  assert(await nativeLong.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
+  await nativeLong.screenshot({ path: path.join(evidence, 'long-session-mobile.png'), fullPage: true })
+  record('Native mobile insertion retains a complete 300 KB Session and its compact payload reaches the real Worker and synthetic provider')
+  const clipboardLong = await fresh()
+  await clipboardLong.evaluate(value => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: async () => value } }), longRaw)
+  await clipboardLong.getByRole('button', { name: '粘贴', exact: true }).click()
+  await inspectLong(clipboardLong)
+  record('Paste button accepts the same large Session without reading or changing the real system clipboard')
+  const excessive = await fresh()
+  let excessiveQueries = 0
+  excessive.on('request', request => { if (new URL(request.url()).pathname === '/api/tools/account-check') excessiveQueries++ })
+  await excessive.locator('#account-check-session').fill(fixture('free', { featureFlags: 'x'.repeat(1024 * 1024) }))
+  await excessive.getByText('Session 内容超过 1 MB，请确认只复制了 Session 页的完整 JSON。', { exact: true }).waitFor()
+  assert(await excessive.locator('.check-submit').isDisabled()); assert.equal(excessiveQueries, 0)
+  await excessive.locator('#account-check-session').fill('')
+  record('Excessive input shows an explicit size error without a query or silently truncated content')
   const plusPage = await fresh()
   const plus = await inspect(plusPage, 'plus')
   assert.equal(plus.plan, 'plus'); assert.equal(plus.source, 'ios'); assert.equal(plus.region, 'PH'); assert.equal(plus.autoRenew, false)

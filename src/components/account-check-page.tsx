@@ -5,7 +5,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './
 import { ProductMark } from './brand'
 import { api, errorMessage, RequestError } from '@/lib/api'
 import { storefrontHref } from '@/lib/storefront-routing'
-import { accountPlanLabel, readAccountSession, type AccountCheckReport } from '../../shared/chatgpt-account'
+import { accountPlanLabel, compactAccountSession, readAccountSession, type AccountCheckReport } from '../../shared/chatgpt-account'
 import '@/styles/account-check.css'
 
 const sessionUrl = 'https://chatgpt.com/api/auth/session'
@@ -60,7 +60,7 @@ export function AccountCheckPage({ onNavigate }: { onNavigate: (page: string) =>
     setBusy(true); setError(''); setReport(null)
     setIdentity({ email: current.session.email, expiresAt: current.session.expiresAt })
     try {
-      const value = await api<{ report: AccountCheckReport }>('/api/tools/account-check', { session: raw, consent: true }, controller.signal)
+      const value = await api<{ report: AccountCheckReport }>('/api/tools/account-check', { session: compactAccountSession(current.session), consent: true }, controller.signal)
       if (pending.current !== controller || controller.signal.aborted) return
       setReport(value.report)
       setCooldown(value.report.state === 'limited' ? 60 : 10)
@@ -80,7 +80,7 @@ export function AccountCheckPage({ onNavigate }: { onNavigate: (page: string) =>
         <div className="check-panel-heading"><div><ScanLine size={20} /><h2>账号检测</h2></div><span><LockKeyhole size={12} />只读查询</span></div>
         <form onSubmit={e => { e.preventDefault(); void run() }}>
           <label htmlFor="account-check-session" className="check-field-label">ChatGPT Session<span>完整 JSON</span></label>
-          {parsed.ok ? <div className="check-identity" role="status"><span className="check-identity-avatar"><UserRound size={20} /></span><div><small>待检测账号 · 本地识别</small><strong>{parsed.session.email}</strong></div><button type="button" aria-label="清除并重新粘贴 Session" onClick={reset} disabled={busy}><X size={16} /></button></div> : <textarea ref={input} id="account-check-session" value={raw} onChange={e => { setRaw(e.target.value); setConsent(false); setReport(null); setIdentity(null); setError(''); setPasteHint('') }} maxLength={32000} autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={busy} placeholder={'{"user": {"email": "…"}, "accessToken": "…", "expires": "…"}'} aria-describedby="account-check-input-hint" aria-invalid={Boolean(raw && !parsed.ok)} />}
+          {parsed.ok ? <div className="check-identity" role="status"><span className="check-identity-avatar"><UserRound size={20} /></span><div><small>待检测账号 · 本地识别</small><strong>{parsed.session.email}</strong></div><button type="button" aria-label="清除并重新粘贴 Session" onClick={reset} disabled={busy}><X size={16} /></button></div> : <textarea ref={input} id="account-check-session" value={raw} onChange={e => { setRaw(e.target.value); setConsent(false); setReport(null); setIdentity(null); setError(''); setPasteHint('') }} autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={busy} placeholder={'{"user": {"email": "…"}, "accessToken": "…", "expires": "…"}'} aria-describedby="account-check-input-hint" aria-invalid={Boolean(raw && !parsed.ok)} />}
           <div className="check-input-tools"><span id="account-check-input-hint">{parsed.ok ? '只识别了输入内容，尚不代表账号验证通过。' : raw ? parsed.message : '登录 ChatGPT 后，复制 Session 页的完整内容。'}</span><button type="button" onClick={() => void paste()} disabled={busy}><ClipboardPaste size={13} />粘贴</button></div>
           {pasteHint && <p className="check-paste-hint" role="status">{pasteHint}</p>}
           <label className="check-consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} disabled={busy || !parsed.ok} /><span>我同意本站使用这份 Session 向 ChatGPT 发起本次只读查询。</span></label>
