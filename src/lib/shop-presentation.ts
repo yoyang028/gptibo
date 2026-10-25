@@ -32,7 +32,7 @@ export function variantLabel(product: ShopProduct, brand: string, siblings: read
     return name.replace(/Apple\s*ID/gi, '').replace(/[（(][^）)]*[）)]/g, '').replace(/已购\s*/g, '').replace(/\s*·\s*/g, ' · ').trim()
   }
   if (product.groupId === 'gemini') {
-    if (/学生|SheerID/i.test(name)) return '学生资格认证'
+    if (/学生|SheerID/i.test(name)) return '12 个月 学生资格认证（推荐）'
     if (/成品账号/.test(name)) {
       const cohort = name.match(/(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)\d{2}/)?.[0].replace(/\s*[-–—]\s*/, '–')
       const multipleAccounts = !siblings.length || siblings.filter(p => /成品账号/.test(p.name)).length > 1
@@ -40,7 +40,7 @@ export function variantLabel(product: ShopProduct, brand: string, siblings: read
     }
     if (/激活链接|兑换链接/.test(name)) {
       const months = (product.duration + ' ' + name).match(/(\d+)\s*个月/)?.[1]
-      return months ? `${months} 个月 · 激活链接` : '激活链接'
+      return months ? `${months} 个月 激活链接` : '激活链接'
     }
   }
   const displayBrand = customerProductName(brand)

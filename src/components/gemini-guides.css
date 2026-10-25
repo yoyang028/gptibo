@@ -1,9 +1,10 @@
 .gemini-specifications { margin-top:28px; grid-auto-rows:auto; }
-.gemini-specifications .shop-variant { display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:12px; min-height:94px; padding:17px 18px; }
+.gemini-specifications .shop-variant { display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:12px; min-height:108px; padding:17px 18px; }
 .gemini-specifications .shop-variant>strong { grid-column:auto; font-size:24px; }
 .gemini-specifications .shop-variant span>strong { font-size:14px; line-height:1.7; }
 .gemini-stock { font-size:11px; font-style:normal; font-weight:400; color:var(--muted-foreground); }
-.gemini-choice-note { grid-column:1/-1; align-self:start; font-size:12px; line-height:1.9; color:var(--muted-foreground); padding-top:8px; }
+.gemini-choice-note { grid-column:1/-1; align-self:start; font-size:12px; line-height:1.9; color:var(--muted-foreground); padding:16px 0 0; }
+.gemini-choice-note>strong { display:block; margin-bottom:6px; font-weight:500; color:var(--foreground); }
 .gemini-detail-guide { border-block:1px solid var(--border); padding:17px 0; }
 .gemini-detail-guide a { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:36px; color:#1d4ed8; font-size:13px; }
 .dark .gemini-detail-guide a { color:#93c5fd; }
@@ -16,12 +17,12 @@
 .gemini-buyer-details .shop-product-copy { font-size:13px; line-height:1.95; white-space:pre-line; }
 @media(max-width:760px) { .gemini-buyer-details .shop-product-description { grid-template-columns:minmax(0,1fr); gap:22px; } }
 @media(max-width:450px) {
- .gemini-specifications .shop-variant { min-height:112px; padding:14px 12px; gap:9px; }
+ .gemini-specifications .shop-variant { min-height:132px; padding:14px 12px; gap:9px; }
  .gemini-specifications .shop-variant>strong { font-size:21px; }
  .gemini-specifications .shop-variant span>strong { font-size:13px; }
  .gemini-specifications legend>span { display:inline; float:right; margin-top:0; }
 }
-@media(max-width:360px) { .gemini-specifications .shop-variant { min-height:140px; } }
+@media(max-width:360px) { .gemini-specifications .shop-variant { min-height:158px; } }
 .gemini-guide { --guide-link:#1d4ed8; padding-top:38px; padding-bottom:65px; }
 .dark .gemini-guide { --guide-link:#93c5fd; }
 .gemini-guide a { color:var(--guide-link); text-underline-offset:4px; }

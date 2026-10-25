@@ -289,7 +289,7 @@ export function ProductEditor({
           >
             <fieldset disabled={busy} className="owner-editor-section">
               <legend>商品展示</legend>
-              {geminiKind(product) === 'student' && <div className="supplier-help" role="note"><strong>学生认证 · 代理履约待确认</strong><p>此商品只提供本人学生资格验证处理，不包含 Google 会员。卖家商品 API 未定义验证链接输入或任务提交接口，公开认证站也未说明本店购码的兑换办法。定价与实际交付契约确认前只展示资料，不承诺 CDK 或引导买家再次向第三方付款；办理入口只放在下方付款后指引中。</p></div>}
+              {geminiKind(product) === 'student' && <div className="supplier-help" role="note"><strong>学生认证 · 代理履约待确认</strong><p>此商品处理本人学生资格验证；12 个月指 Google 学生优惠周期，不是认证服务期限，也不直接交付会员。卖家商品 API 未定义验证链接输入或任务提交接口，公开认证站也未说明本店购码的兑换办法。实际交付契约确认前保持展示，不承诺 CDK 或引导买家再次向第三方付款；办理入口只放在下方付款后指引中。</p></div>}
               {product.groupId === 'muse' && <label>Muse 商品类型
                 <select aria-label="Muse 商品类型" value={product.museKind ?? 'account'} onChange={e => update('museKind', e.target.value as 'account' | 'invitation')}>
                   <option value="account">成品账号 · 交付账号与收件资料</option>

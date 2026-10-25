@@ -27,12 +27,38 @@ test('Exact SheerID Google student category is recognized without changing OpenA
 })
 test('Gemini copy separates genuine eligibility, monthly overwrite, CDK expiry and account years',()=>{
  const student=hanfolkBuyerCopy(source(70),'0'),activation=hanfolkBuyerCopy(source(36),'0'),account=hanfolkBuyerCopy(source(3),'11-29')
- assert.match(student.description,/本人.*资格/);assert.match(student.features.join(' '),/不包含会员/);assert.match(student.description,/信用卡/)
- assert.doesNotMatch(student.duration,/12|18|5TB/)
+ assert.match(student.description,/本人.*资格/);assert.match(student.features.join(' '),/不直接交付会员/);assert.match(student.description,/信用卡/)
+ assert.match(student.name,/12 个月.*学生资格认证.*推荐/);assert.match(student.duration,/12 个月学生优惠.*单次认证/)
+ assert.match(student.description,/不代表保证永不掉订阅/);assert.match(student.description,/不是.*12 个月认证保障/)
  assert.match(activation.purchaseNote,/覆盖.*不按.*叠加/);assert.match(activation.purchaseNote,/未兑出.*退款/);assert.match(activation.purchaseNote,/链接.*到期/)
  assert.match(activation.faq.map(f=>f.answer).join(' '),/不会消耗/)
+ assert.match(activation.description,/持续保持有效 5G 套餐/);assert.match(activation.description,/中途掉订阅风险/)
  assert.match(account.description,/不套用 18 个月/)
+ assert.match(account.purchaseNote,/不承诺固定 12 个月/);assert.match(account.purchaseNote,/可能导致掉订阅/)
  for(const p of [student,activation,account])assert.doesNotMatch(JSON.stringify(p),/暂未开放|准备中|尚未提供|待核实|上游/)
+})
+
+test('Approved student ¥58 and activation ¥38 persist across source rereads without opening sales or rewriting other retails',async()=>{
+ const f=await customerFixture(),before=f.db.prepare('SELECT id,name,price_cents,enabled FROM catalog_plans ORDER BY id').all()
+ const ids:string[]=[]
+ for(const[id,price]of [[70,5800],[36,3800]] as const){
+  const d=source(id),p=await hanfolkDraft(d,'0');ids.push(p.id)
+  await importHanfolkDrafts(f.env,[d],[{productId:id,sku:'0'}])
+  const body={...p,priceCents:price,pricePending:false,catalogPreview:false,status:'listed'}
+  assert.equal((await f.request('/api/admin/my-shop/products',body,f.admin)).status,200)
+  assert.equal((await f.request('/api/admin/my-shop/products',{...body,status:'published'},f.admin)).status,409)
+  const changed={...d,price:6,stock:8,sku_variants:[{sku:'0',price:6,stock:8}]}
+  assert.deepEqual(await importHanfolkDrafts(f.env,[changed],[{productId:id,sku:'0'}]),{imported:[],existing:[p.id]})
+  const row=f.db.prepare('SELECT price_cents,enabled FROM catalog_plans WHERE id=?').get(p.id)!
+  assert.equal(row.price_cents,price);assert.equal(row.enabled,0)
+ }
+ const c=await(await f.request('/api/catalog')).json() as {products:{id:string;priceCents:number;pricePending:boolean}[];plans:{id:string;enabled:number}[]}
+ assert.deepEqual(ids.map(id=>c.products.find(p=>p.id===id)?.priceCents),[5800,3800])
+ assert(ids.every(id=>c.products.find(p=>p.id===id)?.pricePending===false&&!c.plans.some(p=>p.id===id&&p.enabled)))
+ const cookie=(await f.request('/api/orders/client',{})).headers.get('Set-Cookie')!.split(';')[0]
+ const blocked=await Promise.all([5800,3800,5800,3800].map((price,i)=>f.request('/api/orders',{plan:ids[i%2],email:'buyer@example.test',fields:{},expectedPrice:price,key:crypto.randomUUID()},cookie)))
+ assert(blocked.every(r=>r.status===409));assert.equal(f.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n,0)
+ assert.deepEqual(f.db.prepare('SELECT id,name,price_cents,enabled FROM catalog_plans ORDER BY id').all().filter(p=>!ids.includes(p.id as string)),before)
 })
 test('Student preview remains public, unpriced and unpurchasable; rereads preserve retail and source mapping',async()=>{
  const f=await customerFixture(),d=source(70),p=await hanfolkDraft(d,'0')
