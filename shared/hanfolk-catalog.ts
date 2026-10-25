@@ -34,7 +34,7 @@ export type HanfolkDetail = HanfolkProduct & {
 export function hanfolkFamily(title: string): HanfolkFamily | undefined {
   const value = title.toLowerCase()
   if (/grok|gork/.test(value)) return 'grok'
-  if (/gemini|谷歌\s*ai|google\s*ai/.test(value)) return 'gemini'
+  if (/gemini|谷歌\s*ai|google\s*ai|sheerid.*(?:google|谷歌).*学生认证/.test(value)) return 'gemini'
   if (/muse/.test(value)) return 'muse'
   if (/duolingo|duoingo|多[邻鄰]国/.test(value)) return 'duolingo'
   if (/adobe\s*express/.test(value)) return 'adobe-express'

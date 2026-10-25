@@ -1,0 +1,95 @@
+.gemini-specifications { margin-top:28px; grid-auto-rows:auto; }
+.gemini-specifications .shop-variant { display:grid; grid-template-columns:14px minmax(0,1fr) auto; gap:12px; min-height:94px; padding:17px 18px; }
+.gemini-specifications .shop-variant>strong { grid-column:auto; font-size:24px; }
+.gemini-specifications .shop-variant span>strong { font-size:14px; line-height:1.7; }
+.gemini-stock { font-size:11px; font-style:normal; font-weight:400; color:var(--muted-foreground); }
+.gemini-choice-note { grid-column:1/-1; align-self:start; font-size:12px; line-height:1.9; color:var(--muted-foreground); padding-top:8px; }
+.gemini-detail-guide { border-block:1px solid var(--border); padding:17px 0; }
+.gemini-detail-guide a { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:36px; color:#1d4ed8; font-size:13px; }
+.dark .gemini-detail-guide a { color:#93c5fd; }
+.gemini-detail-guide a:hover { text-decoration:underline; text-underline-offset:4px; }
+.family-gemini .shop-product-option { margin-top:24px; padding-top:0; border-top:0; }
+.gemini-buyer-details .shop-product-description { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:26px 32px; }
+.gemini-buyer-details .shop-description-section { padding:0; border:0; }
+.gemini-buyer-details .shop-description-section:first-child { grid-column:1/-1; }
+.gemini-buyer-details .shop-description-section h4 { font-size:14px; margin-bottom:9px; }
+.gemini-buyer-details .shop-product-copy { font-size:13px; line-height:1.95; white-space:pre-line; }
+@media(max-width:760px) { .gemini-buyer-details .shop-product-description { grid-template-columns:minmax(0,1fr); gap:22px; } }
+@media(max-width:450px) {
+ .gemini-specifications .shop-variant { min-height:112px; padding:14px 12px; gap:9px; }
+ .gemini-specifications .shop-variant>strong { font-size:21px; }
+ .gemini-specifications .shop-variant span>strong { font-size:13px; }
+ .gemini-specifications legend>span { display:inline; float:right; margin-top:0; }
+}
+@media(max-width:360px) { .gemini-specifications .shop-variant { min-height:140px; } }
+.gemini-guide { --guide-link:#1d4ed8; padding-top:38px; padding-bottom:65px; }
+.dark .gemini-guide { --guide-link:#93c5fd; }
+.gemini-guide a { color:var(--guide-link); text-underline-offset:4px; }
+.gemini-guide a:hover { text-decoration:underline; }
+.gemini-guide a:focus-visible,.gemini-guide-figure button:focus-visible { outline:2px solid var(--guide-link); outline-offset:4px; }
+.gemini-guide-hero { padding:38px 0 28px; }
+.gemini-guide h1 { margin:12px 0 16px; font-size:clamp(28px,3vw,42px); font-weight:600; line-height:1.4; letter-spacing:-1px; }
+.gemini-guide-hero p { color:var(--muted-foreground); font-size:15px; line-height:1.9; }
+.gemini-guide-hero>span:last-child { display:block; margin-top:18px; font-size:11px; color:var(--muted-foreground); }
+.gemini-guide-siblings { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:25px; border-bottom:1px solid var(--border); }
+.gemini-guide-siblings a { min-height:40px; display:flex; align-items:center; padding:8px 14px; border:1px solid var(--border); border-radius:9px; font-size:12px; }
+.gemini-guide-siblings a[aria-current=page] { background:color-mix(in srgb,var(--primary) 7%,var(--background)); border-color:var(--primary); color:var(--foreground); }
+.gemini-guide-layout { display:grid; grid-template-columns:200px minmax(0,780px); justify-content:space-between; gap:48px; padding-top:32px; }
+.gemini-guide-layout>aside nav { position:sticky; top:105px; display:grid; gap:5px; font-size:12px; }
+.gemini-guide-layout>aside strong { margin-bottom:9px; color:var(--muted-foreground); font-size:11px; font-weight:500; }
+.gemini-guide-layout>aside a { min-height:38px; display:flex; align-items:center; }
+.gemini-guide-body { min-width:0; }
+.gemini-guide-body section { padding:0 0 32px; margin-bottom:32px; border-bottom:1px solid var(--border); scroll-margin-top:130px; }
+.gemini-guide h2 { margin-bottom:16px; font-size:21px; font-weight:600; line-height:1.6; letter-spacing:-.4px; }
+.gemini-guide-body p,.gemini-guide-body ol { margin:12px 0; font-size:14px; line-height:1.95; color:var(--muted-foreground); overflow-wrap:anywhere; }
+.gemini-guide-body ol { display:grid; gap:13px; padding-left:22px; }
+.gemini-guide-callout { margin:22px 0; padding:20px 22px; border-left:3px solid #7c85db; border-radius:0 12px 12px 0; background:color-mix(in srgb,#7c85db 6%,var(--background)); }
+.gemini-guide-callout strong { font-size:13px; }
+.gemini-guide-callout p { margin-bottom:0; }
+.gemini-flow-figure { margin:26px 0; border:1px solid var(--border); border-radius:12px; padding:22px; }
+.gemini-flow-figure ol { list-style:none; grid-template-columns:repeat(4,minmax(0,1fr)); padding:0; margin:0; }
+.gemini-flow-figure li { position:relative; display:flex; flex-direction:column; gap:12px; padding-right:14px; }
+.gemini-flow-figure li>span { color:var(--guide-link); font-size:11px; }
+.gemini-flow-figure strong { font-size:12px; font-weight:500; color:var(--foreground); }
+.gemini-flow-figure svg { position:absolute; right:-6px; top:1px; color:var(--muted-foreground); }
+.gemini-flow-figure figcaption,.gemini-guide-figure figcaption { margin-top:15px; color:var(--muted-foreground); font-size:11px; line-height:1.8; }
+.gemini-link-anatomy { padding:22px; border:1px solid var(--border); border-radius:12px; margin:22px 0; }
+.gemini-link-anatomy strong { font-size:13px; }
+.gemini-link-anatomy dl { display:grid; gap:14px; margin:20px 0; font-size:12px; }
+.gemini-link-anatomy dl>div { display:grid; grid-template-columns:100px minmax(0,1fr); gap:12px; }
+.gemini-link-anatomy dt { color:var(--muted-foreground); }
+.gemini-link-anatomy dd { overflow-wrap:anywhere; }
+.gemini-link-anatomy>span { font-size:11px; color:var(--muted-foreground); }
+.gemini-guide-figure { margin:26px auto; max-width:680px; }
+.gemini-guide-figure>button { display:block; position:relative; width:100%; overflow:hidden; border:1px solid var(--border); border-radius:13px; background:#fff; cursor:zoom-in; }
+.gemini-guide-figure img { width:100%; height:auto; display:block; }
+.gemini-guide-figure button>span { position:absolute; right:10px; bottom:10px; display:flex; align-items:center; gap:6px; padding:6px 9px; border:1px solid #ddd; border-radius:7px; background:#fff; color:#333; font-size:11px; }
+.gemini-related-link,.gemini-guide-back { display:inline-flex; align-items:center; gap:8px; min-height:44px; font-size:13px; }
+.gemini-guide-table table { width:100%; border-collapse:collapse; font-size:13px; line-height:1.9; }
+.gemini-guide-table th,.gemini-guide-table td { padding:14px 12px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+.gemini-guide-table th { font-weight:500; }
+.gemini-guide-table td { color:var(--muted-foreground); }
+.gemini-guide-table td:first-child { width:32%; }
+.gemini-checklist { margin:22px 0; padding:20px 22px; border:1px solid var(--border); border-radius:12px; font-size:13px; }
+.gemini-checklist ul { list-style:disc; padding-left:20px; color:var(--muted-foreground); line-height:2.2; margin-top:12px; }
+.gemini-guide-lightbox { width:calc(100vw - 32px); max-width:1100px!important; }
+.gemini-guide-zoom { max-height:68vh; overflow:auto; background:#fff; border-radius:8px; }
+.gemini-guide-zoom img { width:100%; height:auto; display:block; }
+.gemini-guide-image-actions { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+.gemini-guide-image-actions a { color:#1d4ed8; font-size:12px; text-decoration:underline; text-underline-offset:3px; }
+.dark .gemini-guide-image-actions a { color:#93c5fd; }
+@media(max-width:760px) {
+ .gemini-guide { padding-top:24px; }
+ .gemini-guide-hero { padding:28px 0; }
+ .gemini-guide-layout { grid-template-columns:minmax(0,1fr); gap:24px; padding-top:20px; }
+ .gemini-guide-layout>aside nav { position:static; display:flex; flex-wrap:wrap; gap:4px 16px; padding-bottom:16px; border-bottom:1px solid var(--border); }
+ .gemini-guide-layout>aside strong { width:100%; }
+ .gemini-guide-layout>aside a { font-size:11px; }
+ .gemini-guide h2 { font-size:19px; }
+ .gemini-guide-body p,.gemini-guide-body ol { font-size:13px; }
+ .gemini-guide-callout { padding:16px; }
+ .gemini-flow-figure ol { grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+ .gemini-flow-figure li:nth-child(2) svg { display:none; }
+ .gemini-guide-table th,.gemini-guide-table td { padding:12px 6px; font-size:12px; }
+ .gemini-guide-image-actions a { font-size:11px; }
+}

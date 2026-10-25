@@ -43,6 +43,7 @@ PUBLIC_DOC_REFERENCES = {
     },
     'docs/MUSE_PRODUCTS.md': {'muse.dajuxai.com', 'muse.ai'},
     'docs/APPLE_ID_PRODUCTS.md': {'account.apple.com', 'iforgot.apple.com', 'support.apple.com'},
+    'docs/GEMINI_PRODUCTS.md': {'gemini.google', 'one.google.com', 'support.google.com', 'www.jio.com'},
     'public/guides/muse-change-email/README.md': {'muse.dajuxai.com'},
 }
 # Verified buyer-facing links, scoped to editorial copy and its tests. They do
@@ -56,12 +57,15 @@ PUBLIC_BUYER_REFERENCES = {
     'shared/muse-buyer-copy.ts': {'muse.ai'},
     'shared/apple-id-buyer-copy.ts': {'account.apple.com'},
     'src/components/apple-id-guide-page.tsx': {'account.apple.com', 'iforgot.apple.com', 'support.apple.com'},
+    'src/components/gemini-guide-page.tsx': {'gemini.google', 'one.google.com', 'play.google.com', 'payments.google.com', 'support.google.com', 'myaccount.google.com', 'services.sheerid.com'},
     'tests/hanfolk-buyer-copy.test.ts': {'vip.dajuai.us', 'owlduo.com', 'grok.com'},
 }
 BINARY_ASSETS = {'public/email-logo.png', 'public/email-shop.png', 'src/assets/hero.png'}
 MUSE_GUIDE_IMAGES = {f'public/guides/muse-change-email/{i:02d}.jpg' for i in range(1, 16)}
 APPLE_GUIDE_PNG = {'public/guides/apple-id/01.png'}
 APPLE_GUIDE_JPEG = {f'public/guides/apple-id/{i:02d}.jpg' for i in range(2, 12)}
+GEMINI_GUIDE_PNG = {f'public/guides/gemini-region/{i:02d}.png' for i in (2, 15, 16, 17)} | {'public/guides/gemini-student/04.png'}
+GEMINI_GUIDE_JPEG = {f'public/guides/gemini-region/{i:02d}.jpg' for i in (1, 4, 10)}
 FORBIDDEN_PARTS = {'.git', '.secrets', '.imports', '.admin-auth', '.xgift-private',
                    'node_modules', 'dist', '.preview', '.wrangler', 'artifacts', '__pycache__'}
 FORBIDDEN_SUFFIXES = {'.pem', '.key', '.p12', '.pfx', '.sqlite', '.db', '.dump',
@@ -109,8 +113,8 @@ def scan(root, files):
         try:
             source = data.decode('utf-8')
         except UnicodeDecodeError:
-            if not ((name in (BINARY_ASSETS | APPLE_GUIDE_PNG) and data.startswith(b'\x89PNG\r\n\x1a\n'))
-                    or (name in (MUSE_GUIDE_IMAGES | APPLE_GUIDE_JPEG) and data.startswith(b'\xff\xd8\xff'))):
+            if not ((name in (BINARY_ASSETS | APPLE_GUIDE_PNG | GEMINI_GUIDE_PNG) and data.startswith(b'\x89PNG\r\n\x1a\n'))
+                    or (name in (MUSE_GUIDE_IMAGES | APPLE_GUIDE_JPEG | GEMINI_GUIDE_JPEG) and data.startswith(b'\xff\xd8\xff'))):
                 findings.append((name, 0, 'unreviewed binary asset'))
             continue
         for rule, pattern in [('private key', SECRET), ('credential token', TOKEN)]:

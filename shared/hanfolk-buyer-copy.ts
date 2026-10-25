@@ -6,6 +6,7 @@ import {
 import type { ShopProduct } from './shop-products.ts'
 import { museBuyerCopy } from './muse-buyer-copy.ts'
 import { appleIdBuyerCopy, APPLE_ID_SOURCES } from './apple-id-buyer-copy.ts'
+import { geminiBuyerCopy } from './gemini-buyer-copy.ts'
 
 export type HanfolkBuyerCopy = Pick<
   ShopProduct,
@@ -62,6 +63,8 @@ export function hanfolkBuyerCopy(
     )
   const family = hanfolkFamily(product.title),
     label = skuName(product, sku).trim()
+  if (product.id === 70 && !/sheerid.*google.*学生认证/i.test(product.title)) throw new SourceCopyChanged('学生认证商品类型已变化，需要重新核对。')
+  if (family === 'gemini' && [3,36,70].includes(product.id)) return geminiBuyerCopy(product.id as 3|36|70,label)
   if (family === 'muse' && (product.id === 57 || product.id === 69)) return museBuyerCopy(product.id, label)
   if (family === 'apple-id' && Object.hasOwn(APPLE_ID_SOURCES, product.id)) return appleIdBuyerCopy(product.id as keyof typeof APPLE_ID_SOURCES, label)
   const account = /成品|账户|账号|Apple\s*ID/i.test(product.title)
@@ -159,42 +162,6 @@ export function hanfolkBuyerCopy(
       question: '可以直接在本站完成账号充值吗？',
       answer:
         '本站交付兑换码，买家需要前往供货方指定站点自行兑换。该站点目前未提供，因此暂不可购买。Grok 登录首页不能代替 CDK 兑换站。',
-    })
-  }
-  if (product.id === 36 && family === 'gemini') {
-    name = 'Google AI Pro · 18 个月激活链接'
-    introduction =
-      '通过 CDK 领取 Google AI Pro 激活链接，为自己符合条件的 Google 账号开通。不是出售 Google 成品账号。'
-    rights = '18 个月 Google AI Pro，含 5TB；Jio 渠道。'
-    duration = '18 个月'
-    conditions =
-      '需使用自己的 Google 账号；供货说明为无需绑卡。现有账号资格、已有订阅和家庭状态仍需在领取前核对。'
-    delivered = 'CDK 及用于领取激活链接的指引；最终为买家自己的账号开通。'
-    highlights.push('18 个月 AI Pro · 5TB · 无需绑卡')
-    warnings.push('不是成品账号；CDK 中转兑换地址待供货方确认')
-    warnings.push('Jio 活动有资格及持续套餐条件，本批次适用与维持方式仍需确认')
-    faq.push({
-      question: '可以把 CDK 直接输入 Gemini 登录页吗？',
-      answer:
-        '不能将 Gemini 登录入口当作 CDK 兑换站。需先按供货方明确指引领取激活链接，再使用符合条件的账号激活。',
-    })
-    faq.push({ question: 'Jio 渠道代表任何账号都能用满 18 个月吗？', answer: '不能这样推定。[Jio 官方活动说明](https://www.jio.com/google-gemini-offer/) 对年龄、有效 Jio 套餐及持续保持资格有要求。本次供货 CDK 的目标账号条件、资格由谁维持和中途失去权益如何处理，尚未获明确确认；开售前需先核对，不能把无需绑卡理解为完全没有资格或后续条件。' })
-  }
-  if (product.id === 3 && family === 'gemini') {
-    name = 'Google AI Pro 成品账号 · ' + label
-    introduction =
-      '交付已经开通 Google AI Pro 的成品账号，用于 Gemini 对话、学习和内容创作。账号注册年份与会员剩余时间分别计算。'
-    rights = label + ' 注册年份/地区规格；Pixel / Jio 开通的 AI Pro 成品账号。'
-    duration = '会员剩余期未注明'
-    conditions = '使用交付的 Google 账号；随机规格不保证特定地区。'
-    use =
-      '使用交付账号在 [Gemini 服务入口](https://gemini.google.com/) 登录，核对 AI Pro 状态及到期时间。该链接为服务入口，不是 CDK 兑换。'
-    highlights.push('账号年份：' + label, '成品账号，开通渠道为 Pixel / Jio')
-    warnings.push('注册年份不是会员时长；不能按 18 个月激活链接理解')
-    faq.push({
-      question: '老账号就包含更长会员吗？',
-      answer:
-        '不是。注册年份只描述账号年龄；供货方没有给出本规格的会员剩余周期，须核对实际权益。',
     })
   }
   if (product.id === 55 && family === 'duolingo') {

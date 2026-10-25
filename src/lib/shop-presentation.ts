@@ -6,7 +6,7 @@ const families: Record<string, { tagline: string; intro: string; category: strin
   grok: { tagline: '灵感、社交与代码，一起连接。', intro: 'Grok、X、Cursor 与 Bot，一份组合订阅。Plus 不含 Bot，Premium 及以上包含，按需选择。', category: 'AI 订阅' },
   'student-verification': { tagline: '为学习，打开更多可能。', intro: '面向符合资格的学生，提供 Plus 四个月活动的认证服务。', category: '学生认证' },
   muse: { tagline: '把想法，交给你的智能体。', intro: '成品账号与词元服务，一个入口，按需选择。', category: 'AI 工具' },
-  gemini: {tagline:'思考、创作，找到新的可能。',intro:'成品账号与 AI Pro 兑换链接，先核对开通方式和账号条件。',category:'AI 订阅'},
+  gemini: {tagline:'按你的账号，选择开通方式。',intro:'学生资格认证、18 个月激活链接与成品账号，交付和适用条件分别查看。',category:'AI 服务'},
   duolingo: {tagline:'让每天的练习，多一点动力。',intro:'查看会员周期、兑换步骤与账号适用条件。',category:'语言学习'},
   'adobe-express': {tagline:'把想法，变成作品。',intro:'Adobe Express 会员兑换，查看周期与开通条件。',category:'创作工具'},
   'apple-music': {tagline:'让音乐，陪伴每一天。',intro:'音乐会员兑换，先核对账号地区、新用户资格与支付要求。',category:'音乐会员'},
@@ -32,6 +32,7 @@ export function variantLabel(product: ShopProduct, brand: string, siblings: read
     return name.replace(/Apple\s*ID/gi, '').replace(/[（(][^）)]*[）)]/g, '').replace(/已购\s*/g, '').replace(/\s*·\s*/g, ' · ').trim()
   }
   if (product.groupId === 'gemini') {
+    if (/学生|SheerID/i.test(name)) return '学生资格认证'
     if (/成品账号/.test(name)) {
       const cohort = name.match(/(?:19|20)\d{2}\s*[-–—]\s*(?:19|20)\d{2}/)?.[0].replace(/\s*[-–—]\s*/, '–')
       const multipleAccounts = !siblings.length || siblings.filter(p => /成品账号/.test(p.name)).length > 1
