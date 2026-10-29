@@ -1,4 +1,5 @@
 import type { ShopProduct } from '../../shared/shop-products'
+import { museKind } from '../../shared/muse-products.ts'
 
 const families: Record<string, { tagline: string; intro: string; category: string }> = {
   claude: { tagline: '写作、分析与编程，按用量选择。', intro: 'Pro、Max 5× 与 Max 20×，为你的 Claude 账号选择适合的订阅。', category: 'AI 订阅' },
@@ -16,6 +17,7 @@ const families: Record<string, { tagline: string; intro: string; category: strin
 }
 
 export function shopPresentation(id: string, product: ShopProduct) {
+  if (id === 'muse' && museKind(product) === 'account') return { ...families.muse, intro: '独立成品账号，按词元额度选择；查看首次登录和邮箱更换指引。' }
   return families[id] ?? { tagline: product.tagline, intro: product.tagline, category: product.category }
 }
 

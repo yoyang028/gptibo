@@ -47,11 +47,11 @@ export function museBuyerCopy(id: 57 | 69, label: string): HanfolkBuyerCopy {
     tagline: '独立账号 · 自行登录 · 可换绑邮箱',
     duration: units + '词元',
     features: [units + '词元', '独立成品账号 + 收件资料', '可换绑邮箱，首次登录保障'],
-    buyerHighlights: ['交付独立账号与收件资料，凭码自行登录 Muse', '四档按词元额度区分，均可换绑邮箱'],
+    buyerHighlights: ['交付独立账号与收件资料，凭码自行登录 Muse', '按词元额度选择，支持换绑邮箱'],
     buyerWarnings: ['适用美国、加拿大 18 岁及以上用户', '仅保障首次登录，词元不代表会员时长'],
     description: [
       section('你会收到什么', '独立 Muse 成品账号与配套收件资料，包含本次选择的 ' + units + '词元。买家自行前往 [Muse 登录入口](https://muse.ai/) 使用交付邮箱收码登录，无需到第三方兑换站激活。'),
-      section('额度与使用期限', '10 / 50 / 100 / 310 亿词元，对应 1B / 5B / 10B / 31B。四档交付方式相同，区别在附带额度。1B = 10 亿词元；余额、消耗及有效期以账号实际显示为准，不能换算固定天数或任务次数。'),
+      section('额度与使用期限', '本规格为 ' + units + '词元。不同额度的成品账号交付方式相同，区别在附带额度。1B = 10 亿词元；余额、消耗及有效期以账号实际显示为准，不能换算固定天数或任务次数。'),
       section('换绑自己的邮箱', '首次登录并核对额度后，可添加自己的邮箱。先验证、设为默认，再用新窗口测试进入同一账号，成功后才移除旧邮箱。\n[查看邮箱更换完整图解 · 15 张步骤图](' + MUSE_ACCOUNT_GUIDE + ')'),
     ].join('\n\n'),
     purchaseNote: conditions + '\n\n' + warranty,

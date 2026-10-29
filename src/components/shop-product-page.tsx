@@ -11,6 +11,8 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  CircleHelp,
+  ArrowDown,
   Package,
   ShieldCheck,
 } from 'lucide-react'
@@ -52,6 +54,8 @@ import { appleIdVariants } from '../../shared/apple-id-products'
 import { APPLE_ID_GUIDE } from '../../shared/storefront-guides'
 import { geminiDefault, geminiKind, geminiGuide } from '../../shared/gemini-products'
 import { GeminiVariants } from './gemini-variants'
+import { ServiceRechargeGuide } from './service-recharge-guide'
+import { serviceRechargeFamily } from '../../shared/service-recharge-guide'
 
 export function ShopProductGroupPage({
   group,
@@ -127,10 +131,12 @@ export function ShopProductPage({
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const requestKey = useRef<{ identity: string; key: string } | null>(null)
+  const rechargeGuide = useRef<HTMLElement>(null)
   const displayOnly = product.status === 'listed'
   const stockState = inventoryLabel(product)
   const contactPurchase = !available || product.pricePending || product.stock === 0
   const familyId = product.groupId ?? product.id
+  const guideFamily = serviceRechargeFamily(familyId)
   const museType = museKind(product)
   const appleId = familyId === 'apple-id'
   const gemini = familyId === 'gemini', geminiType = geminiKind(product), geminiTutorial = geminiGuide(product)
@@ -275,14 +281,14 @@ export function ShopProductPage({
             <h3>{familyId === 'grok' ? '灵感、社交与代码，一起连接。' : familyId === 'claude' ? '找到适合你的用量。' : familyId === 'codex-credits' ? '按需补充，继续创造。' : compactVariants ? familyId === 'apple-id' ? '选择适合你的账号。' : '选择适合你的开通方式。' : buyerName}</h3>
             <p>{compactVariants ? familyId === 'apple-id' ? '按地区和类型选择，查看所选账号的完整条件。' : '选择成品账号或激活链接，查看对应的会员与开通条件。' : customerProductCopy(product.tagline)}</p>
           </div>}
-          {familyId === 'muse' && variants && onVariantChange && <div className="muse-purchase-types">
+          {familyId === 'muse' && variants && onVariantChange && museVariants(variants, 'account').length > 0 && museVariants(variants, 'invitation').length > 0 && <div className="muse-purchase-types">
             <span className="section-kicker">选择购买类型</span>
             <div className="muse-kind-options" role="group" aria-label="Muse 购买类型">
               {(['account', 'invitation'] as const).map(kind => {
                 const items = museVariants(variants, kind)
                 return items.length > 0 && <button key={kind} type="button" aria-pressed={museType === kind} onClick={() => { setCoupon(null); onVariantChange(items[0].id) }}>
                   <strong>{kind === 'account' ? '购买账号' : '购买词元'}</strong>
-                  <small>{kind === 'account' ? '独立账号 · 4 档' : '已有账号补充'}</small>
+                  <small>{kind === 'account' ? `独立账号 · ${items.length} 档` : '已有账号补充'}</small>
                 </button>
               })}
             </div>
@@ -394,12 +400,14 @@ export function ShopProductPage({
               ? '在线支付开通中，目前可通过客服下单。'
               : '付款确认后，交付内容可在原订单中查看。'}
           </p>}
+          {guideFamily && !preview && <button type="button" className="summary-footnote summary-guide-entry" aria-controls={'service-recharge-' + guideFamily} onClick={() => rechargeGuide.current?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })}><span className="summary-guide-signal" aria-hidden="true"><CircleHelp size={15} /></span><span className="summary-guide-copy"><span>第一次使用？</span><strong>观看充值流程演示</strong></span><ArrowDown size={14} aria-hidden="true" /></button>}
           <p className="summary-footnote shop-product-copy">
             <strong>交付说明</strong>
             <ProductCopyText text={customerProductCopy(product.deliveryInstructions)} />
           </p>
         </aside>
       </section>
+      {guideFamily && !preview && <ServiceRechargeGuide family={guideFamily} product={product} variants={variants ?? [product]} sectionRef={rechargeGuide} />}
       <section className={'shop-buyer-details page-width' + (museType ? ' muse-buyer-details' : appleId ? ' apple-id-buyer-details' : gemini ? ' gemini-buyer-details' : '')} id="product-details" aria-label="商品介绍与购买须知">
         <div className="shop-buyer-heading">
           <span className="section-kicker">PRODUCT DETAILS</span>
@@ -414,7 +422,7 @@ export function ShopProductPage({
           </div>}
         </div>
       </section>
-      <div className="shop-flow-heading page-width"><span className="section-kicker">HOW IT WORKS</span><h2>从选购，到使用。</h2><p>交付内容与操作指引在原订单中查看。</p></div>
+      {!guideFamily && <><div className="shop-flow-heading page-width"><span className="section-kicker">HOW IT WORKS</span><h2>从选购，到使用。</h2><p>交付内容与操作指引在原订单中查看。</p></div>
       <section
         className={'delivery-guide page-width shop-delivery-guide' + (product.steps.length === 4 ? ' four-step-guide' : '')}
         aria-label="购买与交付流程"
@@ -426,7 +434,7 @@ export function ShopProductPage({
             <p><ProductCopyText text={step.description} /></p>
           </article>
         ))}
-      </section>
+      </section></>}
       <section className="faq-section page-width" id="help">
         <div className="faq-heading">
           <span className="section-kicker">购买帮助</span>
