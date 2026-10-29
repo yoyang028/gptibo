@@ -47,7 +47,7 @@ export function RechargeSitePreview() {
     window.parent.postMessage({ type: 'recharge-guide/site-ready' }, sceneOrigin)
     return () => window.removeEventListener('message', receive)
   }, [])
-  const product = PRODUCTS[0]
+  const product = PRODUCTS.find(product => product.id === 'chatgpt')!
   const plans = productPlans('chatgpt').map(plan => ({ ...plan, price: (scene.offers.find(offer => offer.id === plan.id)?.price_cents ?? plan.price * 100) / 100, enabled: Boolean(scene.offers.find(offer => offer.id === plan.id)?.enabled ?? true) }))
   const selected = scene.view === 'package' && scene.phase < 2 && !scene.reduced ? 'pro-5x' : 'plus'
   const plan = plans.find(plan => plan.id === selected)!
