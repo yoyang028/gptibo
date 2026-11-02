@@ -5,7 +5,7 @@ const daysAgo = (days: number) => localDay(Date.now() - (days - 1) * 86400000)
 
 function period(url: URL) {
   const value = url.searchParams.get('days') ?? '7'
-  if (value !== '7' && value !== '30' && value !== '90') throw new ApiError('仅支持最近 7 天、30 天或 90 天。')
+  if (value !== '1' && value !== '7' && value !== '30' && value !== '90') throw new ApiError('仅支持最近 1 天、7 天、30 天或 90 天。')
   return Number(value)
 }
 

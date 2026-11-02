@@ -21,7 +21,7 @@ export type VisitorSummary = {
   pageViews: number
   trend: { day: string; visitors: number; pageViews: number }[]
 }
-export type VisitorPeriod = 7 | 30 | 90
+export type VisitorPeriod = 1 | 7 | 30 | 90
 
 const chartConfig = {
   visitors: {
@@ -95,6 +95,7 @@ function TrendChart({ trend }: { trend: VisitorSummary['trend'] }) {
             stroke="var(--color-pageViews)"
             strokeWidth={2}
             fill={`url(#fill-pageViews-${chartId})`}
+            dot={trend.length === 1 ? { r: 4, fill: 'var(--color-pageViews)' } : false}
             activeDot={{ r: 5, strokeWidth: 1.5, stroke: 'var(--card)' }}
           />
           <Area
@@ -103,6 +104,7 @@ function TrendChart({ trend }: { trend: VisitorSummary['trend'] }) {
             stroke="var(--color-visitors)"
             strokeWidth={2.5}
             fill={`url(#fill-visitors-${chartId})`}
+            dot={trend.length === 1 ? { r: 5, fill: 'var(--color-visitors)' } : false}
             activeDot={{ r: 6, strokeWidth: 2, stroke: 'var(--card)' }}
           />
         </AreaChart>
@@ -180,6 +182,16 @@ export function VisitorStats({
         <div className="visitor-stats-actions">
           {action}
           <div className="visitor-period" role="group" aria-label="统计时间范围">
+            <Button
+              type="button"
+              variant={days === 1 ? 'secondary' : 'ghost'}
+              size="sm"
+              className="visitor-period-btn"
+              aria-pressed={days === 1}
+              onClick={() => setDays(1)}
+            >
+              1 天
+            </Button>
             <Button
               type="button"
               variant={days === 7 ? 'secondary' : 'ghost'}

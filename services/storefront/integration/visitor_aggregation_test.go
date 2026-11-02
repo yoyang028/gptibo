@@ -23,7 +23,7 @@ func TestVisitorDistributionAcrossStoresAndDateRanges(t *testing.T) {
 	s := management.Service{Store: app}
 	for _, tc := range []struct {
 		days, views, visitors int
-	}{{7, 19, 2}, {30, 27, 3}, {90, 36, 4}} {
+	}{{1, 12, 2}, {7, 19, 2}, {30, 27, 3}, {90, 36, 4}} {
 		t.Run(fmt.Sprint(tc.days), func(t *testing.T) {
 			out, e := s.Visitors(context.Background(), tc.days, "", true)
 			if e != nil {

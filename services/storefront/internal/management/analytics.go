@@ -44,8 +44,8 @@ func (s Service) RecordVisitor(ctx context.Context, in VisitorInput) error {
 	return e
 }
 func (s Service) Visitors(ctx context.Context, days int, shop string, admin bool) (map[string]any, error) {
-	if days != 7 && days != 30 && days != 90 {
-		return nil, fault.New(400, "仅支持最近 7、30 或 90 天。")
+	if days != 1 && days != 7 && days != 30 && days != 90 {
+		return nil, fault.New(400, "仅支持最近 1、7、30 或 90 天。")
 	}
 	now := time.Now()
 	since := chinaDay(now.AddDate(0, 0, -days+1))
