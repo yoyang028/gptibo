@@ -106,26 +106,49 @@ function setup(t: Context) {
   return { db, env, call, buyer, create, query, submit, login, partner, notice, calls, products, remoteOrder, redemption, faceToFace: () => { faceToFace = true }, quote: (patch: Record<string, unknown>) => { quotePatch = patch }, setExpiry: (value: number) => { expiry = new Date(value).toISOString() }, setQr: (value: string | null) => { qr = value }, setPayment: (v: string) => { payment = v }, setTask: (v: string, retry = false) => { taskStatus = v; fallback = retry }, setRefund: (v: string) => { refundStatus = v }, override: (v: typeof override) => { override = v } }
 }
 
-test('a large pasted Session reaches the paid original order using the supported token mode and recovers without a duplicate task', async t => {
+test('a large pasted Session reaches the paid original order with account identity and recovers without a duplicate task', async t => {
   const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
   await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
-  const raw = JSON.stringify({ ...JSON.parse(session), featureFlags: 'synthetic-extra-session-data'.repeat(12000) }, null, 2)
+  const core = { ...JSON.parse(session), user: { email: 'target@example.test', id: 'user-fixture' }, account: { id: 'account-fixture', planType: 'free' }, expires: '2099-01-01T00:00:00Z', authProvider: 'auth0' }
+  const raw = JSON.stringify({ ...core, featureFlags: 'synthetic-extra-session-data'.repeat(12000) }, null, 2)
   const parsed = checkoutSession(raw)
-  assert.equal(parsed.email, 'target@example.test'); assert.equal(parsed.credential?.mode, 'access_token')
+  assert.equal(parsed.email, 'target@example.test'); assert.equal(parsed.credential?.mode, 'session')
   const request = { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: parsed.credential }
   const response = await s.call(`/api/orders/${order.id}/fulfillment`, request, buyer)
   assert.equal(response.status, 200)
   assert.equal((await response.json()).order.status, 'processing')
   const forwarded = s.calls.filter(c => c.path === '/v1/redemptions')
   assert.equal(forwarded.length, 1)
-  assert.deepEqual(JSON.parse(forwarded[0].body).credential, { mode: 'access_token', access_token: JSON.parse(session).accessToken })
+  const upstream = JSON.parse(forwarded[0].body)
+  assert.equal(upstream.credential.mode, 'session')
+  assert.deepEqual(JSON.parse(upstream.credential.session), core)
   assert(forwarded[0].body.length < 40000)
-  const recovered = checkoutSession(raw.replace('synthetic-extra-session-data', 'changed-extra-session-data'), 'access_token')
+  const recovered = checkoutSession(raw.replace('synthetic-extra-session-data', 'changed-extra-session-data'), 'session')
   assert.equal((await s.call(`/api/orders/${order.id}/fulfillment`, { ...request, credential: recovered.credential }, buyer)).status, 200)
   assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 1)
   assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
   assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions WHERE order_id=?').get(order.id)!.n, 1)
   assert.doesNotMatch(JSON.stringify(s.db.prepare('SELECT * FROM recharge_redemptions').all()) + JSON.stringify(s.db.prepare('SELECT * FROM order_events').all()), /PRIVATE-TOKEN|synthetic-extra-session-data/)
+})
+
+test('an uncertain compact Session can be recovered by re-pasting the original large input under the same key', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  const raw = JSON.stringify({ ...JSON.parse(session), account: { id: 'account-fixture' }, featureFlags: 'x'.repeat(300000) }, null, 2)
+  const key = crypto.randomUUID()
+  s.override(path => { if (path === '/v1/redemptions') throw new Error('simulated lost supplier response') })
+  const initial = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key, customerConfirmedEmail: true, credential: checkoutSession(raw).credential }, buyer)
+  assert.equal(initial.status, 503)
+  assert.equal(s.db.prepare('SELECT status FROM recharge_redemptions WHERE order_id=?').get(order.id)!.status, 'unknown')
+  s.override(undefined)
+  const recovered = checkoutSession(raw, 'session')
+  const response = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key, customerConfirmedEmail: true, credential: recovered.credential }, buyer)
+  assert.equal(response.status, 200)
+  const submissions = s.calls.filter(c => c.path === '/v1/redemptions')
+  assert.equal(submissions.length, 2)
+  assert.equal(submissions[0].key, submissions[1].key)
+  assert.equal(submissions[0].body, submissions[1].body)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions WHERE order_id=?').get(order.id)!.n, 1)
 })
 
 test('admin can read and search the stored upstream order without contacting the supplier', async t => {

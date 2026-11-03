@@ -40,24 +40,25 @@ async function waitFor(read, predicate, description, timeout = 30000) {
   } while (Date.now() < deadline)
   throw new Error('Timed out: ' + description)
 }
-async function api(context, route, data, expected = 200, retries = 0) {
+async function api(context, route, data, expected = 200, retries = 0, confirmedReplay = false) {
   const response = await context.request.fetch(route, {method: data === undefined ? 'GET' : 'POST', ...(data === undefined ? {} : {data}), headers: {Origin: origin, ...(cloudflare ? {Connection: 'close'} : {})}}).catch(async error => {
-    // workerd may close a reused loopback test connection. Retry one safe read;
-    // never replay order creation, credential submission or refund writes.
+    // workerd may close a reused loopback test connection. Retry one safe read
+    // or the explicit duplicate of a submission already acknowledged by 200.
+    // Never automatically replay a new write or an uncertain submission here.
     const safeRead = data === undefined || (route.endsWith('/fulfillment') && ['poll', 'query'].includes(data?.action))
-    if (cloudflare && safeRead && retries === 0 && /socket hang up|ECONNRESET/.test(String(error))) {
+    if (cloudflare && (safeRead || confirmedReplay) && retries === 0 && /socket hang up|ECONNRESET/.test(String(error))) {
       await pause(300)
       return null
     }
     throw new Error(`${data === undefined ? 'GET' : 'POST'} ${route}: ${String(error).split('\nCall log:')[0]}`)
   })
-  if (!response) return api(context, route, data, expected, retries + 1)
+  if (!response) return api(context, route, data, expected, retries + 1, confirmedReplay)
   const body = await response.json()
   // Duplicate-key recovery may meet the page's automatic reconciliation lease.
   // Retry only that explicit busy response, with the identical authorized body.
   if (cloudflare && response.status() === 409 && expected === 200 && data?.action === 'submit' && body.error === '订单正在同步，请稍后刷新。' && retries < 5) {
     await pause(450)
-    return api(context, route, data, expected, retries + 1)
+    return api(context, route, data, expected, retries + 1, confirmedReplay)
   }
   // The worker and visible checkout share a lease. A poll may legitimately
   // lose that race; read the saved order while the owning worker finishes.
@@ -79,7 +80,7 @@ async function act(order, action) {
 function session() {
   const exp = Math.floor(Date.now()/1000) + 86400
   const token = Buffer.from('{"alg":"none"}').toString('base64url') + '.' + Buffer.from(JSON.stringify({exp, nonce: crypto.randomUUID()})).toString('base64url') + '.MOCKONLY'
-  return JSON.stringify({user: {email: 'demo@example.invalid'}, accessToken: token, expires: new Date(exp*1000).toISOString()})
+  return JSON.stringify({user: {email: 'demo@example.invalid', id: 'user-browser-fixture'}, accessToken: token, account: {id: 'account-browser-fixture', planType: 'free', structure: 'personal'}, authProvider: 'auth0', expires: new Date(exp*1000).toISOString()})
 }
 const browser = await chromium.launch({headless: true, executablePath, env: {...process.env, TEMP: path.join(root, 'artifacts/local/tmp'), TMP: path.join(root, 'artifacts/local/tmp')}})
 const customer = await browser.newContext({baseURL: origin, ignoreHTTPSErrors: cloudflare, locale: 'zh-CN', viewport: {width: 1440, height: 1000}})
@@ -144,13 +145,15 @@ try {
     assert.equal(response.status(), 200, await response.text())
     const body = response.request().postDataJSON()
     if (large) {
-      assert.equal(body.credential.mode, 'access_token')
-      assert.equal(body.credential.access_token, JSON.parse(raw).accessToken)
-      assert.equal(body.credential.session, undefined)
+      const {featureFlags, ...core} = JSON.parse(raw)
+      assert(featureFlags.length > 250000)
+      assert.equal(body.credential.mode, 'session')
+      assert.deepEqual(JSON.parse(body.credential.session), core)
+      assert.equal(body.credential.access_token, undefined)
       assert(Buffer.byteLength(JSON.stringify(body)) < 40000)
-      record('Native insertion retains a 300 KB Session; the confirmed account submits its exact token within upstream and HTTP limits')
+      record('Native insertion retains a 300 KB Session; Session mode preserves the confirmed user, account, token, provider and expiry within upstream and HTTP limits')
     }
-    await api(customer, route + '/fulfillment', body)
+    await api(customer, route + '/fulfillment', body, 200, 0, true)
     return body
   }
   const firstSubmission = await submit('提交并充值', longSession)
