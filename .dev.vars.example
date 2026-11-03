@@ -18,6 +18,8 @@ FEISHU_PAYOUT_RECIPIENT= # Configure locally; never commit a real value.
 ORDER_TESTING_ENABLED="true"
 
 # Payment adapter. This switch alone cannot turn test orders into real payments.
+# Optional onepay read-only inspection; see docs/OPCPAY.md. Not a checkout provider.
+opcpay_api_key=""
 PAYMENT_PROVIDER="alipay"
 PAYMENT_CHECKOUT_ENABLED="false"
 PAYMENT_TEST_ENABLED="false"

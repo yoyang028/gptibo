@@ -25,8 +25,10 @@ PUBLIC_HOSTS = {
     'claude.com', 'support.claude.com',  # Official plan explanations, not supplier guarantees.
     'ai.hanfolk.xyz',  # Existing reviewed reseller catalog integration.
     'grizzlysms.com', 'api.grizzlysms.com',  # Reviewed public Grizzly SMS API.
+    'ai6666.com',  # User-requested public onepay API and documentation.
 }
 PUBLIC_DOC_REFERENCES = {
+    'docs/OPCPAY.md': {'www.npmjs.com'},
     # Existing public reference links are permitted only in their documentation;
     # this does not permit application requests to these shop-specific origins.
     'public/brands/README.md': {
