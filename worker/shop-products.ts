@@ -1,3 +1,4 @@
+import { resolveOwnerStore, ownerStoreOffer, ownerCheckoutGuard } from './owner-store-prices.ts'
 import {
   customProductId,
   productProblems,
@@ -598,6 +599,8 @@ export async function createCustomOrder(
   email: string,
 ) {
   const id = String(data.plan)
+  const storeId = await resolveOwnerStore(env, data.partner)
+  if (!storeId) throw new ApiError('该商品暂未开放代理销售。', 409)
   if (typeof data.key !== 'string' || !/^[a-f0-9-]{36}$/.test(data.key))
     throw new ApiError('订单请求编号无效。')
   const incoming =
@@ -617,7 +620,7 @@ export async function createCustomOrder(
   if (existing) {
     const old = await customOrderSummary(env, existing)
     if (
-      existing.plan !== id ||
+      existing.plan !== id || existing.owner_store_id !== storeId ||
       existing.customer_email !== email ||
       JSON.stringify(old?.fields) !== JSON.stringify(fields)
     )
@@ -625,18 +628,18 @@ export async function createCustomOrder(
     return existing
   }
   const row = await productRow(env, id),
-    shop = await ownerShop(env)
+    shop = await ownerShop(env, storeId),
+    offer = await ownerStoreOffer(env, storeId, id)
   if (
     !row ||
-    !row.enabled ||
+    !offer.enabled ||
     !shop.active ||
     shop.hiddenProductIds.includes(id) ||
-    data.partner ||
     rowProduct(row).status !== 'published' ||
     rowProduct(row).pricePending
   )
     throw new ApiError('该商品暂未开放购买。', 409)
-  const p = rowProduct(row)
+  const p = { ...rowProduct(row), priceCents: offer.price_cents }
   if (museKind(p) === 'invitation')
     throw new ApiError('该词元规格暂不可购买。', 409)
   if (p.api?.provider === 'grizzly' && !grizzlyCheckoutEnabled(env))
@@ -651,7 +654,7 @@ export async function createCustomOrder(
     throw new ApiError('小久商品暂未开放余额采购。', 409)
   await assertHanfolkStock(env, id)
   const coupon = data.couponCode
-    ? await couponQuote(env, id, email, data.couponCode)
+    ? await couponQuote(env, id, email, data.couponCode, storeId)
     : null
   const price = coupon?.priceCents ?? p.priceCents
   if (p.delivery === 'api' && price < Number(p.api?.maxCostCents ?? Infinity))
@@ -680,7 +683,7 @@ export async function createCustomOrder(
   await db.batch([
     db
       .prepare(
-        "INSERT INTO orders(id,owner_hash,idempotency_key,plan,plan_name,price_cents,status,mode,created_at,updated_at,last_event_id,customer_email,purchase_note) SELECT ?,?,?,c.id,c.name,?,'pending','live',?,?,?,?,c.purchase_note FROM catalog_plans c JOIN shop_products p ON p.id=c.id WHERE c.id=? AND c.enabled=1 AND c.version=? AND p.stock_remaining<>0 AND json_extract(p.public_json,'$.status')='published' AND COALESCE(json_extract((SELECT settings FROM owner_shop_settings WHERE id='platform'),'$.active'),1)=1 AND NOT EXISTS(SELECT 1 FROM owner_shop_settings s,json_each(s.settings,'$.hiddenProductIds') h WHERE s.id='platform' AND h.value=c.product_id) ON CONFLICT(owner_hash,idempotency_key) DO NOTHING",
+        `INSERT INTO orders(id,owner_hash,idempotency_key,plan,plan_name,price_cents,status,mode,created_at,updated_at,last_event_id,customer_email,purchase_note,owner_store_id) SELECT ?,?,?,c.id,c.name,?,'pending','live',?,?,?,?,c.purchase_note,? FROM catalog_plans c JOIN shop_products p ON p.id=c.id WHERE c.id=? AND c.version=? AND p.stock_remaining<>0 AND json_extract(p.public_json,'$.status')='published' AND ${ownerCheckoutGuard} ON CONFLICT(owner_hash,idempotency_key) DO NOTHING`,
       )
       .bind(
         orderId,
@@ -691,8 +694,10 @@ export async function createCustomOrder(
         now,
         event,
         email,
+        storeId,
         id,
         row.catalog_version!,
+        storeId, storeId, storeId, offer.store_price_version,
       ),
     ...(coupon ? [couponReservation(env, coupon, orderId, email)] : []),
     db

@@ -14,6 +14,8 @@ import { partnerRanking } from './partner-ranking.ts'
 import { customerRoutes } from './customers.ts'
 import { resetPayoutCooldown } from './payout-cooldown.ts'
 import { productOrderRoute, productOrderSettings } from './product-order.ts'
+import { partnerStore, partnerStoreRoutes, payoutAccount, payoutAccountRoute } from './partner-stores.ts'
+import { rechargeSummary } from './recharge/service.ts'
 import { partnerOrderSummary } from './partner-order-summary.ts'
 
 export async function resolvePartner(env: Env, slug: unknown) {
@@ -24,9 +26,10 @@ export async function resolvePartner(env: Env, slug: unknown) {
   return p
 }
 export async function partnerCatalog(env: Env, p: Partner) {
-  const rows = (await env.INTEREST_DB.prepare('SELECT c.id,c.product_id,c.name,c.purchase_note,pp.price_cents,CASE WHEN c.partner_enabled=1 THEN c.enabled ELSE 0 END enabled,c.renewal_only,pp.version FROM catalog_plans c JOIN partner_prices pp ON pp.plan=c.id WHERE pp.partner_id=? ORDER BY c.rowid').bind(p.id).all<{ product_id: string }>()).results
+  const rows = (await env.INTEREST_DB.prepare('SELECT c.id,c.product_id,c.name,c.purchase_note,pp.price_cents,CASE WHEN c.partner_enabled=1 AND pp.enabled=1 THEN c.enabled ELSE 0 END enabled,c.renewal_only,pp.version FROM catalog_plans c JOIN partner_prices pp ON pp.plan=c.id WHERE pp.partner_id=? ORDER BY c.rowid').bind(p.id).all<{ product_id: string }>()).results
   const { productIds, hiddenProductIds = [] } = await productOrderSettings(env, p.id)
-  return { plans: rows.filter(row => !hiddenProductIds.some(id => id === row.product_id)), productOrder: productIds, hiddenProductIds, partner: { name: p.name, slug: p.slug }, mode: 'demo' }
+  const shop = await partnerStore(env, p)
+  return { plans: rows.filter(row => !hiddenProductIds.some(id => id === row.product_id)), productOrder: productIds, hiddenProductIds, partner: { name: shop.name, slug: p.slug, brandName: shop.brandName || shop.name, logo: shop.logo, pageTitle: shop.pageTitle, headline: shop.headline, description: shop.description }, active: shop.active, mode: 'demo' }
 }
 const eligible = eligibleSql()
 const profit = profitSql()
@@ -51,7 +54,7 @@ async function verifySupplierPayout(env: Env, partnerId: string, payoutId?: stri
 }
 export async function partnerDashboard(env: Env, p: Partner) {
   await settleDue(env, p.id)
-  const plans = (await env.INTEREST_DB.prepare('SELECT c.id,c.product_id,c.name,CASE WHEN c.partner_enabled=1 THEN c.enabled ELSE 0 END enabled,c.renewal_only,pp.cost_cents,pp.price_cents,pp.version FROM catalog_plans c JOIN partner_prices pp ON pp.plan=c.id WHERE pp.partner_id=? ORDER BY c.rowid').bind(p.id).all()).results
+  const plans = (await env.INTEREST_DB.prepare('SELECT c.id,c.product_id,c.name,CASE WHEN c.partner_enabled=1 AND pp.enabled=1 THEN c.enabled ELSE 0 END enabled,c.renewal_only,pp.cost_cents,pp.price_cents,pp.version FROM catalog_plans c JOIN partner_prices pp ON pp.plan=c.id WHERE pp.partner_id=? ORDER BY c.rowid').bind(p.id).all()).results
   const stats = await env.INTEREST_DB.prepare(`SELECT COUNT(*) total, COALESCE(SUM(CASE WHEN mode='demo' AND status='success' THEN ${profit} ELSE 0 END),0) demo_profit, COALESCE(SUM(CASE WHEN ${eligible} AND payout_id IS NULL THEN ${profit} ELSE 0 END),0) available FROM orders WHERE partner_id=?`).bind(p.id).first<{total:number;demo_profit:number;available:number}>()
   const debts = await env.INTEREST_DB.prepare('SELECT COALESCE(SUM(amount_cents),0) amount FROM partner_debits WHERE partner_id=? AND payout_id IS NULL').bind(p.id).first<{amount:number}>()
   const held = await env.INTEREST_DB.prepare(`SELECT ${paidRefundHoldSql('?')} n`).bind(p.id).first<{n:number}>()
@@ -59,18 +62,40 @@ export async function partnerDashboard(env: Env, p: Partner) {
   const totals = await env.INTEREST_DB.prepare("SELECT COALESCE(SUM(CASE WHEN status='pending' THEN amount_cents ELSE 0 END),0) pending,COALESCE(SUM(CASE WHEN status='paid' THEN amount_cents ELSE 0 END),0) paid FROM partner_payouts WHERE partner_id=?").bind(p.id).first()
   const lastPayout = await env.INTEREST_DB.prepare('SELECT MAX(created_at) created_at FROM partner_payouts WHERE partner_id=? AND cooldown_exempt=0').bind(p.id).first<{created_at:number|null}>()
   const nextPayoutAt = lastPayout?.created_at == null ? null : lastPayout.created_at + PAYOUT_COOLDOWN_MS
-  return { partner: p, plans, stats: { ...stats, available: Math.max(0,(stats?.available ?? 0)-(debts?.amount ?? 0)), debt: debts?.amount ?? 0, withdrawalHeld: Boolean(held?.n), minimum: MIN_PAYOUT_CENTS, nextPayoutAt, payoutCoolingDown: nextPayoutAt !== null && Date.now() < nextPayoutAt }, payouts, totals, mailReady: mailConfigured(env) }
+  return { partner: p, capabilities: { tickets: false, notifications: false, recruitment: false }, payoutAccount: await payoutAccount(env, p.id), plans, stats: { ...stats, available: Math.max(0,(stats?.available ?? 0)-(debts?.amount ?? 0)), debt: debts?.amount ?? 0, withdrawalHeld: Boolean(held?.n), minimum: MIN_PAYOUT_CENTS, nextPayoutAt, payoutCoolingDown: nextPayoutAt !== null && Date.now() < nextPayoutAt }, payouts, totals, mailReady: mailConfigured(env) }
 }
+const orderSelect = `SELECT o.id,o.customer_email,o.plan,o.plan_name,o.price_cents,o.cost_cents,o.refunded_cents,t.payment_status platform_payment_status,t.refunded_cents platform_refunded_cents,t.verified_at platform_checked_at,MAX(o.refund_hold,CASE WHEN o.payment_status='paid' THEN COALESCE(t.financial_hold,0) ELSE 0 END) refund_hold,${profitSql('o')} profit_cents,o.mode,o.payment_status,o.status,o.created_at,o.updated_at,ps.status payout_status,ps.reviewed_at FROM orders o LEFT JOIN partner_payouts ps ON ps.id=o.payout_id LEFT JOIN recharge_orders t ON t.order_id=o.id`
 async function orders(env: Env, id: string, url: URL) {
+  if (url.searchParams.has('store') && url.searchParams.get('store') !== id) throw new ApiError('商店不存在。', 404)
   await settleDue(env, id)
-  const n = page(url)
-  const rows = (await env.INTEREST_DB.prepare(`SELECT o.id,o.customer_email,o.plan,o.plan_name,o.price_cents,o.cost_cents,o.refunded_cents,t.payment_status platform_payment_status,t.refunded_cents platform_refunded_cents,t.verified_at platform_checked_at,MAX(o.refund_hold,CASE WHEN o.payment_status='paid' THEN COALESCE(t.financial_hold,0) ELSE 0 END) refund_hold,${profitSql('o')} profit_cents,o.mode,o.payment_status,o.status,o.created_at,ps.status payout_status,ps.reviewed_at FROM orders o LEFT JOIN partner_payouts ps ON ps.id=o.payout_id LEFT JOIN recharge_orders t ON t.order_id=o.id WHERE o.partner_id=? ORDER BY o.created_at DESC,o.id DESC LIMIT 20 OFFSET ?`).bind(id, (n - 1) * 20).all()).results
-  const count = await env.INTEREST_DB.prepare('SELECT COUNT(*) total FROM orders WHERE partner_id=?').bind(id).first<{ total: number }>()
+  const n = page(url), query = (url.searchParams.get('q') ?? '').trim(), status = url.searchParams.get('status') ?? ''
+  if (query.length > 100 || (status && !['pending','session','processing','success','failed','cancelled'].includes(status))) throw new ApiError('订单筛选条件无效。')
+  const where = " WHERE o.partner_id=? AND (?='' OR instr(o.id,?)>0 OR instr(COALESCE(o.customer_email,''),?)>0) AND (?='' OR o.status=?)"
+  const values = [id, query, query, query, status, status]
+  const rows = (await env.INTEREST_DB.prepare(orderSelect + where + ' ORDER BY o.created_at DESC,o.id DESC LIMIT 20 OFFSET ?').bind(...values, (n - 1) * 20).all()).results
+  const count = await env.INTEREST_DB.prepare('SELECT COUNT(*) total FROM orders o' + where).bind(...values).first<{ total: number }>()
   return json({ rows, total: count?.total ?? 0, page: n })
+}
+async function partnerOrderDetail(env: Env, partnerId: string, orderId: string) {
+  const original = await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE id=? AND partner_id=?').bind(orderId, partnerId).first<Order>()
+  if (!original) throw new ApiError('订单不存在。', 404)
+  // Scope the lookup before querying any fulfillment provider or revealing events.
+  if (original.mode === 'live' && ['pending','processing'].includes(original.status)) {
+    try { await syncRechargeOrder(env, original) } catch { /* Keep the last confirmed state on a provider outage. */ }
+  }
+  const current = await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE id=? AND partner_id=?').bind(orderId, partnerId).first<Order>()
+  const order = await env.INTEREST_DB.prepare(orderSelect + ' WHERE o.id=? AND o.partner_id=?').bind(orderId, partnerId).first<Record<string, unknown>>()
+  const events = (await env.INTEREST_DB.prepare('SELECT id,actor,action,from_status,to_status,note,created_at FROM order_events WHERE order_id=? ORDER BY order_version').bind(orderId).all()).results
+  return json({ order: { ...order, fulfillment: await rechargeSummary(env, current!) }, events })
 }
 export async function partnerRoutes(request: Request, env: Env, url: URL) {
   if (url.pathname.startsWith('/api/partner/customers')) return customerRoutes(request,env,url)
   const p = await requirePartner(request, env); const path = url.pathname; const db = env.INTEREST_DB
+  const suffix = path.slice('/api/partner'.length)
+  if (['/stores', '/stores/prices', '/domain', '/branding/logo'].includes(suffix)) return partnerStoreRoutes(request, env, url, p, suffix)
+  if (suffix === '/payout-account') return payoutAccountRoute(request, env, p)
+  const detail = path.match(/^\/api\/partner\/orders\/([A-Z0-9-]+)$/)
+  if (detail && request.method === 'GET') return partnerOrderDetail(env, p.id, detail[1])
   if (path === '/api/partner/visitors' && request.method === 'GET') return json(await visitorSummary(env, url, p.id))
   if (path === '/api/partner/support-contacts') return supportContactsRoute(request, env, p)
   if (path === '/api/partner/announcement') return announcementRoute(request, env, p)
@@ -97,15 +122,18 @@ export async function partnerRoutes(request: Request, env: Env, url: URL) {
     return json({ ok: true })
   }
   if (path === '/api/partner/payouts' && request.method === 'POST') {
-    const data = await body(request); const recipient = text(data.recipient, 200, '支付宝收款账号与姓名')
+    const data = await body(request)
+    const account = await payoutAccount(env, p.id)
+    const recipient = data.accountVersion !== undefined ? account.phone + ' ' + account.name : text(data.recipient, 200, '支付宝收款账号与姓名')
     if (typeof data.key !== 'string' || !/^[a-f0-9-]{36}$/.test(data.key)) throw new ApiError('请求编号无效。')
     const existing = await db.prepare('SELECT id FROM partner_payouts WHERE partner_id=? AND request_key=?').bind(p.id, data.key).first()
     if (existing) return json({ ok: true })
+    if (data.accountVersion !== undefined && (!account.phone || data.accountVersion !== account.version)) throw new ApiError('收款信息已更新，请重新确认。', 409)
     await verifySupplierPayout(env,p.id)
     const id = crypto.randomUUID(); const auditId = crypto.randomUUID(); const now = Date.now()
     // Reserve all currently eligible orders in the same transaction as the request.
     await db.batch([
-      db.prepare(`INSERT INTO partner_payouts(id,partner_id,amount_cents,gross_cents,deduction_cents,recipient,created_at,request_key) SELECT ?,?,SUM(${profit})-${debitSql},SUM(${profit}),${debitSql},?,?,? FROM orders WHERE partner_id=? AND ${eligible} AND payout_id IS NULL AND NOT ${paidRefundHold} AND EXISTS(SELECT 1 FROM partners WHERE id=? AND active=1 AND auth_version=?) AND NOT EXISTS(SELECT 1 FROM partner_payouts recent WHERE recent.partner_id=? AND recent.cooldown_exempt=0 AND recent.created_at>?) HAVING SUM(${profit})-${debitSql}>=${MIN_PAYOUT_CENTS} ON CONFLICT DO NOTHING`).bind(id, p.id, recipient, now, data.key, p.id, p.id, p.auth_version, p.id, now-PAYOUT_COOLDOWN_MS),
+      db.prepare(`INSERT INTO partner_payouts(id,partner_id,amount_cents,gross_cents,deduction_cents,recipient,created_at,request_key) SELECT ?,?,SUM(${profit})-${debitSql},SUM(${profit}),${debitSql},?,?,? FROM orders WHERE partner_id=? AND ${eligible} AND payout_id IS NULL AND NOT ${paidRefundHold} AND EXISTS(SELECT 1 FROM partners WHERE id=? AND active=1 AND auth_version=?) AND (? IS NULL OR EXISTS(SELECT 1 FROM partner_payout_accounts a WHERE a.partner_id=orders.partner_id AND a.version=?)) AND NOT EXISTS(SELECT 1 FROM partner_payouts recent WHERE recent.partner_id=? AND recent.cooldown_exempt=0 AND recent.created_at>?) HAVING SUM(${profit})-${debitSql}>=${MIN_PAYOUT_CENTS} ON CONFLICT DO NOTHING`).bind(id, p.id, recipient, now, data.key, p.id, p.id, p.auth_version, data.accountVersion === undefined ? null : account.version, account.version, p.id, now-PAYOUT_COOLDOWN_MS),
       db.prepare(`UPDATE orders SET payout_id=? WHERE partner_id=? AND ${eligible} AND payout_id IS NULL AND EXISTS(SELECT 1 FROM partner_payouts WHERE id=?)`).bind(id, p.id, id),
       db.prepare(`INSERT INTO partner_payout_items(payout_id,order_id,profit_cents) SELECT ?,id,${profit} FROM orders WHERE payout_id=?`).bind(id, id),
       db.prepare('UPDATE partner_debits SET payout_id=? WHERE partner_id=? AND payout_id IS NULL AND EXISTS(SELECT 1 FROM partner_payouts WHERE id=?)').bind(id,p.id,id),
@@ -146,6 +174,14 @@ export async function adminPartnerRoutes(request: Request, env: Env, url: URL) {
     try { await sendPartnerInvitation(env, p!); invitationSent = true } catch { /* Keep the account and link; the administrator can resend the invitation. */ }
     return json({ ok: true, id, slug, invitationSent, message: invitationSent ? '代理已开通，邀请邮件已发送。代理可通过邮件中的工作台入口自行获取登录验证码。' : '代理已开通，但邀请邮件发送失败。请在代理详情中重发。' }, 201)
   }
+  const storeMatch = path.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})(\/(?:stores(?:\/prices)?|domain|branding\/logo))$/)
+  if (storeMatch) {
+    const p = await db.prepare('SELECT * FROM partners WHERE id=?').bind(storeMatch[1]).first<Partner>()
+    if (!p) throw new ApiError('代理不存在。', 404)
+    return partnerStoreRoutes(request, env, url, p, storeMatch[2], true)
+  }
+  const detail = path.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})\/orders\/([A-Z0-9-]+)$/)
+  if (detail && method === 'GET') return partnerOrderDetail(env, detail[1], detail[2])
   const match = path.match(/^\/api\/admin\/partners\/([a-f0-9-]{36})(?:\/(prices\/([a-z0-9-]+)|orders|order-summary|preview|invitation|support-contacts|announcement|product-order))?$/)
   if (match) {
     const p = await db.prepare('SELECT * FROM partners WHERE id=?').bind(match[1]).first<Partner>()

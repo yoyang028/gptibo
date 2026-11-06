@@ -19,7 +19,7 @@ export async function recordVisitor(request: Request, env: Env) {
   if (!match && path !== '/' && path !== '/orders' && path !== '/check' && !/^\/product\/[a-z0-9-]+$/.test(path)) throw new ApiError('页面路径无效。')
   let shopId = 'platform'
   if (match) {
-    const partner = await env.INTEREST_DB.prepare('SELECT id FROM partners WHERE slug=? AND active=1').bind(match[1]).first<{ id: string }>()
+    const partner = await env.INTEREST_DB.prepare('SELECT id FROM partners WHERE slug=?1 AND active=1 UNION ALL SELECT id FROM owner_shop_settings WHERE slug=?1').bind(match[1]).first<{ id: string }>()
     if (!partner) throw new ApiError('代理商店不可用。', 404)
     shopId = partner.id
   }

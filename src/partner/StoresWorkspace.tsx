@@ -1,3 +1,4 @@
+import { StoreBulkSettings } from '@/admin/StoreBulkSettings'
 import { DateTimePicker } from '@/components/workspace-controls'
 import {
   Table,
@@ -95,6 +96,7 @@ type Charge = {
   created_at: string
 }
 type Data = {
+  capabilities?: { maxStores?: number; coupons?: boolean; customDomains?: boolean; bulkSettings?: boolean }
   referralOrigin?: string
   stores: Shop[]
   prices: Price[]
@@ -154,7 +156,11 @@ export function StoresWorkspace({
   sortingContent,
   publishingContent,
   owner = false,
+  selectedStoreId,
+  onStoreChange,
 }: {
+  selectedStoreId?: string
+  onStoreChange?: (id: string) => void
   prefix?: string
   readOnly?: boolean
   adminManagement?: boolean
@@ -175,7 +181,7 @@ export function StoresWorkspace({
     prefix + '/domain',
     revision + parentRevision,
   )
-  const [selected, setSelected] = useState('')
+  const [selected, setLocalSelected] = useState('')
   const [editor, setEditor] = useState<Shop | 'new' | null>(null)
   const [coupon, setCoupon] = useState<Coupon | 'new' | null>(null)
   const [tab, setTab] = useState('overview')
@@ -198,8 +204,9 @@ export function StoresWorkspace({
   const [note, setNote] = useState('')
   const monthlyFee = domainResource.data?.monthlyFeeCents ?? 0
   const data = resource.data
-  const shop = data?.stores.find((s) => s.id === selected) ?? data?.stores[0]
-  const storefrontPath = owner ? () => '/' : partnerStorefrontPath
+  const setSelected = (id: string) => { setLocalSelected(id); onStoreChange?.(id) }
+  const shop = data?.stores.find((s) => s.id === (selectedStoreId ?? selected)) ?? data?.stores[0]
+  const storefrontPath = (slug: string) => owner && !slug ? '/' : partnerStorefrontPath(slug)
   const reload = () => {
     setRevision((v) => v + 1)
     onSaved?.()
@@ -326,13 +333,14 @@ export function StoresWorkspace({
         <div>
           <h2>
             <Store size={21} />
-            {owner ? '我的店铺' : '我的商店'} <small>{data.stores.length}/{owner ? 1 : 5}</small>
+            {owner ? '我的店铺' : '我的商店'} <small>{data.stores.length}/{data.capabilities?.maxStores ?? (owner ? 1 : 5)}</small>
           </h2>
-          <p>{owner ? '管理主商城的形象、商品、优惠、订单和域名。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
+          <p>{owner ? '分别管理三家自营店的形象、价格与订单，也可统一同步选定参数。' : data.capabilities?.maxStores === 1 ? '管理自己的商店形象、售价和客户订单，商品与供货价由平台统一提供。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
         </div>
-        {!readOnly && (
+        {owner && data.capabilities?.bulkSettings && <StoreBulkSettings stores={data.stores} onSaved={reload} />}
+        {!readOnly && !owner && (
           <Button
-            disabled={busy || owner || data.stores.length >= 5}
+            disabled={busy || owner || data.stores.length >= (data.capabilities?.maxStores ?? 5)}
             onClick={() => setEditor('new')}
           >
             <Plus size={15} />
@@ -804,7 +812,7 @@ export function StoresWorkspace({
                   },
                 ]
               : []),
-          ]}
+          ].filter(item => (item.value !== 'coupons' || data.capabilities?.coupons !== false) && (item.value !== 'domains' || data.capabilities?.customDomains !== false))}
         />
       )}
       <Dialog
@@ -1191,7 +1199,7 @@ function StoreEditor({
         <DialogHeader>
           <DialogTitle>{shop ? '编辑商店' : '新增商店'}</DialogTitle>
           <DialogDescription>
-            {owner ? '保存后更新主商城。联系方式与主后台共用，店铺形象可随时修改。' : '设置仅属于这家店。推广码创建后保持固定。'}
+            {owner ? '保存后只更新当前店铺。统一修改请返回商店概览选择要同步的参数。' : '设置仅属于这家店。推广码创建后保持固定。'}
           </DialogDescription>
         </DialogHeader>
         <form

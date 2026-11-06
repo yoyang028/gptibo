@@ -1,3 +1,4 @@
+import { ownerStoreOffer } from './owner-store-prices.ts'
 import { ApiError, type Env } from './platform.ts'
 import { ownerSupplyPrices } from './owner-shop.ts'
 export type CouponQuote = {
@@ -13,6 +14,7 @@ export async function couponQuote(
   plan: string,
   email: string,
   code: unknown,
+  storeId = 'platform',
 ): Promise<CouponQuote> {
   if (typeof code !== 'string' || !/^[A-Za-z0-9_-]{3,32}$/.test(code.trim()))
     throw new ApiError('优惠码格式无效。')
@@ -24,18 +26,14 @@ export async function couponQuote(
   if (!row) throw new ApiError('优惠码不存在。', 409)
   const settings = JSON.parse(row.settings),
     now = Date.now()
-  const product = await env.INTEREST_DB.prepare(
-    'SELECT price_cents FROM catalog_plans WHERE id=? AND enabled=1',
-  )
-    .bind(plan)
-    .first<{ price_cents: number }>()
+  const product = await ownerStoreOffer(env, storeId, plan)
   const count = await env.INTEREST_DB.prepare(
     "SELECT COUNT(*) total,COALESCE(SUM(CASE WHEN u.email=? THEN 1 ELSE 0 END),0) used_email FROM shop_coupon_uses u JOIN orders o ON o.id=u.order_id WHERE u.coupon_id=? AND o.status<>'cancelled'",
   )
     .bind(email, row.id)
     .first<{ total: number; used_email: number }>()
   if (
-    !product ||
+    !product || !product.enabled ||
     !settings.active ||
     now < Date.parse(settings.starts_at) ||
     now >= Date.parse(settings.ends_at) ||
@@ -43,7 +41,7 @@ export async function couponQuote(
     (settings.once_per_email && count!.used_email) ||
     !settings.targets.some(
       (t: { storeId: string; plan: string }) =>
-        t.storeId === 'platform' && t.plan === plan,
+        t.storeId === storeId && t.plan === plan,
     )
   )
     throw new ApiError('该优惠码已失效、已使用或不适用于此商品。', 409)

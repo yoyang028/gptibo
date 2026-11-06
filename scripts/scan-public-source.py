@@ -28,7 +28,6 @@ PUBLIC_HOSTS = {
     'ai6666.com',  # User-requested public onepay API and documentation.
 }
 PUBLIC_DOC_REFERENCES = {
-    'docs/MULTI_STOREFRONT.md': {'www.sqlite.org'},  # Official SQLite transaction/trigger documentation.
     'docs/OPCPAY.md': {'www.npmjs.com'},
     # Existing public reference links are permitted only in their documentation;
     # this does not permit application requests to these shop-specific origins.

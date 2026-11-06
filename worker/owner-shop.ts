@@ -1,3 +1,4 @@
+import { ownerStoreOffer } from './owner-store-prices.ts'
 import { ApiError, body, json, type Env } from './platform.ts'
 import { DEFAULT_PRODUCT_ORDER } from '../shared/product-order.ts'
 import {
@@ -12,6 +13,9 @@ import { productMap, authorizedProduct } from './recharge/client.ts'
 
 type OwnerSettings = {
   name: string
+  wechat?: string
+  qq?: string
+  email?: string
   active: boolean
   brandName: string
   logo: string
@@ -41,14 +45,13 @@ const defaults: OwnerSettings = {
   hiddenProductIds: [],
   orderCompletedEmail: false,
 }
-export async function ownerShop(env: Env) {
+export async function ownerShop(env: Env, storeId = 'platform') {
   const row = await env.INTEREST_DB.prepare(
-    "SELECT settings,version FROM owner_shop_settings WHERE id='platform'",
-  ).first<{ settings: string; version: number }>()
+    'SELECT settings,version FROM owner_shop_settings WHERE id=?',
+  ).bind(storeId).first<{ settings: string; version: number }>()
+  if (!row) throw new ApiError('店铺不存在。', 404)
   return {
     ...defaults,
-    ...(env.STOREFRONT_KIND === 'general' ? { name: '通用商店', brandName: '通用商店', pageTitle: '通用商店 · 数字商品与实用服务', headline: '好用的服务，值得的选择。', description: '数字商品、会员订阅与实用服务，认真挑选，安心使用。' } : {}),
-    ...(env.STOREFRONT_KIND === 'wholesale' ? { name: '代理供货中心', brandName: '代理供货中心' } : {}),
     ...JSON.parse(row?.settings ?? '{}'),
     version: row?.version ?? 0,
   } as OwnerSettings & { version: number }
@@ -58,8 +61,9 @@ async function save(
   version: unknown,
   patch: Partial<OwnerSettings>,
   note: string,
+  storeId = 'platform',
 ) {
-  const current = await ownerShop(env)
+  const current = await ownerShop(env, storeId)
   if (!Number.isSafeInteger(version) || version !== current.version)
     throw new ApiError('店铺设置已更新，请刷新后重试。', 409)
   const { version: unused, ...settings } = current
@@ -68,11 +72,11 @@ async function save(
     now = Date.now()
   await env.INTEREST_DB.batch([
     env.INTEREST_DB.prepare(
-      "UPDATE owner_shop_settings SET settings=?,version=version+1,change_id=?,updated_at=? WHERE id='platform' AND version=?",
-    ).bind(JSON.stringify({ ...settings, ...patch }), id, now, current.version),
+      "UPDATE owner_shop_settings SET settings=?,version=version+1,change_id=?,updated_at=? WHERE id=? AND version=?",
+    ).bind(JSON.stringify({ ...settings, ...patch }), id, now, storeId, current.version),
     env.INTEREST_DB.prepare(
-      "INSERT INTO admin_audit(id,target_id,action,note,created_at) SELECT ?,'platform','owner-shop',?,? FROM owner_shop_settings WHERE id='platform' AND change_id=?",
-    ).bind(id, note, now, id),
+      "INSERT INTO admin_audit(id,target_id,action,note,created_at) SELECT ?,id,'owner-shop',?,? FROM owner_shop_settings WHERE id=? AND change_id=?",
+    ).bind(id, note, now, storeId, id),
   ])
   if (
     !(await env.INTEREST_DB.prepare('SELECT id FROM admin_audit WHERE id=?')
@@ -80,7 +84,7 @@ async function save(
       .first())
   )
     throw new ApiError('店铺已更新，请重新读取。', 409)
-  return ownerShop(env)
+  return ownerShop(env, storeId)
 }
 function text(value: unknown, max: number, label: string, required = false) {
   if (
@@ -92,7 +96,7 @@ function text(value: unknown, max: number, label: string, required = false) {
     throw new ApiError(`请填写有效的${label}，最多 ${max} 字。`)
   return value.trim()
 }
-async function ownerProductIds(env: Env) {
+export async function ownerProductIds(env: Env) {
   const ids = (
     await env.INTEREST_DB.prepare(
       "SELECT id,public_json FROM shop_products WHERE json_extract(public_json,'$.status')<>'archived' ORDER BY updated_at DESC",
@@ -102,8 +106,8 @@ async function ownerProductIds(env: Env) {
   )
   return [...new Set([...DEFAULT_PRODUCT_ORDER, ...ids])]
 }
-export async function ownerPublicSettings(env: Env) {
-  const settings = await ownerShop(env)
+export async function ownerPublicSettings(env: Env, storeId = 'platform') {
+  const settings = await ownerShop(env, storeId)
   const known = await ownerProductIds(env)
   return {
     shop: {
@@ -165,7 +169,7 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
       supportContactsSettings(env),
       db
         .prepare(
-          "SELECT COUNT(*) order_count,COALESCE(SUM(CASE WHEN o.mode='live' AND o.payment_status='paid' AND o.status='success' AND o.refund_hold=0 AND COALESCE(r.supply_cents,o.cost_cents) IS NOT NULL THEN MAX(0,o.price_cents-MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))-COALESCE(r.supply_cents,o.cost_cents,0)) ELSE 0 END),0) earned_cents FROM orders o LEFT JOIN recharge_orders r ON r.order_id=o.id WHERE o.partner_id IS NULL AND o.is_test=0",
+          "SELECT COUNT(*) order_count,COALESCE(SUM(CASE WHEN o.mode='live' AND o.payment_status='paid' AND o.status='success' AND o.refund_hold=0 AND COALESCE(r.supply_cents,o.cost_cents) IS NOT NULL THEN MAX(0,o.price_cents-MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))-COALESCE(r.supply_cents,o.cost_cents,0)) ELSE 0 END),0) earned_cents FROM orders o LEFT JOIN recharge_orders r ON r.order_id=o.id WHERE o.partner_id IS NULL AND o.owner_store_id='platform' AND o.is_test=0",
         )
         .first<{ order_count: number; earned_cents: number }>(),
       visitorSummary(env, new URL('?days=30', url), 'platform'),
@@ -453,6 +457,8 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
       409,
     )
   if (suffix === '/notification-settings') {
+    const storeId = url.searchParams.get('store') ?? 'platform'
+    const settings = await ownerShop(env, storeId)
     if (request.method === 'GET')
       return json({
         orderCompletedEmail: settings.orderCompletedEmail,
@@ -471,7 +477,8 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
           ? { notificationsSince: Date.now() }
           : {}),
       },
-      '修改主店铺订单通知',
+      '修改店铺订单通知',
+      storeId,
     )
     return json({
       orderCompletedEmail: next.orderCompletedEmail,
@@ -515,12 +522,9 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
       throw new ApiError('该优惠码已存在，请编辑已有优惠码或更换名称。', 409)
     const costs = await ownerSupplyPrices(env)
     for (const target of data.targets) {
-      if (target.storeId !== 'platform' || typeof target.plan !== 'string')
-        throw new ApiError('优惠仅适用于主店铺。')
-      const p = await db
-        .prepare('SELECT price_cents FROM catalog_plans WHERE id=?')
-        .bind(target.plan)
-        .first<{ price_cents: number }>()
+      if (typeof target.storeId !== 'string' || typeof target.plan !== 'string') throw new ApiError('优惠目标店铺或套餐无效。')
+      await ownerShop(env, target.storeId)
+      const p = await ownerStoreOffer(env, target.storeId, target.plan)
       if (
         !p ||
         p.price_cents - Number(data.discountCents) <
@@ -582,7 +586,11 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
   throw new ApiError('未找到店铺操作。', 404)
 }
 export async function sendOwnerOrderNotifications(env: Env) {
-  const shop = await ownerShop(env)
+  const stores = (await env.INTEREST_DB.prepare('SELECT id FROM owner_shop_settings ORDER BY slot').all<{ id: string }>()).results
+  for (const store of stores) await sendStoreOrderNotifications(env, store.id)
+}
+async function sendStoreOrderNotifications(env: Env, storeId: string) {
+  const shop = await ownerShop(env, storeId)
   if (
     !shop.orderCompletedEmail ||
     !env.ADMIN_EMAIL ||
@@ -595,9 +603,9 @@ export async function sendOwnerOrderNotifications(env: Env) {
   const rows = (
     await db
       .prepare(
-        "SELECT o.id,o.plan_name,o.price_cents FROM orders o LEFT JOIN owner_order_notifications n ON n.order_id=o.id WHERE o.partner_id IS NULL AND o.is_test=0 AND o.mode='live' AND o.payment_status='paid' AND o.status='success' AND o.created_at>=? AND n.sent_at IS NULL AND COALESCE(n.lease_until,0)<=? ORDER BY o.created_at LIMIT 5",
+        "SELECT o.id,o.plan_name,o.price_cents FROM orders o LEFT JOIN owner_order_notifications n ON n.order_id=o.id WHERE o.partner_id IS NULL AND o.owner_store_id=? AND o.is_test=0 AND o.mode='live' AND o.payment_status='paid' AND o.status='success' AND o.created_at>=? AND n.sent_at IS NULL AND COALESCE(n.lease_until,0)<=? ORDER BY o.created_at LIMIT 5",
       )
-      .bind(shop.notificationsSince ?? now, now)
+      .bind(storeId, shop.notificationsSince ?? now, now)
       .all<{ id: string; plan_name: string; price_cents: number }>()
   ).results
   for (const row of rows) {

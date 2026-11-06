@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { StoresWorkspace } from '@/partner/StoresWorkspace'
 import { ProductManagement } from '@/partner/ProductManagement'
 import { NotificationSettings } from '@/partner/NotificationSettings'
-import { WorkspaceTabs } from '@/partner/workspace-ui'
+import { WorkspaceTabs, WorkspaceSelect } from '@/partner/workspace-ui'
 import { VisitorStats } from '@/components/visitor-stats'
 import { useResource } from '@/lib/use-resource'
 import type { StorefrontProductId } from '../../shared/product-order'
@@ -39,8 +39,11 @@ export default function MyShop({
   onManageProducts: () => void
 }) {
   const [tab, setTab] = useState('stores')
+  const [storeId, setStoreId] = useState('platform')
   const { data } = useResource<{
+    stores: { id: string; name: string; slug: string }[]
     prices: {
+      store_id: string
       plan: string
       name: string
       product_id: string
@@ -51,23 +54,26 @@ export default function MyShop({
       enabled: boolean
     }[]
   }>('/api/admin/my-shop/stores', revision)
-  const offers: Offer[] = (data?.prices ?? []).map((p) => ({
+  const offers: Offer[] = (data?.prices ?? []).filter(p => p.store_id === storeId).map((p) => ({
     ...p,
     id: p.plan,
     enabled: Number(p.enabled),
     renewal_only: 0,
   }))
+  const selected = data?.stores.find(s => s.id === storeId)
+  const storePath = selected?.slug ? '/s/' + selected.slug : '/'
   return (
     <div className="owner-shop-canvas">
       <div className="partner-section-heading">
         <div>
           <h2>店铺管理</h2>
-          <p>管理店铺形象、商品、订单与客户，经营自己的主商城。</p>
+          <p>三家自营店共用商品资料，分别管理店铺参数、售价与经营数据。</p>
         </div>
-        <a href="/" target="_blank" rel="noreferrer">
-          预览主商城 <ArrowUpRight size={14} />
+        <a href={storePath} target="_blank" rel="noreferrer">
+          预览当前店铺 <ArrowUpRight size={14} />
         </a>
       </div>
+      {data && <WorkspaceSelect label="当前店铺" value={storeId} options={data.stores.map(s => ({value:s.id,label:s.name}))} onValueChange={setStoreId} />}
       <WorkspaceTabs
         label="我的店铺工作台"
         value={tab}
@@ -79,6 +85,8 @@ export default function MyShop({
             content: (
               <StoresWorkspace
                 owner
+                selectedStoreId={storeId}
+                onStoreChange={setStoreId}
                 prefix="/api/admin/my-shop"
                 revision={revision}
                 active={tab === 'stores'}
@@ -99,9 +107,9 @@ export default function MyShop({
                           .map((p) => [p.id, p]),
                       ).values(),
                     ]}
-                    endpoint="/api/admin/my-shop/product-order"
+                    endpoint={'/api/admin/my-shop/product-order?store=' + storeId}
                     plans={offers}
-                    storeUrl={location.origin + '/'}
+                    storeUrl={location.origin + storePath}
                     onSaved={onSaved}
                   />
                 }
@@ -139,10 +147,10 @@ export default function MyShop({
             label: '访客统计',
             content: (
               <VisitorStats
-                endpoint="/api/admin/my-shop/visitors"
+                endpoint={'/api/admin/my-shop/visitors?store=' + storeId}
                 revision={revision}
-                title="主商城访问趋势"
-                description="统计主商城及商品详情页的访客与浏览量"
+                title={(selected?.name ?? '店铺') + '访问趋势'}
+                description="统计当前所选店铺及商品详情页的访客与浏览量"
               />
             ),
           },
@@ -158,7 +166,7 @@ export default function MyShop({
                     label: '订单通知',
                     content: (
                       <NotificationSettings
-                        endpoint="/api/admin/my-shop/notification-settings"
+                        endpoint={'/api/admin/my-shop/notification-settings?store=' + storeId}
                         revision={revision}
                         readOnly={false}
                       />

@@ -43,7 +43,7 @@ function SortableProduct({ pricePrefix, product, id, index, plans, locked, readO
         {!readOnly && <Button type="button" variant="outline" size="sm" className="partner-product-visibility" disabled={locked} aria-label={`${hidden ? '上架' : '下架'} ${product.name}`} onClick={onToggle}>{hidden ? <Eye size={15} /> : <EyeOff size={15} />}{hidden ? '上架' : '下架'}</Button>}
       </div>
       <CollapsibleContent className="partner-product-details" keepMounted>
-        <Pricing plans={plans} readOnly={readOnly || locked} endpoint={plan => pricePrefix + plan.id} onSaved={onSaved} />
+        <Pricing plans={plans} readOnly={readOnly || locked} endpoint={plan => { const [base, query] = pricePrefix.split('?'); return base + plan.id + (query ? '?' + query : '') }} onSaved={onSaved} />
       </CollapsibleContent>
     </Collapsible>
   </li>
@@ -109,7 +109,7 @@ function ProductManagementForm({ customProducts, settings, plans, endpoint, disa
     }}>
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
         <ol className="partner-products-list" aria-label="商店商品展示顺序">
-          {ids.map((id, index) => <SortableProduct product={productFor(id)} pricePrefix={endpoint.replace(/\/product-order$/, '/prices/')} key={id} id={id} index={index} plans={plans.filter(plan => plan.product_id === id)} locked={locked} readOnly={readOnly} hidden={hiddenIds.includes(id)} onToggle={() => { setHiddenIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]); setError(''); setMessage(`${productFor(id).name} 已选择${hiddenIds.includes(id) ? '上架' : '下架'}，保存设置后生效。`) }} onSaved={onSaved} />)}
+          {ids.map((id, index) => <SortableProduct product={productFor(id)} pricePrefix={endpoint.replace(/\/product-order(?=\?|$)/, '/prices/')} key={id} id={id} index={index} plans={plans.filter(plan => plan.product_id === id)} locked={locked} readOnly={readOnly} hidden={hiddenIds.includes(id)} onToggle={() => { setHiddenIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]); setError(''); setMessage(`${productFor(id).name} 已选择${hiddenIds.includes(id) ? '上架' : '下架'}，保存设置后生效。`) }} onSaved={onSaved} />)}
         </ol>
       </SortableContext>
       <DragOverlay dropAnimation={{ duration: 180, easing: 'ease-out' }}>{activeId && <div className="partner-product-overlay"><GripVertical size={18} /><ProductSummary product={productFor(activeId)} plans={plans.filter(plan => plan.product_id === activeId)} /></div>}</DragOverlay>

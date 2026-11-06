@@ -1,3 +1,6 @@
+import { ownerStorefrontRoutes } from './owner-storefronts.ts'
+import { resolveOwnerStore, ownerStoreOffer, ownerCheckoutGuard } from './owner-store-prices.ts'
+import { partnerStore } from './partner-stores.ts'
 import { SMS_PRODUCT_IDS } from '../shared/grizzly-sms.ts'
 import { isDeliverySupplierPlan } from './delivery_supplier/client.ts'
 import { isXGiftPlan, xUsername } from '../shared/xgift-products.ts'
@@ -29,7 +32,7 @@ import { invoiceRoutes } from './invoices.ts'
 import { publicAnnouncement } from './announcements.ts'
 import { rechargeReminderPreview } from './recharge-reminders.ts'
 import { adminGmailOrder, confirmGmailNotPurchased, fulfillGmail, gmailCheckoutEnabled, gmailProductsRoute, gmailSnapshot, gmailSnapshotStatement } from './account_supplier/service.ts'
-import { ownerPublicSettings, ownerShopRoutes, ownerShop } from './owner-shop.ts'
+import { ownerPublicSettings, ownerShop } from './owner-shop.ts'
 import { customOrderSummary, createCustomOrder, customBuyerAction, customAdminAction, shopProducts, shopProductRoutes, fulfillCustomOrder, customRetailFloor } from './shop-products.ts'
 import { customProductId, shopProductDisplayId } from '../shared/shop-products.ts'
 import { quefaPurchaseNote } from '../shared/quefa-gpt-products.ts'
@@ -56,8 +59,10 @@ const adminOrder = async (env: Env, o: AdminOrder) => {
 const plans = async (env: Env) => (await env.INTEREST_DB.prepare('SELECT * FROM catalog_plans WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=catalog_plans.id) ORDER BY rowid').all<Plan>()).results
 const customerOrder = async (env: Env, o: Order, contacts = new Map<string, Promise<SupportContactsSettings>>(), syncError = false) => {
   o = await expireRechargeOrder(env, o)
-  const owner = o.partner_id ?? 'platform'
-  const settings = contacts.get(owner) ?? supportContactsSettings(env, owner)
+  const owner = o.partner_id ?? o.owner_store_id ?? 'platform'
+  const settings = contacts.get(owner) ?? (!o.partner_id && owner !== 'platform'
+    ? ownerShop(env, owner).then(s => ({ contacts: { wechat: s.wechat ?? '', qq: s.qq ?? '', email: s.email ?? '' }, version: s.version }))
+    : supportContactsSettings(env, owner))
   contacts.set(owner, settings)
   const [support, fulfillment] = await Promise.all([settings, rechargeSummary(env, o)])
   if (fulfillment) Object.assign(fulfillment, { syncError })
@@ -99,12 +104,13 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         const customMatch=path.match(/^\/api\/admin\/my-shop\/orders\/([A-Z0-9-]+)$/)
         if (customMatch && method==='POST') {const o=await getOrder(env,customMatch[1]);if(!customProductId.test(o.plan)||o.partner_id)throw new ApiError('这不是自营发布商品订单。',409);return json({order:await customerOrder(env,await customAdminAction(request,env,o))})}
         const {page,offset}=pageParams(url)
-        const rows=(await env.INTEREST_DB.prepare("SELECT o.*,MAX(0,o.price_cents-COALESCE(r.supply_cents,o.cost_cents,0)-MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))) profit_cents,COALESCE(r.supply_cents,o.cost_cents,0) cost_cents FROM orders o LEFT JOIN recharge_orders r ON r.order_id=o.id WHERE o.partner_id IS NULL AND o.is_test=0 ORDER BY o.created_at DESC LIMIT 20 OFFSET ?").bind(offset).all<Order>()).results
+        const storeId=url.searchParams.get('store'); if(storeId) await ownerShop(env,storeId)
+        const rows=(await env.INTEREST_DB.prepare("SELECT o.*,MAX(0,o.price_cents-COALESCE(r.supply_cents,o.cost_cents,0)-MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))) profit_cents,COALESCE(r.supply_cents,o.cost_cents,0) cost_cents FROM orders o LEFT JOIN recharge_orders r ON r.order_id=o.id WHERE o.partner_id IS NULL AND o.is_test=0 AND (? IS NULL OR o.owner_store_id=?) ORDER BY o.created_at DESC LIMIT 20 OFFSET ?").bind(storeId,storeId,offset).all<Order>()).results
         const records=await Promise.all(rows.map(async o=>({...o,discount_cents:(await env.INTEREST_DB.prepare('SELECT discount_cents FROM shop_coupon_uses WHERE order_id=?').bind(o.id).first<{discount_cents:number}>())?.discount_cents??0,custom:await customOrderSummary(env,o)})))
-        return json({page,total:(await env.INTEREST_DB.prepare('SELECT COUNT(*) total FROM orders WHERE partner_id IS NULL AND is_test=0').first<{total:number}>())?.total??0,orders:records,rows:records})
+        return json({page,total:(await env.INTEREST_DB.prepare('SELECT COUNT(*) total FROM orders WHERE partner_id IS NULL AND is_test=0 AND (? IS NULL OR owner_store_id=?)').bind(storeId,storeId).first<{total:number}>())?.total??0,orders:records,rows:records})
       }
       if (path === '/api/admin/product-artwork') return await artworkRoute(request,env)
-      if (path.startsWith('/api/admin/my-shop')) return await ownerShopRoutes(request,env,url)
+      if (path.startsWith('/api/admin/my-shop')) return await ownerStorefrontRoutes(request,env,url)
       if (path === '/api/admin/tickets/notifications' && method === 'GET') return json({enabled: false, version: 0, pending: 0})
       if (path.startsWith('/api/admin/tickets')) throw new ApiError('Cloudflare 后端尚未启用代理工单。', 503)
       if (path === '/api/admin/security' && method === 'GET') return json({enabled: false, events: []})
@@ -131,27 +137,34 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       }
       if(url.searchParams.get('identity')==='1')return json({shop:(await ownerPublicSettings(env)).shop})
       const started = performance.now()
-      const partner = await resolvePartner(env, url.searchParams.get('partner'))
+      const ownerStoreId = await resolveOwnerStore(env, url.searchParams.get('partner'))
+      const partner = ownerStoreId ? null : await resolvePartner(env, url.searchParams.get('partner'))
       const live = supplierCheckoutEnabled(env)
       const testing = env.ORDER_TESTING_ENABLED === 'true'
       const email = emailCheckoutEnabled(env), gmail = gmailCheckoutEnabled(env), delivery_supplier = delivery_supplierCheckoutEnabled(env)
       const mapped = live ? productMap(env) : {}
       const [catalog, support, announcement] = await Promise.all([
         partner ? partnerCatalog(env, partner) : plans(env).then(plans => ({ plans })),
-        supportContactsSettings(env, partner?.id),
+        partner ? supportContactsSettings(env, partner.id) : ownerStoreId === 'platform' ? supportContactsSettings(env) : ownerShop(env, ownerStoreId!).then(s => ({ contacts: { wechat: s.wechat ?? '', qq: s.qq ?? '', email: s.email ?? '' }, version: s.version })),
         partner ? publicAnnouncement(env, partner.id) : null,
       ])
-      const owner = partner ? null : await ownerPublicSettings(env)
+      const owner = partner ? null : await ownerPublicSettings(env, ownerStoreId!)
+      const shopActive = partner ? (await partnerStore(env, partner)).active : owner?.active !== false
       const managedProductGroups = partner ? [] : [...(await hanfolkAvailability(env)).groups]
+      if (!partner) {
+        const overrides = (await env.INTEREST_DB.prepare('SELECT plan,price_cents,enabled FROM owner_store_prices WHERE store_id=?').bind(ownerStoreId!).all<{plan:string;price_cents:number;enabled:number}>()).results
+        catalog.plans = (catalog.plans as Plan[]).map(p => { const price = overrides.find(v => v.plan === p.id); return price ? { ...p, price_cents: price.price_cents, enabled: price.enabled } : p })
+      }
       const products = partner ? [] : (await shopProducts(env)).filter(p=>!owner?.hiddenProductIds.includes(p.id)&&!owner?.hiddenProductIds.includes(shopProductDisplayId(p)))
+      for (const product of products) { const price = (catalog.plans as Plan[]).find(p => p.id === product.id); if (price) product.priceCents = price.price_cents }
       const sms = partner ? {projects:[]} : await smsPublicCatalog(env)
       const productArtwork = partner ? {} : await publicArtwork(env, (catalog.plans as Plan[]).map(p=>p.product_id).filter(id=>!owner?.hiddenProductIds.includes(id) && (!customProductId.test(id) || products.some(p=>p.id===id))))
       const coupons=partner?[]:(await env.INTEREST_DB.prepare('SELECT settings FROM shop_coupons').all<{settings:string}>()).results.map(r=>JSON.parse(r.settings)).filter(c=>c.active&&Date.parse(c.starts_at)<=Date.now()&&Date.parse(c.ends_at)>Date.now())
       // Storefront prices are configured retail prices, independent of supplier latency.
-      const offers = (catalog.plans as Plan[]).filter(plan=>(!managedProductGroups.includes(plan.product_id)||products.some(p=>p.id===plan.id))&&(!customProductId.test(plan.id)||products.some(p=>p.id===plan.id&&!p.pricePending))).map(plan => { const product=products.find(p=>p.id===plan.id); return ({ ...plan,purchase_note:product?.purchaseNote??quefaPurchaseNote(mapped[plan.id],plan.purchase_note),delivery_instructions:product?.deliveryInstructions??plan.delivery_instructions,has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId==='platform'&&t.plan===plan.id)), enabled: plan.enabled && (
+      const offers = (catalog.plans as Plan[]).filter(plan=>(!managedProductGroups.includes(plan.product_id)||products.some(p=>p.id===plan.id))&&(!customProductId.test(plan.id)||products.some(p=>p.id===plan.id&&!p.pricePending))).map(plan => { const product=products.find(p=>p.id===plan.id); return ({ ...plan,purchase_note:product?.purchaseNote??quefaPurchaseNote(mapped[plan.id],plan.purchase_note),delivery_instructions:product?.deliveryInstructions??plan.delivery_instructions,has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId===ownerStoreId&&t.plan===plan.id)), enabled: plan.enabled && (
         customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.status==='published'&&!inventoryLabel(p)) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
       ) ? 1 : 0 }) })
-      return json({ ...catalog,...owner, managedProductGroups, products, sms: {...sms,projects:sms.projects.map(p=>({...p,enabled:owner?.active!==false && p.enabled && Boolean(offers.find(o=>o.id===p.planId)?.enabled)}))}, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: owner?.active===false?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: owner?.active===false?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
+      return json({ ...catalog,...owner, managedProductGroups, products, sms: {...sms,projects:sms.projects.map(p=>({...p,enabled:shopActive && p.enabled && Boolean(offers.find(o=>o.id===p.planId)?.enabled)}))}, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: !shopActive?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: !shopActive?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
     }
     if (path === '/api/orders/client' && method === 'POST') {
       await body(request)
@@ -162,7 +175,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     const recovery = await recoveryRoutes(request, env, path)
     if (recovery) return recovery
     const { ownerHash, email: recoveredEmail } = await buyerAccess(request, env)
-    if (path === '/api/orders/coupon-quote' && method==='POST') {const data=await body(request);if(data.partner)throw new ApiError('此优惠码仅适用于主店铺。',409);return json(await couponQuote(env,String(data.plan),emailValue(data.email),data.code))}
+    if (path === '/api/orders/coupon-quote' && method==='POST') {const data=await body(request);const storeId=await resolveOwnerStore(env,data.partner);if(!storeId)throw new ApiError('此优惠码仅适用于自营店铺。',409);return json(await couponQuote(env,String(data.plan),emailValue(data.email),data.code,storeId))}
     if (path === '/api/orders/xgift/eligibility' && method === 'POST') {
       const data = await body(request,20000)
       if (!(await env.INTEREST_LIMITER.limit({ key: 'xgift-check:' + await hash(request.headers.get('CF-Connecting-IP') ?? ownerHash) })).success) throw new ApiError('检测较频繁，请稍后再试。', 429)
@@ -190,27 +203,30 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       if (typeof data.plan !== 'string' || typeof data.key !== 'string' || !/^[a-f0-9-]{36}$/.test(data.key)) throw new ApiError('商品或请求编号无效。')
       const email = emailValue(data.email)
       if (customProductId.test(data.plan)) return json({order:await customerOrder(env,await createCustomOrder(env,data,ownerHash,email))},201)
-      const partner = await resolvePartner(env, data.partner)
+      const ownerStoreId = await resolveOwnerStore(env, data.partner)
+      const partner = ownerStoreId ? null : await resolvePartner(env, data.partner)
       const existing = await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE owner_hash=? AND idempotency_key=?').bind(ownerHash, data.key).first<Order>()
       if (existing) {
-        if (existing.customer_email !== email || existing.plan !== data.plan || existing.partner_id !== (partner?.id ?? null)) throw new ApiError('请求编号已被另一套餐或商店使用。', 409)
+        if (existing.customer_email !== email || existing.plan !== data.plan || existing.partner_id !== (partner?.id ?? null) || (!partner && existing.owner_store_id !== ownerStoreId)) throw new ApiError('请求编号已被另一套餐或商店使用。', 409)
         if (isXGiftPlan(existing.plan) && (await xgiftSummary(env, existing))?.username !== xUsername(data.username)) throw new ApiError('请求编号已绑定其他接收账号。', 409)
         return json({ order: await customerOrder(env, existing) })
       }
       const emailDelivery = Boolean(emailProduct(data.plan))
       if (data.plan === 'codex-sms-once' && env.ORDER_TESTING_ENABLED !== 'true') throw new ApiError('请选择 SMS 接码中的当前项目；历史订单仍可查询。',409)
-      if (!partner) {const owner=await ownerShop(env);if(!owner.active)throw new ApiError('店铺暂未营业。',409);const p=await env.INTEREST_DB.prepare('SELECT product_id FROM catalog_plans WHERE id=?').bind(data.plan).first<{product_id:string}>();if(p&&owner.hiddenProductIds.includes(p.product_id))throw new ApiError('该商品已下架。',409)}
+      if (!partner) {const owner=await ownerShop(env,ownerStoreId!);if(!owner.active)throw new ApiError('店铺暂未营业。',409);const p=await env.INTEREST_DB.prepare('SELECT product_id FROM catalog_plans WHERE id=?').bind(data.plan).first<{product_id:string}>();if(p&&owner.hiddenProductIds.includes(p.product_id))throw new ApiError('该商品已下架。',409)}
       const live = isXGiftPlan(data.plan) ? xgiftCheckoutEnabled(env) : data.plan === 'gmail-account' ? gmailCheckoutEnabled(env) : isDeliverySupplierPlan(data.plan) ? delivery_supplierCheckoutEnabled(env) : emailDelivery ? emailCheckoutEnabled(env) : supplierCheckoutEnabled(env)
       if (emailDelivery && !live) throw new ApiError('邮件交付商品暂未开放购买。', 409)
       if (env.ORDER_TESTING_ENABLED !== 'true' && !live) throw new ApiError('该服务暂未开放购买，请稍后再来。', 409)
-      const plan = await env.INTEREST_DB.prepare('SELECT * FROM catalog_plans WHERE id=? AND enabled=1').bind(data.plan).first<Plan>()
+      const storeOffer = !partner ? await ownerStoreOffer(env, ownerStoreId!, data.plan) : null
+      const plan = !partner ? storeOffer?.enabled ? { ...storeOffer } as unknown as Plan : null : await env.INTEREST_DB.prepare('SELECT * FROM catalog_plans WHERE id=? AND enabled=1').bind(data.plan).first<Plan>()
       if (partner && plan && !plan.partner_enabled) throw new ApiError('该商品暂未开放代理销售。', 409)
       if (!plan) throw new ApiError('该套餐已暂停销售，请选择其他套餐。', 409)
       if (partner && await env.INTEREST_DB.prepare('SELECT 1 FROM partner_product_order p,json_each(p.hidden_product_ids) h WHERE p.partner_id=? AND h.value=?').bind(partner.id, plan.product_id).first()) throw new ApiError('该商品已被商店下架，请选择其他商品。', 409)
-      const offer = partner ? await env.INTEREST_DB.prepare('SELECT * FROM partner_prices WHERE partner_id=? AND plan=?').bind(partner.id, plan.id).first<{ price_cents: number; cost_cents: number; version: number }>() : null
+      if (partner && !(await partnerStore(env, partner)).active) throw new ApiError('店铺暂未营业。', 409)
+      const offer = partner ? await env.INTEREST_DB.prepare('SELECT * FROM partner_prices WHERE partner_id=? AND plan=? AND enabled=1').bind(partner.id, plan.id).first<{ price_cents: number; cost_cents: number; version: number }>() : null
       if (partner && !offer) throw new ApiError('该代理尚未开通此套餐。', 409)
       if(partner&&data.couponCode)throw new ApiError('此优惠码仅适用于主店铺。',409)
-      const coupon=data.couponCode?await couponQuote(env,plan.id,email,data.couponCode):null
+      const coupon=data.couponCode?await couponQuote(env,plan.id,email,data.couponCode,ownerStoreId!):null
       const price = coupon?.priceCents ?? offer?.price_cents ?? plan.price_cents
       if (data.expectedPrice !== price) throw new ApiError('套餐价格已更新，请刷新后重新确认。', 409)
       const snapshot = live && !emailDelivery && !isXGiftPlan(plan.id) ? await supplierSnapshot(env, plan.id, price, offer?.cost_cents) : null
@@ -219,10 +235,10 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       const xgift = isXGiftPlan(plan.id) ? await xgiftSnapshot(env, ownerHash, data) : null
       const id = 'YMX-' + crypto.randomUUID().replaceAll('-', '').toUpperCase(); const eventId = crypto.randomUUID(); const now = Date.now()
       await env.INTEREST_DB.batch([
-        partner && offer ? env.INTEREST_DB.prepare("INSERT INTO orders(id,owner_hash,idempotency_key,plan,plan_name,price_cents,status,created_at,updated_at,last_event_id,customer_email,partner_id,partner_name,cost_cents) SELECT ?,?,?,c.id,c.name,pp.price_cents,'pending',?,?,?,?,p.id,p.name,pp.cost_cents FROM catalog_plans c JOIN partner_prices pp ON pp.plan=c.id JOIN partners p ON p.id=pp.partner_id WHERE c.id=? AND c.enabled=1 AND c.version=? AND pp.version=? AND p.id=? AND p.active=1 AND p.version=? AND c.partner_enabled=1 AND NOT EXISTS(SELECT 1 FROM partner_product_order po,json_each(po.hidden_product_ids) h WHERE po.partner_id=p.id AND h.value=c.product_id) ON CONFLICT(owner_hash,idempotency_key) DO NOTHING")
+        partner && offer ? env.INTEREST_DB.prepare("INSERT INTO orders(id,owner_hash,idempotency_key,plan,plan_name,price_cents,status,created_at,updated_at,last_event_id,customer_email,partner_id,partner_name,cost_cents) SELECT ?,?,?,c.id,c.name,pp.price_cents,'pending',?,?,?,?,p.id,p.name,pp.cost_cents FROM catalog_plans c JOIN partner_prices pp ON pp.plan=c.id JOIN partners p ON p.id=pp.partner_id WHERE c.id=? AND c.enabled=1 AND c.version=? AND pp.version=? AND pp.enabled=1 AND COALESCE(json_extract((SELECT settings FROM partner_store_settings WHERE partner_id=p.id),'$.active'),1)=1 AND p.id=? AND p.active=1 AND p.version=? AND c.partner_enabled=1 AND NOT EXISTS(SELECT 1 FROM partner_product_order po,json_each(po.hidden_product_ids) h WHERE po.partner_id=p.id AND h.value=c.product_id) ON CONFLICT(owner_hash,idempotency_key) DO NOTHING")
           .bind(id, ownerHash, data.key, now, now, eventId, email, plan.id, plan.version, offer.version, partner.id, partner.version)
-        : env.INTEREST_DB.prepare("INSERT INTO orders(id,owner_hash,idempotency_key,plan,plan_name,price_cents,status,created_at,updated_at,last_event_id,customer_email) SELECT ?,?,?,id,name,?,'pending',?,?,?,? FROM catalog_plans WHERE id=? AND enabled=1 AND version=? AND COALESCE(json_extract((SELECT settings FROM owner_shop_settings WHERE id='platform'),'$.active'),1)=1 AND NOT EXISTS(SELECT 1 FROM owner_shop_settings s,json_each(s.settings,'$.hiddenProductIds') h WHERE s.id='platform' AND h.value=catalog_plans.product_id) ON CONFLICT(owner_hash,idempotency_key) DO NOTHING")
-          .bind(id, ownerHash, data.key, price, now, now, eventId, email, plan.id, plan.version),
+        : env.INTEREST_DB.prepare(`INSERT INTO orders(id,owner_hash,idempotency_key,plan,plan_name,price_cents,status,created_at,updated_at,last_event_id,customer_email,owner_store_id) SELECT ?,?,?,c.id,c.name,?,'pending',?,?,?,?,? FROM catalog_plans c WHERE c.id=? AND c.version=? AND ${ownerCheckoutGuard} ON CONFLICT(owner_hash,idempotency_key) DO NOTHING`)
+          .bind(id, ownerHash, data.key, price, now, now, eventId, email, ownerStoreId!, plan.id, plan.version, ownerStoreId!, ownerStoreId!, ownerStoreId!, storeOffer!.store_price_version),
         ...(coupon?[couponReservation(env,coupon,id,email)]:[]),
         env.INTEREST_DB.prepare('UPDATE orders SET purchase_note=(SELECT purchase_note FROM catalog_plans WHERE id=orders.plan) WHERE id=?').bind(id),
         ...(live ? [env.INTEREST_DB.prepare("UPDATE orders SET mode='live' WHERE id=? AND payment_status='unpaid'").bind(id)] : []),

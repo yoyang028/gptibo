@@ -8,6 +8,7 @@ import type { Env, Statement, Value } from '../worker/platform.ts'
 function setup() {
   const db = new DatabaseSync(':memory:')
   db.exec('CREATE TABLE partners(id TEXT PRIMARY KEY,slug TEXT,name TEXT,active INTEGER,created_at INTEGER)')
+  db.exec('CREATE TABLE owner_shop_settings(id TEXT PRIMARY KEY,slug TEXT)')
   db.exec(readFileSync(new URL('../migrations/0015_visitor_analytics.sql', import.meta.url), 'utf8'))
   db.prepare('INSERT INTO partners VALUES (?,?,?,?,?)').run('partner-a', 'ABCDEF', '代理 A', 1, 1)
   db.prepare('INSERT INTO partners VALUES (?,?,?,?,?)').run('partner-b', 'GHIJKL', '代理 B', 0, 2)

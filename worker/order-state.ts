@@ -2,6 +2,7 @@ import { ApiError, type Env } from './platform.ts'
 
 export type Status = 'pending' | 'session' | 'processing' | 'success' | 'failed' | 'cancelled'
 export type Order = {
+  owner_store_id?: string
   purchase_note?: string
   is_test: number
   customer_email: string | null; refunded_cents: number; refund_hold: number; redemption_blocked: number

@@ -7,7 +7,6 @@
     "sites:build": "node scripts/sites/build.mjs",
     "sites:preview": "node scripts/sites/local.mjs",
     "sites:codes": "node scripts/sites/codes.mjs",
-    "sites:prepare": "node scripts/sites/prepare.mjs",
     "test:sites": "node scripts/sites/acceptance.mjs",
     "dev": "vite",
     "build": "npm run emails:build && tsc -b && tsc -p tsconfig.worker.json && vite build",

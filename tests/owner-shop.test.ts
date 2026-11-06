@@ -609,7 +609,7 @@ test('owner workspace requires main-admin session and rejects cross-origin write
   const stores = await (
     await s.request('/api/admin/my-shop/stores', undefined, s.admin)
   ).json()
-  assert.equal(stores.stores.length, 1)
+  assert.equal(stores.stores.length, 3)
   assert.equal(stores.stores[0].id, 'platform')
   assert.equal(
     (await s.request('/api/admin/my-shop/domain', undefined, s.admin)).status,

@@ -272,7 +272,7 @@ function PartnerOrderDetail({ order, path, revision, labels, onClose }: { order:
   return <PartnerOrderDetailDialog order={resource.data?.order ?? order} events={resource.data?.events} onClose={onClose} labels={labels} loading={resource.loading} detailError={resource.error} onRefresh={() => setRefresh(value => value + 1)} />
 }
 
-export function PartnerOrders({ path, revision }: { path: string; revision: number }) {
+export function PartnerOrders({ path, revision, ticketsEnabled = true }: { path: string; revision: number; ticketsEnabled?: boolean }) {
   const [ticketOrder, setTicketOrder] = useState<string>()
   const [ticket, setTicket] = useState<string>()
   const [page, setPage] = useState(1)
@@ -296,7 +296,7 @@ export function PartnerOrders({ path, revision }: { path: string; revision: numb
           <TableCell className="partner-order-money" data-label="订单金额"><strong>{money(o.price_cents)}</strong><small>供货价 {money(o.cost_cents)}</small></TableCell>
           <TableCell className="partner-order-money" data-label="收益"><strong className={o.profit_cents > 0 ? 'partner-profit' : ''}>{money(o.profit_cents)}</strong><small>{profitLabel(o)}</small></TableCell>
           <TableCell className="partner-order-state" data-label="订单状态"><div className="partner-order-state-badges"><Badge variant={o.status === 'failed' && !o.refund_hold ? 'destructive' : 'secondary'} className="partner-order-status" data-state={status === '已完成' ? 'success' : undefined}>{status}</Badge><SettlementBadge status={o.payout_status} /></div></TableCell>
-          <TableCell className="partner-order-action" data-label="订单详情"><Button variant="outline" size="sm" onClick={() => setSelected(o)}>查看详情</Button>{path === '/api/partner/orders' && <Button variant="ghost" size="sm" onClick={() => setTicketOrder(o.id)}>提交工单</Button>}</TableCell>
+          <TableCell className="partner-order-action" data-label="订单详情"><Button variant="outline" size="sm" onClick={() => setSelected(o)}>查看详情</Button>{ticketsEnabled && path === '/api/partner/orders' && <Button variant="ghost" size="sm" onClick={() => setTicketOrder(o.id)}>提交工单</Button>}</TableCell>
         </TableRow>
       })}</TableBody>
     </Table></div> : <div className="admin-empty"><h3>{query || status ? '没有符合条件的订单' : '还没有推广订单'}</h3><p>{query || status ? '试试其他订单号、邮箱或状态。' : '客户通过你的链接下单后，订单会显示在这里。'}</p></div>}<Pagination page={page} total={data.total} onPage={setPage} /></>}
@@ -454,7 +454,7 @@ function Workspace({
       description: '订单通知与工作台显示偏好',
       icon: Settings2,
     },
-  ]
+  ].filter(item => item.id !== 'tickets' || data?.capabilities?.tickets !== false)
   const current = modules.find((item) => item.id === tab) ?? modules[0]
   if (!visited.includes(current.id)) setVisited([...visited, current.id])
   const navigate = (next: string) => {
@@ -508,6 +508,7 @@ function Workspace({
                   content: (
                     <PartnerOrders
                       path={prefix + '/orders'}
+                      ticketsEnabled={data.capabilities?.tickets !== false}
                       revision={revision}
                     />
                   ),
@@ -651,7 +652,7 @@ function Workspace({
                   </section>
                 ),
               },
-            ]}
+            ].filter(item => item.value !== 'notifications' || data.capabilities?.notifications !== false)}
           />
         ),
       }

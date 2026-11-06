@@ -19,7 +19,6 @@ import { requireSecureTransport, secureResponse } from './security.ts'
 import { checkAccount } from './account-check.ts'
 import { reconcileSms } from './grizzly/service.ts'
 import { refreshHanfolkStock } from './hanfolk/management.ts'
-import { wholesaleRoutes } from './wholesale.ts'
 const json = (value: unknown, status = 200) => Response.json(value, {
   status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 429 ? { 'Retry-After': '60' } : {}) },
 })
@@ -61,11 +60,6 @@ async function route(request: Request, env: Env): Promise<Response> {
       return error('请求保护服务暂时不可用，请稍后重试。', 503)
     }
     if (url.pathname === '/api/telegram/webhook') return telegramWebhook(request, env)
-    if (url.pathname.startsWith('/api/wholesale/') || url.pathname.startsWith('/api/admin/wholesale/')) return wholesaleRoutes(request, env, url)
-    if (env.STOREFRONT_KIND === 'wholesale') {
-      if (url.pathname === '/api/catalog' && request.method === 'GET' && url.searchParams.get('identity') === '1') return json({ shop: { brandName: '代理供货中心', logo: '' } })
-      if (url.pathname === '/api/catalog' || (url.pathname.startsWith('/api/orders') && url.pathname !== '/api/orders/verification') || (url.pathname.startsWith('/api/partner/') && !url.pathname.startsWith('/api/partner/auth/')) || url.pathname.startsWith('/api/tools/')) return error('请通过代理供货接口访问。', 404)
-    }
     if (url.pathname === '/api/tools/account-check') return checkAccount(request, env)
     // This backend uses the edge request limits above. Advertise its actual
     // verification capability to the shared checkout and login forms.
