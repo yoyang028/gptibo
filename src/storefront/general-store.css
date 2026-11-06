@@ -1,0 +1,17 @@
+.general-store { --foreground:#253b33; --background:#fbfcf8; --muted-foreground:#65786e; --primary:#265a43; --primary-foreground:#fff; background:var(--background); min-height:100vh; }
+.general-store .site-header { background:#fbfcf8ed; border-bottom:1px solid #dde5dc; }
+.general-store .brand { color:#265a43; }
+.general-store .store-intro { padding-top:76px; padding-bottom:48px; }
+.general-store .store-intro h1 { max-width:740px; font-size:clamp(34px,4.3vw,56px); letter-spacing:-2px; line-height:1.2; font-weight:550; }
+.general-store .store-intro h1 span { color:#748573; display:block; }
+.general-store .store-intro p { max-width:580px; margin-top:20px; font-size:15px; line-height:1.8; }
+.general-store .general-kicker { display:flex; align-items:center; gap:9px; color:#42684e; font-size:11px; letter-spacing:3px; margin-bottom:24px; }
+.general-store .general-kicker::before { content:''; width:22px; height:1px; background:currentColor; }
+.general-store .site-footer { border-top:1px solid #dde5dc; }
+.general-store .nav-link.selected { color:#265a43; }
+.general-store .store-product-card { background:#fff; }
+.dark .general-store { --foreground:#e5ede7; --background:#16221d; --muted-foreground:#a4b7a9; --primary:#accfb9; --primary-foreground:#16221d; }
+.dark .general-store .site-header { background:#16221ded; border-color:#33463b; }
+.dark .general-store .brand,.dark .general-store .nav-link.selected,.dark .general-store .general-kicker { color:#accfb9; }
+.dark .general-store .store-product-card { background:#1c2b23; }
+@media(max-width:640px) { .general-store .store-intro { padding-top:42px; padding-bottom:32px; } .general-store .store-intro h1 { letter-spacing:-1px; } }

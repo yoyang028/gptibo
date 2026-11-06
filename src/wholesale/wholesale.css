@@ -1,0 +1,144 @@
+.ws-app,.ws-admin,.ws-dialog { --background:#f6f7f9; --foreground:#202d3c; --primary:#224c77; --primary-foreground:#fff; --secondary:#edf1f5; --muted:#edf1f5; --muted-foreground:#647284; --border:#dfe5ec; --input:#dfe5ec; --ring:#7fa2c5; --card:#fff; --card-foreground:#202d3c; --popover:#fff; --popover-foreground:#202d3c; --accent:#edf1f5; --accent-foreground:#202d3c; color-scheme:light; color:var(--foreground); }
+.ws-app { min-height:100vh; background:#f6f7f9; font-family:'Geist Variable',-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif; font-size:14px; }
+.ws-app button,.ws-admin button,.ws-dialog button { cursor:pointer; }
+.ws-app button:disabled,.ws-admin button:disabled,.ws-dialog button:disabled { cursor:not-allowed; }
+.ws-logo { display:flex; align-items:center; gap:12px; color:inherit; text-decoration:none; flex-shrink:0; font-weight:650; font-size:17px; letter-spacing:.3px; }
+.ws-logo>span { display:grid; place-items:center; width:40px; height:40px; border:1px solid #d4dee8; border-radius:11px; background:#fff; color:#224c77; }
+.ws-logo small { display:block; margin-top:3px; font-size:8px; letter-spacing:2.4px; font-weight:500; color:#7d8b99; }
+.ws-eyebrow { display:block; font-size:10px; letter-spacing:2.8px; font-weight:600; color:#78879a; }
+.ws-login { display:grid; grid-template-columns:1fr 1fr; min-height:100vh; }
+.ws-login-story { padding:48px 9%; background:#172c40; color:#f1f5f7; display:flex; flex-direction:column; justify-content:space-between; gap:56px; min-height:740px; position:relative; overflow:hidden; }
+.ws-login-story::after { content:''; position:absolute; width:460px; height:460px; right:-240px; top:37%; border:1px solid #6c839533; border-radius:50%; box-shadow:0 0 0 70px #6c839508,0 0 0 140px #6c839508; pointer-events:none; }
+.ws-login-story .ws-logo>span { border-color:#547086; background:#ffffff08; color:#e8b97c; }
+.ws-login-story .ws-logo small { color:#a3b6c6; }
+.ws-login-story .ws-eyebrow { color:#c4a479; letter-spacing:3px; }
+.ws-login-story h1 { margin:23px 0; font-size:clamp(40px,4.7vw,68px); line-height:1.3; font-weight:450; letter-spacing:-2px; }
+.ws-login-story p { color:#aebfce; font-size:15px; line-height:2; }
+.ws-login-features { display:flex; flex-wrap:wrap; gap:22px; }
+.ws-login-features span { display:flex; align-items:center; gap:8px; font-size:12px; color:#c8d6e1; }
+.ws-login-features svg { width:16px; color:#d9b586; }
+.ws-login-story>small { color:#7f97a9; font-size:11px; }
+.ws-login-panel { background:#fcfcfb; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:60px 9% 30px; }
+.ws-login-card { width:100%; max-width:370px; margin:auto; }
+.ws-login-card h2 { margin:19px 0 10px; font-size:31px; letter-spacing:-1px; font-weight:550; }
+.ws-login-card>p { color:#788492; margin-bottom:34px; }
+.ws-login-card form { display:grid; gap:24px; }
+.ws-field { display:grid; gap:9px; font-size:12px; min-width:0; }
+.ws-field>span { font-weight:550; }
+.ws-field input { background:#fff; height:42px; width:100%; }
+.ws-field textarea,.ws-field select { border:1px solid #dfe5ec; border-radius:7px; padding:10px 12px; background:#fff; color:#202d3c; width:100%; font:inherit; }
+.ws-field textarea { min-height:90px; resize:vertical; line-height:1.7; }
+.ws-input-action { display:flex; gap:10px; }
+.ws-input-action button { height:42px; }
+.ws-login-submit { width:100%; height:44px; margin-top:6px; justify-content:space-between; }
+.ws-login-note { display:flex; gap:8px; align-items:center; color:#8b96a1; font-size:11px; margin-top:26px; }
+.ws-login-panel footer { color:#929ca5; font-size:10px; text-align:center; padding-top:45px; }
+.ws-login-panel footer span { margin:0 6px; }
+.ws-header { display:flex; align-items:center; justify-content:space-between; gap:36px; min-height:88px; padding:16px max(28px,calc((100vw - 1260px)/2)); background:#fff; border-bottom:1px solid #e3e8ee; }
+.ws-header nav { display:flex; gap:8px; }
+.ws-header nav button { display:flex; align-items:center; gap:8px; padding:11px 14px; color:#6d7a87; font-size:13px; border-radius:7px; }
+.ws-header nav button[aria-current] { background:#edf3f8; color:#224c77; font-weight:600; }
+.ws-header-account { display:flex; align-items:center; gap:12px; font-size:12px; color:#657485; }
+.ws-main { max-width:1260px; margin:0 auto; padding:50px 28px 64px; min-height:calc(100vh - 165px); }
+.ws-page-heading { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:40px; }
+.ws-page-heading h1 { font-size:34px; letter-spacing:-1px; font-weight:550; margin:12px 0 10px; }
+.ws-page-heading p,.ws-panel>p,.ws-section-title p { font-size:13px; color:#7b8796; line-height:1.8; }
+.ws-heading-actions { display:flex; gap:14px; align-items:center; }
+.ws-wallet-shortcut { display:flex; align-items:center; gap:14px; background:#fff; border:1px solid #e0e7ee; border-radius:9px; padding:12px 16px; min-width:200px; text-align:left; }
+.ws-wallet-shortcut>span { flex:1; color:#8290a0; font-size:10px; }
+.ws-wallet-shortcut strong { display:block; color:#263e53; font-size:19px; margin-top:3px; font-variant-numeric:tabular-nums; }
+.ws-wallet-shortcut>svg { color:#63819c; }
+.ws-catalog-tools { display:flex; justify-content:space-between; align-items:center; gap:20px; padding-bottom:23px; border-bottom:1px solid #dfe6ed; margin-bottom:27px; }
+.ws-categories { display:flex; flex-wrap:wrap; gap:7px; }
+.ws-categories button { padding:8px 13px; border-radius:6px; font-size:12px; color:#718093; }
+.ws-categories button[aria-pressed=true] { background:#e4ebf2; color:#284d6c; font-weight:600; }
+.ws-search { display:flex; align-items:center; position:relative; min-width:225px; }
+.ws-search svg { position:absolute; left:11px; color:#8b96a2; }
+.ws-search input { padding-left:34px; background:#fff; }
+.ws-product-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px; }
+.ws-product { border:1px solid #e0e6ec; border-radius:12px; padding:25px; background:#fff; display:flex; flex-direction:column; transition:border-color .18s,transform .18s; }
+.ws-product:hover { border-color:#a9bdce; transform:translateY(-2px); }
+.ws-product-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:27px; }
+.ws-product-icon { width:51px; height:51px; display:grid; place-items:center; border-radius:12px; background:#edf2f7; color:#4b7298; }
+.ws-product-icon[data-tone='1'] { background:#f6f0e7; color:#a1865f; }
+.ws-product-icon[data-tone='2'] { background:#eaf2ed; color:#6b8f78; }
+.ws-stock { font-size:10px; color:#7c8a99; border:1px solid #e6ebef; padding:4px 8px; border-radius:5px; }
+.ws-product-category { font-size:10px; color:#8d9aa7; letter-spacing:1px; }
+.ws-product h2 { font-size:19px; font-weight:550; margin:9px 0 13px; line-height:1.4; }
+.ws-product>p { color:#7c8896; font-size:12px; line-height:1.9; flex:1; margin-bottom:22px; white-space:pre-line; overflow-wrap:anywhere; }
+.ws-product>small { color:#a0aab4; font-size:10px; }
+.ws-product-bottom { display:flex; justify-content:space-between; align-items:end; gap:10px; padding-top:21px; margin-top:16px; border-top:1px solid #edf0f3; }
+.ws-product-bottom>div>span { font-size:10px; color:#8793a1; }
+.ws-product-bottom strong { display:block; font-size:25px; font-weight:550; letter-spacing:-1px; margin-top:2px; }
+.ws-product-bottom strong small { font-size:10px; color:#929eaa; font-weight:400; letter-spacing:0; margin-left:5px; }
+.ws-product-bottom button { font-size:11px; padding-inline:12px; }
+.ws-catalog-note { color:#8b97a4; font-size:11px; display:flex; gap:8px; align-items:center; justify-content:center; margin-top:32px; line-height:1.8; }
+.ws-footer { display:flex; justify-content:space-between; max-width:1204px; margin:0 auto; padding:22px 0; border-top:1px solid #dfe6ec; font-size:10px; color:#94a0ac; }
+.ws-panel { background:#fff; border:1px solid #e0e6ed; border-radius:12px; padding:26px; margin-bottom:24px; min-width:0; }
+.ws-panel h2 { font-size:18px; font-weight:550; margin-bottom:15px; }
+.ws-panel h3 { font-size:14px; font-weight:600; margin-top:24px; margin-bottom:10px; }
+.ws-panel>small,.ws-topup-form>small { color:#8b97a4; font-size:11px; }
+.ws-table-wrap { overflow-x:auto; width:100%; }
+.ws-panel table { width:100%; text-align:left; border-collapse:collapse; font-size:12px; }
+.ws-panel th { font-size:11px; color:#7e8d9c; font-weight:450; white-space:nowrap; padding:14px 12px; border-bottom:1px solid #e6ebf0; }
+.ws-panel td { padding:19px 12px; border-bottom:1px solid #eef1f4; line-height:1.7; overflow-wrap:anywhere; max-width:320px; }
+.ws-panel td small { display:block; color:#96a2ae; font-size:10px; font-weight:400; margin-top:3px; }
+.ws-panel td strong { font-weight:550; }
+.ws-panel tr:last-child td { border-bottom:0; }
+.ws-status { display:inline-flex; white-space:nowrap; padding:4px 9px; border-radius:5px; font-size:10px; background:#f7f0e3; color:#947443; }
+.ws-status[data-status=fulfilled],.ws-status[data-status=approved] { background:#eaf4ed; color:#598368; }
+.ws-status[data-status=refunded],.ws-status[data-status=rejected] { background:#eef0f3; color:#7c8794; }
+.ws-empty { color:#8996a4; padding:50px 20px; text-align:center; font-size:13px; line-height:1.9; }
+.ws-message { padding:12px 15px; margin:12px 0; border:1px solid #dbe9e0; border-radius:7px; background:#f0f7f3; color:#53775f; line-height:1.8; font-size:12px; }
+.ws-error { border-color:#ead8d4; background:#fff4f0; color:#9a5343; }
+.ws-pending { padding:16px; margin:20px 0; background:#fff5df; border:1px solid #ead9b1; border-radius:8px; display:flex; gap:18px; justify-content:space-between; align-items:center; font-size:12px; }
+.ws-pages { display:flex; justify-content:flex-end; align-items:center; gap:12px; padding-top:20px; font-size:11px; color:#7b8999; }
+.ws-wallet-grid { display:grid; grid-template-columns:1fr 1.7fr; gap:24px; }
+.ws-wallet-card { border-radius:12px; background:#203f59; color:#d0deea; padding:32px; margin-bottom:24px; position:relative; min-height:250px; display:flex; flex-direction:column; justify-content:center; }
+.ws-wallet-card>span:first-child { font-size:12px; }
+.ws-wallet-card .ws-balance-number { color:#f0f5f9; font-size:44px; margin:15px 0 20px; letter-spacing:-1.5px; font-variant-numeric:tabular-nums; }
+.ws-wallet-card p { color:#9fb6c8; font-size:11px; line-height:1.9; max-width:240px; }
+.ws-wallet-card>svg { position:absolute; right:25px; top:25px; color:#829caf; }
+.ws-preline { white-space:pre-wrap; }
+.ws-topup-form { margin-top:22px; }
+.ws-topup-form fieldset { display:grid; grid-template-columns:1fr 1.5fr; gap:18px; margin-bottom:14px; min-width:0; }
+.ws-topup-form button { grid-column:1/-1; justify-self:start; }
+.ws-section-title { display:flex; justify-content:space-between; gap:25px; margin-bottom:24px; }
+.ws-section-title svg { color:#7393af; flex-shrink:0; }
+.ws-key-form { display:flex; align-items:end; gap:16px; max-width:540px; margin:25px 0; }
+.ws-key-form .ws-field { flex:1; }
+.ws-key-form button { height:42px; }
+.ws-secret { padding:20px; background:#f5f8fb; border:1px solid #d4e0eb; border-radius:8px; margin:20px 0; font-size:12px; }
+.ws-secret code { display:block; overflow-wrap:anywhere; margin:14px 0; padding:12px; background:#fff; }
+.ws-key-list { margin:20px 0; }
+.ws-key-list>div { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:16px 0; border-bottom:1px solid #edf0f3; }
+.ws-key-list strong { font-size:12px; font-weight:550; }
+.ws-key-list small { display:block; font-size:10px; color:#8795a4; margin-top:6px; }
+.ws-api-steps { display:flex; gap:30px; flex-wrap:wrap; padding:10px 0 25px; color:#687d91; font-size:12px; }
+.ws-api-steps b { color:#9caec0; font-size:10px; margin-right:8px; }
+.ws-code { background:#1c3042; color:#cadbe9; padding:22px; border-radius:8px; position:relative; margin:18px 0; }
+.ws-code pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:11px; line-height:1.9; margin-bottom:10px; }
+.ws-code button { color:#d1dfeb; }
+.ws-api-docs>p { margin-top:18px; }
+.ws-dialog { background:#fff; max-width:600px; max-height:90vh; overflow-y:auto; }
+.ws-dialog form { display:grid; gap:20px; }
+.ws-dialog p { color:#7c8a99; font-size:12px; line-height:1.9; }
+.ws-dialog>small { font-size:10px; color:#929eab; overflow-wrap:anywhere; }
+.ws-order-total,.ws-detail-title { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.ws-order-total { padding:19px 0; border-top:1px solid #edf0f3; }
+.ws-order-total span { color:#8a98a7; font-size:12px; }
+.ws-order-total strong { font-size:26px; font-weight:550; }
+.ws-detail-title h3 { font-size:17px; font-weight:550; }
+.ws-deliveries { background:#f5f7fa; border:1px solid #e2e9f0; border-radius:8px; padding:18px; }
+.ws-deliveries>div { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; font-size:12px; }
+.ws-deliveries pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; line-height:1.8; padding:10px 0; }
+.ws-admin-tabs { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:24px; }
+.ws-admin-tools { display:flex; justify-content:space-between; gap:18px; align-items:center; margin-bottom:22px; }
+.ws-admin-tools p { color:#7d8c9a; font-size:12px; }
+.ws-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.ws-full-width { grid-column:1/-1; }
+.ws-admin-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.ws-checkbox { display:flex; gap:9px; align-items:center; font-size:12px; }
+@media(max-width:1080px) { .ws-header { gap:20px; padding-inline:25px; flex-wrap:wrap; } .ws-header nav { order:3; width:100%; justify-content:center; } .ws-product-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ws-footer { margin-inline:28px; } }
+@media(max-width:700px) { .ws-login { grid-template-columns:1fr; } .ws-login-story { min-height:auto; padding:28px 24px; gap:30px; } .ws-login-story h1 { font-size:36px; } .ws-login-story h1 br { display:none; } .ws-login-story p { font-size:12px; } .ws-login-story>small,.ws-login-features { display:none; } .ws-login-panel { padding:42px 24px 24px; } .ws-login-card { max-width:460px; } .ws-main { padding:30px 18px 40px; } .ws-header { padding:18px; gap:22px; } .ws-header nav { overflow:auto; justify-content:space-between; gap:3px; } .ws-header nav button { padding:9px 7px; font-size:11px; gap:5px; white-space:nowrap; } .ws-header nav svg { width:14px; } .ws-header-account>span { max-width:85px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .ws-page-heading { align-items:flex-start; margin-bottom:28px; } .ws-page-heading h1 { font-size:27px; } .ws-page-heading p { font-size:11px; } .ws-heading-actions>button:not(.ws-wallet-shortcut) { display:none; } .ws-wallet-shortcut { min-width:120px; padding:10px; gap:8px; } .ws-wallet-shortcut>svg:first-child { display:none; } .ws-wallet-shortcut strong { font-size:16px; } .ws-eyebrow { font-size:8px; letter-spacing:1.7px; } .ws-catalog-tools { flex-direction:column; align-items:stretch; } .ws-search { min-width:0; } .ws-product-grid { grid-template-columns:1fr; gap:16px; } .ws-product { padding:24px; } .ws-product-top { margin-bottom:20px; } .ws-wallet-grid { grid-template-columns:1fr; gap:0; } .ws-wallet-card { min-height:210px; } .ws-panel { padding:20px 16px; } .ws-topup-form fieldset { grid-template-columns:1fr; } .ws-key-form { flex-direction:column; align-items:stretch; } .ws-panel table { min-width:520px; } .ws-pages { flex-wrap:wrap; } .ws-form-grid { grid-template-columns:1fr; } .ws-dialog { padding:23px 19px; } .ws-pending { align-items:flex-start; } .ws-catalog-note { align-items:flex-start; } .ws-catalog-note svg { flex-shrink:0; } }
+@media(prefers-reduced-motion:reduce) { .ws-product { transition:none; } .ws-product:hover { transform:none; } }

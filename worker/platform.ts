@@ -12,6 +12,8 @@ export interface Database {
   batch(statements: Statement[]): Promise<unknown[]>
 }
 export interface Env {
+  STOREFRONT_KIND?: string
+  WHOLESALE_PAYMENT_INSTRUCTIONS?: string
   ASSETS: { fetch(request: Request): Promise<Response> }
   INTEREST_DB: Database
   INTEREST_LIMITER: { limit(options: { key: string }): Promise<{ success: boolean }> }

@@ -23,7 +23,7 @@ export async function api<T>(path: string, data?: unknown, signal?: AbortSignal)
       window.dispatchEvent(new Event('ymx-admin-access-required'))
     }
     const scope = path.startsWith('/api/admin/') && !/^\/api\/admin\/(login|logout|session)$/.test(path) ? 'admin'
-      : path.startsWith('/api/partner/') && !path.startsWith('/api/partner/auth/') ? 'partner' : null
+      : (path.startsWith('/api/partner/') && !path.startsWith('/api/partner/auth/')) || path.startsWith('/api/wholesale/') ? 'partner' : null
     if (response.status === 401 && scope && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ymx-session-expired', { detail: scope }))
     }

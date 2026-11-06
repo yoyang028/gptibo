@@ -47,6 +47,8 @@ export async function ownerShop(env: Env) {
   ).first<{ settings: string; version: number }>()
   return {
     ...defaults,
+    ...(env.STOREFRONT_KIND === 'general' ? { name: '通用商店', brandName: '通用商店', pageTitle: '通用商店 · 数字商品与实用服务', headline: '好用的服务，值得的选择。', description: '数字商品、会员订阅与实用服务，认真挑选，安心使用。' } : {}),
+    ...(env.STOREFRONT_KIND === 'wholesale' ? { name: '代理供货中心', brandName: '代理供货中心' } : {}),
     ...JSON.parse(row?.settings ?? '{}'),
     version: row?.version ?? 0,
   } as OwnerSettings & { version: number }

@@ -1,6 +1,8 @@
 import ProductCatalog from './ProductCatalog'
 import { ADMIN_SUPPLIERS, adminProductRoute, type ProductSection } from '../../shared/admin-suppliers'
 import MyShop from './MyShop'
+import WholesaleAdmin from '../wholesale/WholesaleAdmin'
+import { SITE_KIND } from '@/lib/site-profile'
 import ShopOrderActions from './ShopOrderActions'
 import { ShopBrand } from '@/components/shop-brand'
 import TicketWorkspace from '@/components/ticket-workspace'
@@ -48,7 +50,10 @@ import './admin.css'
 const money = (cents: number) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(cents / 100)
 const time = (value: number | string) => new Date(typeof value === 'string' && !value.includes('T') ? value.replace(' ', 'T') + 'Z' : value).toLocaleString('zh-CN', { hour12: false })
 const productName = (plan: string) => emailProduct(plan) ? productNameForId(emailProduct(plan)!.productId) : productNameForPlan(plan)
-const views = [
+const views = SITE_KIND === 'wholesale' ? [
+  { id: 'wholesale', label: '供货管理', icon: Package },
+  { id: 'security', label: '安全审计', icon: ShieldCheck },
+] : [
   { id: 'my-shop', label: '我的店铺', icon: Package },
   { id: 'products', label: '商品管理', icon: Package },
   { id: 'security', label: '安全审计', icon: ShieldCheck },
@@ -174,7 +179,7 @@ export default function Admin() {
   const [emailCode, setEmailCode] = useState(''); const [challenge, setChallenge] = useState<{ id: string; username: string }>(); const [sending, setSending] = useState(false); const [cooldown, setCooldown] = useState(0); const [mailNotice, setMailNotice] = useState('')
   const [route, setRoute] = useState(() => {
     const initial = adminProductRoute(location.search)
-    return views.some(v => v.id === initial.view) ? initial : { view: 'overview', supplier: 'all' as ProductSection }
+    return views.some(v => v.id === initial.view) ? initial : { view: SITE_KIND === 'wholesale' ? 'wholesale' : 'overview', supplier: 'all' as ProductSection }
   })
   const view = route.view, supplier = route.supplier
   const [revision, setRevision] = useState(0)
@@ -192,7 +197,7 @@ export default function Admin() {
   useEffect(() => {
     const restore = () => {
       const next = adminProductRoute(location.search)
-      setRoute(views.some(v => v.id === next.view) ? next : { view: 'overview', supplier: 'all' })
+      setRoute(views.some(v => v.id === next.view) ? next : { view: SITE_KIND === 'wholesale' ? 'wholesale' : 'overview', supplier: 'all' })
     }
     window.addEventListener('popstate', restore)
     return () => window.removeEventListener('popstate', restore)
@@ -257,8 +262,9 @@ export default function Admin() {
       <header className="admin-topbar"><span>{shopName} / {current.label}{view === 'products' ? ' / ' + productLabel : ''}</span><div><a href="/" target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
       <main className="admin-main">
         <div className="admin-page-heading"><div><span>WORKSPACE</span><h1 ref={heading} tabIndex={-1}>{current.label}</h1><p>{view === 'products' ? '按上游服务商统一管理商品、规格、定价与 API 配置。' : view === 'orders' ? '从创建到完成，查看订单与处理记录。' : view === 'accounting' ? '筛选订单查看净利润，按清账周期保存统计。' : view === 'invoices' ? '管理代理开票申请与手续费收款，登记平台提交进度。' : view === 'customers' ? '查看全部客户的会员账号、到期时间与续费记录。' : view === 'contacts' ? '设置平台商店向客户展示的联系方式。' : view === 'integrations' ? '管理收款方式、平台手续费与通知服务。' : '基于服务器记录，了解服务与订单进展。'}</p></div><Button variant="outline" onClick={() => { setRevision(v => v + 1); void checkSession() }}><RefreshCw size={15} />刷新</Button></div>
-        <TicketAlerts onOpen={() => setView('tickets')} onRefunds={() => { setView('refunds'); setRevision(v => v + 1) }} />
+        {SITE_KIND !== 'wholesale' && <TicketAlerts onOpen={() => setView('tickets')} onRefunds={() => { setView('refunds'); setRevision(v => v + 1) }} />}
         <Feedback error={sessionError} />
+        {view === 'wholesale' && <WholesaleAdmin />}
         {view === 'products' && <ProductCatalog key={supplier} revision={revision} supplier={supplier} onSupplier={next => navigate('products', next)} onSaved={() => setRevision(v => v + 1)} onOrder={setDetail} />}
         {view === 'tickets' && <TicketWorkspace admin revision={revision} onOrder={setDetail} />}
         {view === 'security' && <SecurityPage revision={revision} />}
