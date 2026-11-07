@@ -1,5 +1,6 @@
 import { categoryMessages, failureMessages, publicCode, resultStages } from './errors.ts'
 import { legacyRechargeSession, normalizeRechargeCredential, RECHARGE_BODY_MAX_BYTES, type RechargeCredential } from '../../shared/recharge-credential.ts'
+import { RECHARGE_INPUT_VERSION, RECHARGE_INPUT_VERSION_HEADER, RECHARGE_PAGE_UPGRADE_MESSAGE } from '../../shared/recharge-input-version.ts'
 import { ApiError, body, hash, json, type Env, type Statement } from '../platform.ts'
 import { change, getOrder, type Order } from '../order-state.ts'
 import { amountText } from '../payments/types.ts'
@@ -306,6 +307,7 @@ export async function rechargeAction(requestMessage: Request, env: Env, order: O
       if (!matched) throw new ApiError('该提交编号已用于其他资料。结果未知时请重交原资料。', 409)
       if (attempt.remote_id || terminal(attempt.status)) return
     } else {
+      if (requestMessage.headers.get(RECHARGE_INPUT_VERSION_HEADER) !== RECHARGE_INPUT_VERSION) throw new ApiError(RECHARGE_PAGE_UPGRADE_MESSAGE, 426)
       if (attempt && attempt.status !== 'rejected' && !attempt.fallback) throw new ApiError('原充值结果尚未确认，请查询原任务，勿重复提交。', 409)
       if (!normalized || problem) throw new ApiError(problem || '充值会话凭据无效。')
       const now = Date.now(); const event = crypto.randomUUID()

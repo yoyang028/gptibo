@@ -14,6 +14,8 @@ import { reconcileRechargeRefunds } from '../worker/refunds.ts'
 import { totpCode } from '../worker/totp.ts'
 import { QUEFA_GPT_PRODUCT_MAP } from '../shared/quefa-gpt-products.ts'
 import { checkoutSession } from '../src/lib/checkout-session.ts'
+import { legacyRechargeSession } from '../shared/recharge-credential.ts'
+import { RECHARGE_INPUT_VERSION, RECHARGE_INPUT_VERSION_HEADER } from '../shared/recharge-input-version.ts'
 import type { Env, Statement, Value } from '../worker/platform.ts'
 
 type Context = Parameters<Parameters<typeof test>[1]>[0]
@@ -43,7 +45,11 @@ function setup(t: Context) {
       },
     },
   }
-  const call = (path: string, data?: unknown, cookie = '', origin = 'https://shop.example.invalid') => worker.fetch(new Request('https://shop.example.invalid' + path, { method: data === undefined ? 'GET' : 'POST', headers: { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) }), env)
+  const call = (path: string, data?: unknown, cookie = '', origin = 'https://shop.example.invalid', inputVersion: string | null = RECHARGE_INPUT_VERSION) => {
+    const headers: Record<string, string> = { Origin: origin, Cookie: cookie, 'Content-Type': 'application/json' }
+    if (inputVersion && data && typeof data === 'object' && 'action' in data && data.action === 'submit') headers[RECHARGE_INPUT_VERSION_HEADER] = inputVersion
+    return worker.fetch(new Request('https://shop.example.invalid' + path, { method: data === undefined ? 'GET' : 'POST', headers, body: data === undefined ? undefined : JSON.stringify(data) }), env)
+  }
   const buyer = async () => (await call('/api/orders/client', {})).headers.get('Set-Cookie')!.split(';')[0]
   const create = async (cookie: string, key = crypto.randomUUID()) => {
     const response = await call('/api/orders', { plan: 'plus', expectedPrice: 13900, email: 'buyer@example.test', key }, cookie)
@@ -106,6 +112,29 @@ function setup(t: Context) {
   return { db, env, call, buyer, create, query, submit, login, partner, notice, calls, products, remoteOrder, redemption, faceToFace: () => { faceToFace = true }, quote: (patch: Record<string, unknown>) => { quotePatch = patch }, setExpiry: (value: number) => { expiry = new Date(value).toISOString() }, setQr: (value: string | null) => { qr = value }, setPayment: (v: string) => { payment = v }, setTask: (v: string, retry = false) => { taskStatus = v; fallback = retry }, setRefund: (v: string) => { refundStatus = v }, override: (v: typeof override) => { override = v } }
 }
 
+test('a stale frontend that drops the Session Token is stopped before creating any recharge task', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  const raw = JSON.stringify({ ...JSON.parse(session), featureFlags: 'x'.repeat(36000) })
+  const oldCredential = legacyRechargeSession(raw)
+  assert(oldCredential?.mode === 'session')
+  assert.equal(JSON.parse(oldCredential.session).sessionToken, undefined)
+  for (const version of [null, 'old-client']) {
+    const response = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: oldCredential }, buyer, undefined, version)
+    assert.equal(response.status, 426)
+    assert.match((await response.json()).error, /刷新整个网页/)
+  }
+  assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 0)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions WHERE order_id=?').get(order.id)!.n, 0)
+  assert.equal(s.db.prepare('SELECT payment_status FROM orders WHERE id=?').get(order.id)!.payment_status, 'paid')
+  const response = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: checkoutSession(raw).credential }, buyer)
+  assert.equal(response.status, 200)
+  const forwarded = s.calls.filter(c => c.path === '/v1/redemptions')
+  assert.equal(forwarded.length, 1)
+  assert.equal(JSON.parse(forwarded[0].body).credential.session, JSON.parse(raw).sessionToken)
+  assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
+})
+
 test('a large pasted Session reaches the paid original order with account identity and recovers without a duplicate task', async t => {
   const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
   await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
@@ -143,7 +172,7 @@ test('an uncertain compact Session can be recovered by re-pasting the original l
   assert.equal(s.db.prepare('SELECT status FROM recharge_redemptions WHERE order_id=?').get(order.id)!.status, 'unknown')
   s.override(undefined)
   const recovered = checkoutSession(raw, 'session')
-  const response = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key, customerConfirmedEmail: true, credential: recovered.credential }, buyer)
+  const response = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key, customerConfirmedEmail: true, credential: recovered.credential }, buyer, undefined, null)
   assert.equal(response.status, 200)
   const submissions = s.calls.filter(c => c.path === '/v1/redemptions')
   assert.equal(submissions.length, 2)

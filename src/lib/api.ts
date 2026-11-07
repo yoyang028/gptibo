@@ -1,4 +1,5 @@
 import { storefrontScopeHeaders } from './storefront-routing.ts'
+import { RECHARGE_INPUT_VERSION, RECHARGE_INPUT_VERSION_HEADER } from '../../shared/recharge-input-version.ts'
 export class RequestError extends Error {
   status: number
   constructor(message: string, status: number) { super(message); this.status = status }
@@ -9,6 +10,8 @@ export async function api<T>(path: string, data?: unknown, signal?: AbortSignal)
   const smsOperation = /\/api\/admin\/my-shop\/products\/verify-api$/.test(path) || /^\/api\/orders\/[^/]+\/(payment|custom-action)$/.test(path)
   const timeout = AbortSignal.timeout(path === '/api/admin/hanfolk' || /\/session-precheck$/.test(path) || /\/recharge-retry$/.test(path) ? 65000 : supplierOperation || smsOperation ? 50000 : path === '/api/orders/xgift/eligibility' ? 35000 : 15000)
   const headers: Record<string, string> = data === undefined ? {} : { 'Content-Type': 'application/json' }
+  const rechargeSubmission = /^\/api\/orders\/[^/]+\/fulfillment$/.test(path) && typeof data === 'object' && data !== null && 'action' in data && data.action === 'submit'
+  if (rechargeSubmission) headers[RECHARGE_INPUT_VERSION_HEADER] = RECHARGE_INPUT_VERSION
   if (typeof location !== 'undefined' && (path.startsWith('/api/orders') || path.startsWith('/api/catalog'))) Object.assign(headers, storefrontScopeHeaders())
   const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', redirect: admin ? 'manual' : 'follow', headers, body: data === undefined ? undefined : JSON.stringify(data), signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
   // Access may redirect before the Worker runs. Do not follow that cross-origin
@@ -19,6 +22,9 @@ export async function api<T>(path: string, data?: unknown, signal?: AbortSignal)
   }
   const result = await response.json().catch(() => null)
   if (!response.ok) {
+    // A 426 from this endpoint guarantees no new attempt was submitted. Reload
+    // the page, never the request; buyer cookies retain the paid original order.
+    if (response.status === 426 && rechargeSubmission && typeof window !== 'undefined') window.location.reload()
     if (response.status === 403 && result?.code === 'admin_access_required' && admin && typeof window !== 'undefined') {
       window.dispatchEvent(new Event('ymx-admin-access-required'))
     }

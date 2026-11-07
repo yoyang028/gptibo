@@ -79,6 +79,16 @@ test('long unknown legacy compact submissions can be reconstructed without inven
   assert.deepEqual(checkoutSession(raw, 'session').credential, legacyRechargeSession(raw))
 })
 
+test('the old 32k compaction drops a valid Session Token while the replacement matches the workbench', () => {
+  const raw = json({ featureFlags: 'x'.repeat(36000) })
+  const old = legacyRechargeSession(raw)
+  assert(old?.mode === 'session')
+  assert.equal(JSON.parse(old.session).sessionToken, undefined)
+  const current = checkoutSession(raw)
+  assert.equal(current.problem, '')
+  assert.deepEqual(current.credential, { mode: 'session', session: token })
+})
+
 test('named cookie chunks are joined in numeric order and unrelated cookies are omitted', () => {
   const raw = 'irrelevant=DO-NOT-FORWARD; __Secure-next-auth.session-token.1=TOKEN; __Secure-next-auth.session-token.0=SESSION-'
   assert.deepEqual(checkoutSession(raw).credential, { mode: 'session', session: 'SESSION-TOKEN' })

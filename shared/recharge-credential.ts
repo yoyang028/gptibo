@@ -42,7 +42,7 @@ export function readRechargeInput(raw: string, mode: 'session' | 'access_token' 
       for (const key of keys) { const value = source[key]; if (typeof value === 'string' && value.trim()) { token = value.trim(); break } }
       if (token) break
     }
-    if (!token) return { email, token: '', problem: mode === 'session' ? '未找到 sessionToken。当前充值通道不能使用仅含 accessToken 的资料，请查看「充值凭据说明」，勿反复提交相同内容。' : '未找到 accessToken，请核对原提交资料。', expires }
+    if (!token) return { email, token: '', problem: mode === 'session' ? '未找到 sessionToken。请在当前登录账号的获取页面完整复制 Session JSON，不要只复制 accessToken。仍有问题请联系支持核对，无需重新付款。' : '未找到 accessToken，请核对原提交资料。', expires }
   } else if (mode === 'session' && text.includes('__Secure-next-auth.session-token')) {
     // Only extract the named ChatGPT cookie. Other cookies are never forwarded.
     const chunks = new Map<number, string>(); let single = ''
@@ -62,7 +62,7 @@ export function readRechargeInput(raw: string, mode: 'session' | 'access_token' 
   }
   if (token.length > RECHARGE_TOKEN_MAX_CHARS) return { email, token: '', problem: '提取后的充值令牌超过 128 KiB 字符限制，请核对复制内容。', expires }
   if (!token || /[^\x21-\x7e]/.test(token) || token === 'null' || token === 'undefined' || token.startsWith('"')) return { email, token: '', problem: '充值凭据格式无效，请复制 sessionToken 的完整值或包含它的 JSON。', expires }
-  if (mode === 'session' && looksLikeAccessToken(token)) return { email, token: '', problem: '这段内容是 Access Token。当前充值通道需要 sessionToken，请按充值凭据说明复制正确的会话值。', expires }
+  if (mode === 'session' && looksLikeAccessToken(token)) return { email, token: '', problem: '这段内容是 Access Token，请完整复制获取页面的 Session JSON，不要只截取其中的 accessToken。', expires }
   const problem = checkExpiry ? credentialExpiryProblem(token, expires) : ''
   return { email, token: problem ? '' : token, problem, expires }
 }

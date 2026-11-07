@@ -6,6 +6,8 @@ import crypto from 'node:crypto'
 import {createRequire} from 'node:module'
 import {fileURLToPath} from 'node:url'
 import {latestCode, totp} from './auth.mjs'
+import {legacyRechargeSession} from '../../shared/recharge-credential.ts'
+import {RECHARGE_INPUT_VERSION,RECHARGE_INPUT_VERSION_HEADER} from '../../shared/recharge-input-version.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const cloudflare = process.argv.includes('--cloudflare')
@@ -41,7 +43,7 @@ async function waitFor(read, predicate, description, timeout = 30000) {
   throw new Error('Timed out: ' + description)
 }
 async function api(context, route, data, expected = 200, retries = 0, confirmedReplay = false) {
-  const response = await context.request.fetch(route, {method: data === undefined ? 'GET' : 'POST', ...(data === undefined ? {} : {data}), headers: {Origin: origin, ...(cloudflare ? {Connection: 'close'} : {})}}).catch(async error => {
+  const response = await context.request.fetch(route, {method: data === undefined ? 'GET' : 'POST', ...(data === undefined ? {} : {data}), headers: {Origin: origin, ...(data?.action==='submit'?{[RECHARGE_INPUT_VERSION_HEADER]:RECHARGE_INPUT_VERSION}:{}), ...(cloudflare ? {Connection: 'close'} : {})}}).catch(async error => {
     // workerd may close a reused loopback test connection. Retry one safe read
     // or the explicit duplicate of a submission already acknowledged by 200.
     // Never automatically replay a new write or an uncertain submission here.
@@ -134,10 +136,18 @@ try {
       assert(await page.getByRole('button', {name: label, exact: true}).isDisabled())
       const help = page.locator('.live-credential-help')
       await help.locator('summary').click()
-      assert(await help.getByText('__Secure-next-auth.session-token', {exact: true}).isVisible())
+      assert(await help.getByText('全选并复制页面返回的完整 JSON', {exact: false}).isVisible())
+      assert.equal(await page.getByRole('link',{name:'获取完整 Session',exact:true}).getAttribute('href'),'https://chatgpt.com/api/auth/session')
       await help.locator('summary').click()
       await input.fill('')
       record('Access Token only is blocked before submission, with accessible instructions for the actual Session Token')
+      if(cloudflare){
+        const old=legacyRechargeSession(raw);assert(old?.mode==='session');assert.equal(JSON.parse(old.session).sessionToken,undefined)
+        const legacy=await customer.request.post(route+'/fulfillment',{headers:{Origin:origin,Connection:'close'},data:{action:'submit',key:crypto.randomUUID(),customerConfirmedEmail:true,credential:old}})
+        assert.equal(legacy.status(),426);assert.match((await legacy.json()).error,/刷新整个网页/)
+        assert.equal((await mockState()).orders.find(item=>item.order.merchant_order_no===initial.id).tasks.length,0)
+        record('A stale compaction client receives an upgrade instruction before any supplier task, preserving the paid original order')
+      }
       await input.focus()
       const keyboard = await customer.newCDPSession(page)
       try { await keyboard.send('Input.insertText', { text: raw }) } finally { await keyboard.detach() }
@@ -151,6 +161,7 @@ try {
     const submitting = page.waitForResponse(response => new URL(response.url()).pathname === route + '/fulfillment' && response.request().postDataJSON()?.action === 'submit')
     await page.getByRole('button', {name: label, exact: true}).click()
     const response = await submitting
+    assert.equal(response.request().headers()[RECHARGE_INPUT_VERSION_HEADER.toLowerCase()],RECHARGE_INPUT_VERSION)
     assert.equal(response.status(), 200, await response.text())
     const body = response.request().postDataJSON()
     if (large) {

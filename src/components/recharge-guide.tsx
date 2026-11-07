@@ -10,7 +10,7 @@ import '@/styles/recharge-guide.css'
 
 const steps = [
   { title: '登录 ChatGPT', short: '登录', description: '打开 chatgpt.com，登录你要充值的 ChatGPT 账号。', address: 'chatgpt.com/auth/login', duration: 6200 },
-  { title: '获取充值会话凭据', short: '获取', description: '在电脑浏览器开发者工具的 Application / Cookies 中，复制 ChatGPT 的 __Secure-next-auth.session-token 完整值。若有 .0、.1 分段，须按顺序合并。不要使用仅含 accessToken 的 JSON。', address: 'ChatGPT / Application / Cookies', duration: 6800 },
+  { title: '获取完整 Session', short: '获取', description: '在已登录 ChatGPT 的同一浏览器打开获取页面，全选并复制完整 JSON。不要只复制可见的几行，也不要只截取 accessToken。', address: 'chatgpt.com/api/auth/session', duration: 6800 },
   { title: '选择套餐并下单', short: '下单', description: '返回本站，选择需要的套餐，填写下单邮箱并创建订单。', address: '本站 / 选择套餐', duration: 9000 },
   { title: '完成支付宝付款', short: '付款', description: '在订单付款窗口核对套餐和金额，用手机支付宝扫一扫完成付款，付款确认后自动进入账号连接。', address: '本站 / 确认付款', duration: 8500 },
   { title: '付款后提交会话凭据', short: '提交', description: '在原订单粘贴 sessionToken，或包含该字段的 JSON。核对获取凭据时登录的账号，勾选授权后提交；只有 accessToken 的内容会被直接提示。', address: '本站 / 连接账号', duration: 8500 },
@@ -116,7 +116,7 @@ export function RechargeGuide({ offers }: { offers: CatalogPlan[] }) {
   const replay = () => { select(0); setPlaying(true) }
   const toggle = () => { if (step === steps.length - 1 && elapsed >= steps[step].duration) replay(); else setPlaying(value => !value) }
   return <section ref={root} id="how-it-works" className="recharge-guide page-width" aria-labelledby="recharge-guide-title" data-running={running} data-reduced={reduced}>
-    <header className="rg-heading"><div><span className="section-kicker">从登录，到到账</span><h2 id="recharge-guide-title">ChatGPT 充值流程</h2><p>先准备充值所需的 sessionToken，再下单、付款并提交。</p></div><div className="rg-controls">
+    <header className="rg-heading"><div><span className="section-kicker">从登录，到到账</span><h2 id="recharge-guide-title">ChatGPT 充值流程</h2><p>先准备完整 Session，再下单、付款并提交。</p></div><div className="rg-controls">
       {!reduced && <Button className="rg-play-toggle" variant="outline" size="icon" onClick={toggle} aria-label={playing ? '暂停流程动画' : '播放流程动画'}>{playing ? <Pause size={16} /> : <Play size={16} />}</Button>}
       <Button className="rg-replay-button" variant="ghost" onClick={replay} aria-label={reduced ? '回到第一步' : '重播'}><RotateCcw size={14} /><span>{reduced ? '回到开始' : '重播'}</span></Button>
     </div></header>
@@ -131,7 +131,7 @@ export function RechargeGuide({ offers }: { offers: CatalogPlan[] }) {
           <div className="rg-progress"><span style={{ width: `${elapsed / steps[step].duration * 100}%` } as CSSProperties} /></div>
         </div>
         <div className="rg-caption"><div key={step} className="rg-caption-copy" aria-live={playing && !reduced ? 'off' : 'polite'}><span>0{step + 1} / 0{steps.length}</span><h3>{steps[step].title}</h3><p>{steps[step].description}</p></div><div className="rg-navigation"><Button variant="ghost" size="icon" disabled={step === 0} onClick={() => select(step - 1)} aria-label="上一步"><ChevronLeft size={18} /></Button><Button variant="ghost" size="icon" disabled={step === steps.length - 1} onClick={() => select(step + 1)} aria-label="下一步"><ChevronRight size={18} /></Button></div></div>
-        {(step === 0 || step === 1) && <a className="rg-external" href="https://chatgpt.com" target="_blank" rel="noreferrer">{step === 0 ? '打开 ChatGPT 登录' : '打开 ChatGPT，按上方说明查看会话凭据'}<ExternalLink size={13} /></a>}
+        {(step === 0 || step === 1) && <a className="rg-external" href={step === 0 ? 'https://chatgpt.com' : 'https://chatgpt.com/api/auth/session'} target="_blank" rel="noreferrer">{step === 0 ? '打开 ChatGPT 登录' : '获取完整 Session'}<ExternalLink size={13} /></a>}
       </div>
     </div>
     <p className="rg-scope">适用于 Plus、Pro 5×、Pro 10×、Pro 25× 自助充值。提交 sessionToken 或包含该字段的 JSON，开通进度以订单为准。</p>
