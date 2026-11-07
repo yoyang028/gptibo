@@ -35,7 +35,7 @@ var FailureMessages = map[string]string{
 	"mailbox_login_failed":     "邮箱登录失败，请核对登录资料，或在允许重新提交后改用 Session。",
 	"account_has_subscription": "账号已有订阅，请核对账号或联系客服。",
 	"subscription_required":    "该套餐要求账号已有有效订阅，请核对续费资格。",
-	"precheck_rejected":        "账号未通过预检，请完成账号验证或联系客服。",
+	"precheck_rejected":        "充值资料或账号条件未通过上游检查，请联系客服核对具体原因，勿反复提交相同资料。",
 	"account_unavailable":      "当前账号暂不可用，请核对账号或联系客服。",
 	"product_unavailable":      "该套餐暂不可用，请联系客服。",
 	"order_rejected":           "此次充值未被受理，请联系客服核对。",

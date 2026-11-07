@@ -785,6 +785,22 @@ test('configured catalog is independent of supplier prices; orders still enforce
   assert.equal(demo.mode, 'demo'); assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_orders').get()!.n, 0)
 })
 
+test('temporarily closing new checkout preserves the paid original order and its customer after-sales path', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  await s.submit(order.id, buyer); s.setTask('failed', true); await s.query(order.id, buyer)
+  s.env.RECHARGE_CHECKOUT_ENABLED = 'false'
+  const creates = s.calls.filter(c => c.path === '/v1/orders').length
+  const blocked = await s.call('/api/orders', { plan: 'plus', expectedPrice: 13900, email: 'buyer@example.test', key: crypto.randomUUID() }, buyer)
+  assert.equal(blocked.status, 409)
+  assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, creates)
+  const current = (await (await s.query(order.id, buyer)).json()).order
+  assert.equal(current.id, order.id); assert.equal(current.paymentStatus, 'paid'); assert.equal(current.status, 'failed')
+  const refunds = await s.call(`/api/orders/${order.id}/refunds`, { action: 'request', key: crypto.randomUUID(), reason: 'Local fixture: preserve customer after-sales during a credential incident', version: current.version }, buyer)
+  assert.equal(refunds.status, 201)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 1)
+})
+
 test('platform collection, actual payment verification and auto recharge stay in own order; no credentials or vendor internals reach storage/customer response', async t => {
   const s = setup(t); const buyer = await s.buyer(); const other = await s.buyer(); const order = await s.create(buyer)
   assert.equal(order.mode, 'live'); assert.equal(order.paymentStatus, 'unpaid')

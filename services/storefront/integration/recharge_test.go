@@ -490,7 +490,7 @@ func TestRechargePublicReasonReachesCustomerAndPartner(t *testing.T) {
 	if e := supplier.Verify(ctx, id); e != nil {
 		t.Fatal(e)
 	}
-	check("账号未通过预检，请完成账号验证或联系客服。", true)
+	check("充值资料或账号条件未通过上游检查，请联系客服核对具体原因，勿反复提交相同资料。", true)
 	for _, unsafe := range []string{"请前往 recharge.example.invalid 处理。", "请前往 //RECHARGE.INK/pay 处理。", "请联系 checkout.recharge.example.invalid 客服。"} {
 		version++
 		fake.redemption.Message = &unsafe
@@ -501,10 +501,10 @@ func TestRechargePublicReasonReachesCustomerAndPartner(t *testing.T) {
 		if e := owner.DB.QueryRow(ctx, `SELECT public_message FROM recharge_redemptions WHERE order_id=$1 ORDER BY attempt_no DESC LIMIT 1`, id).Scan(&stored); e != nil || stored != "" {
 			t.Fatal("supplier domain stored as public reason", e)
 		}
-		check("账号未通过预检，请完成账号验证或联系客服。", true)
+		check("充值资料或账号条件未通过上游检查，请联系客服核对具体原因，勿反复提交相同资料。", true)
 		// Historical messages must be sanitized on reads without a provider sync.
 		execSQL(t, owner, `UPDATE recharge_redemptions SET public_message=$1 WHERE order_id=$2`, unsafe, id)
-		check("账号未通过预检，请完成账号验证或联系客服。", true)
+		check("充值资料或账号条件未通过上游检查，请联系客服核对具体原因，勿反复提交相同资料。", true)
 		for _, endpoint := range []string{"/api/orders", "/api/orders/" + id, "/api/partner/orders", "/api/partner/orders/" + id} {
 			cookie := buyer
 			if strings.Contains(endpoint, "/partner/") {
