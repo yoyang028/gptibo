@@ -21,7 +21,7 @@ const cases: { id: string; label: string; note: string; state: SessionPrecheck['
   { id: 'timeout', label: '检测超时', note: '等待 10 秒后自动提交', state: 'deferred', code: 'query_timeout' },
   { id: 'unknown', label: '信息不足', note: '资料不全，提交上游判断', state: 'deferred', code: 'business_evidence_missing' },
 ]
-const sample = JSON.stringify({ user: { email: 'demo@example.com' }, accessToken: 'demo-local-synthetic-only', expires: '2099-01-01T00:00:00Z' }, null, 2)
+const sample = JSON.stringify({ user: { email: 'demo@example.com' }, accessToken: 'demo-local-synthetic-only', sessionToken: 'DEMO_ONLY_SESSION_TOKEN', expires: '2099-01-01T00:00:00Z' }, null, 2)
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
   if (signal?.aborted) { reject(new DOMException('cancelled', 'AbortError')); return }
   const finish = () => { signal?.removeEventListener('abort', abort); resolve() }

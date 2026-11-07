@@ -7,9 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"gptibo/storefront/internal/fault"
@@ -214,8 +212,8 @@ type Input struct {
 	Credential      Credential `json:"credential"`
 }
 
-// A manual new attempt has a different body; recovering that same attempt must
-// reproduce its exact confirmation and hash, including during precheck recovery.
+// Legacy attempts may include retry_confirmation. New attempts omit it;
+// original-key recovery must retain the body that was first accepted.
 func redemptionBody(remote string, credential Credential, retry bool) string {
 	return Raw(struct {
 		Mode       string     `json:"mode"`
@@ -236,22 +234,9 @@ func (s *Service) Action(ctx context.Context, id string, in Input) error {
 	if in.Action != "submit" || !in.Confirmed || !security.ValidID(in.Key) {
 		return fault.New(400, "请确认账号并重新提交。")
 	}
-	c := in.Credential
-	if c.Mode == "session" && len(c.Session) > 0 && len(c.Session) <= 32000 && utf8.ValidString(c.Session) {
-		var session struct {
-			User struct {
-				Email string `json:"email"`
-			} `json:"user"`
-			Token string `json:"accessToken"`
-		}
-		if json.Unmarshal([]byte(c.Session), &session) != nil || session.User.Email == "" || session.Token == "" {
-			return fault.New(400, "Session 中缺少账号邮箱或 Access Token。")
-		}
-		c.AccessToken = ""
-	} else if c.Mode == "access_token" && strings.TrimSpace(c.AccessToken) != "" && len(c.AccessToken) <= 32000 && utf8.ValidString(c.AccessToken) {
-		c.Session = ""
-	} else {
-		return fault.New(400, "请选择 Session 或 Access Token，并填写有效凭据。")
+	c, err := normalizeCredential(in.Credential)
+	if err != nil {
+		return err
 	}
 	return s.locked(ctx, id, func(r Row) error { return s.submit(ctx, id, in, c, r, "customer") })
 }
@@ -284,9 +269,13 @@ func (s *Service) submit(ctx context.Context, id string, in Input, c Credential,
 			number++
 		}
 	}
-	raw := redemptionBody(*r.Remote, c, number > 1)
+	raw := redemptionBody(*r.Remote, c, false)
 	digest := security.Hash(raw)
 	if a != nil && a.ID == in.Key {
+		legacy := redemptionBody(*r.Remote, c, number > 1)
+		if a.Hash != digest && a.Hash == security.Hash(legacy) {
+			raw, digest = legacy, a.Hash
+		}
 		if expired(*a) || a.Hash != digest {
 			return fault.New(409, "原提交编号与资料不一致或已超过幂等保护期，请核对原任务。")
 		}
@@ -298,6 +287,9 @@ func (s *Service) submit(ctx context.Context, id string, in Input, c Credential,
 			return fault.New(409, "原充值结果尚未确认，请查询原任务，勿重复提交。")
 		}
 		// Preserve same-key recovery above; only new attempts require fresh input.
+		if _, _, e = credentialToken(c, false); e != nil {
+			return e
+		}
 		if e = credentialExpiry(c, time.Now()); e != nil {
 			return e
 		}

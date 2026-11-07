@@ -13,16 +13,10 @@ import (
 // Reject known expiry before a new attempt. Decoding these unsigned input
 // claims is not authentication; missing/unreadable dates remain unconfirmed.
 func credentialExpiry(c Credential, now time.Time) error {
-	token := c.AccessToken
-	var expires string
-	if c.Mode == "session" {
-		var session map[string]json.RawMessage
-		if json.Unmarshal([]byte(c.Session), &session) != nil {
-			return nil // Structural validation belongs to Action.
-		}
-		_ = json.Unmarshal(session["accessToken"], &token)
-		_ = json.Unmarshal(session["expires"], &expires)
-	}
+	token, expires, err := credentialToken(c, true)
+	if err != nil {
+		return nil
+	} // Structural validation belongs to Action.
 	parts := strings.Split(strings.TrimSpace(token), ".")
 	if len(parts) == 3 {
 		if raw, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil {

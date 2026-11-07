@@ -1,5 +1,5 @@
 import { categoryMessages, failureMessages, publicCode, resultStages } from './errors.ts'
-import { credentialExpiryProblem } from '../../shared/credential-expiry.ts'
+import { legacyRechargeSession, normalizeRechargeCredential, RECHARGE_BODY_MAX_BYTES, type RechargeCredential } from '../../shared/recharge-credential.ts'
 import { ApiError, body, hash, json, type Env, type Statement } from '../platform.ts'
 import { change, getOrder, type Order } from '../order-state.ts'
 import { amountText } from '../payments/types.ts'
@@ -273,38 +273,41 @@ export async function rechargeSummary(env: Env, order: Order) {
 }
 export async function rechargeAction(requestMessage: Request, env: Env, order: Order) {
   if (requestMessage.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
-  const data = await body(requestMessage, 40000)
+  const data = await body(requestMessage, RECHARGE_BODY_MAX_BYTES)
   const row = await findRechargeOrder(env, order.id)
   if (order.mode !== 'live' || !row) throw new ApiError('此订单没有充值通道。', 409)
   if (!(await env.INTEREST_LIMITER.limit({ key: 'recharge:' + order.owner_hash })).success) throw new ApiError('操作较频繁，请稍后重试。', 429)
   if (data.action === 'query' || data.action === 'poll') { await locked(env, row, fresh => syncUnlocked(env, fresh)); return }
   if (data.action !== 'submit' || typeof data.key !== 'string' || !/^[a-f0-9-]{36}$/.test(data.key) || data.customerConfirmedEmail !== true) throw new ApiError('请确认账号并重新提交。')
   const credential = data.credential as Record<string, unknown> | undefined
-  let normalized: { mode: string; session?: string; access_token?: string }
-  if (credential?.mode === 'session' && typeof credential.session === 'string' && credential.session.length > 0 && credential.session.length <= 32000) {
-    let session: { user?: { email?: unknown }; accessToken?: unknown }
-    try { session = JSON.parse(credential.session) } catch { throw new ApiError('请粘贴完整的 Session JSON。') }
-    if (!session || typeof session.user?.email !== 'string' || typeof session.accessToken !== 'string' || !session.accessToken) throw new ApiError('Session 中缺少账号邮箱或 Access Token。')
-    normalized = { mode: 'session', session: credential.session }
-  } else if (credential?.mode === 'access_token' && typeof credential.access_token === 'string' && credential.access_token.trim().length > 0 && credential.access_token.length <= 32000) normalized = { mode: 'access_token', access_token: credential.access_token }
-  else throw new ApiError('请选择 Session 或 Access Token，并填写有效凭据。')
+  let original: RechargeCredential
+  if (credential?.mode === 'session' && typeof credential.session === 'string' && credential.session.trim()) original = { mode: 'session', session: credential.session }
+  else if (credential?.mode === 'access_token' && typeof credential.access_token === 'string' && credential.access_token.trim()) original = { mode: 'access_token', access_token: credential.access_token }
+  else throw new ApiError('请填写本次授权的充值会话凭据。')
   await locked(env, row, async () => {
     const current = await getOrder(env, order.id); const ready = await findRechargeOrder(env, order.id)
     if (current.redemption_blocked) throw new ApiError('本订单已禁止再次兑换，请联系支持。', 409)
     if (!ready?.remote_id || ready.financial_hold || ready.payment_status !== 'paid' || current.payment_status !== 'paid' || current.refund_hold || current.refunded_cents || current.status === 'success') throw new ApiError('当前订单不能提交充值，请先刷新付款和售后状态。', 409)
     let attempt = await latestAttempt(env, order.id)
     const number = attempt ? attempt.attempt_no + Number(attempt.id !== data.key) : 1
-    const raw = JSON.stringify({ mode: 'auto_recharge', order_id: ready.remote_id, credential: normalized, customer_confirmed_email: true, ...(number > 1 ? { retry_confirmation: true } : {}) })
-    const digest = await hash(raw)
+    const payload = (value: RechargeCredential, oldRetry = false) => JSON.stringify({ mode: 'auto_recharge', order_id: ready.remote_id, credential: value, customer_confirmed_email: true, ...(oldRetry && number > 1 ? { retry_confirmation: true } : {}) })
+    let normalized: RechargeCredential | null = null
+    let problem = ''
+    try { normalized = normalizeRechargeCredential(original, attempt?.id !== data.key) } catch (error) { problem = error instanceof Error ? error.message : '充值会话凭据无效。' }
+    let raw = normalized ? payload(normalized) : ''
+    let digest = raw ? await hash(raw) : ''
     if (attempt && attempt.id === data.key) {
       if (unknownExpired(attempt)) throw new ApiError('原提交已超过幂等保护期，请联系客服核对，不能再次提交。', 409)
-      if (attempt.request_hash !== digest) throw new ApiError('该提交编号已用于其他资料。结果未知时请重交原资料。', 409)
+      const candidates = [payload(original), payload(original, true), ...(normalized ? [payload(normalized)] : [])]
+      const legacy = original.mode === 'session' ? legacyRechargeSession(original.session) : null
+      if (legacy) candidates.push(payload(legacy), payload(legacy, true))
+      let matched = false
+      for (const candidate of new Set(candidates)) { if (await hash(candidate) === attempt.request_hash) { raw = candidate; digest = attempt.request_hash; matched = true; break } }
+      if (!matched) throw new ApiError('该提交编号已用于其他资料。结果未知时请重交原资料。', 409)
       if (attempt.remote_id || terminal(attempt.status)) return
     } else {
       if (attempt && attempt.status !== 'rejected' && !attempt.fallback) throw new ApiError('原充值结果尚未确认，请查询原任务，勿重复提交。', 409)
-      const sessionInput = normalized.mode === 'session' ? JSON.parse(normalized.session!) : null
-      const expiryProblem = credentialExpiryProblem(sessionInput?.accessToken ?? normalized.access_token!, sessionInput?.expires)
-      if (expiryProblem) throw new ApiError(expiryProblem)
+      if (!normalized || problem) throw new ApiError(problem || '充值会话凭据无效。')
       const now = Date.now(); const event = crypto.randomUUID()
       await env.INTEREST_DB.batch([
         env.INTEREST_DB.prepare("INSERT INTO recharge_redemptions(id,order_id,attempt_no,request_hash,credential_mode,created_at) SELECT ?,id,?,?,?,? FROM orders WHERE id=? AND version=? AND redemption_blocked=0 AND refund_hold=0 AND refunded_cents=0 AND payment_status='paid'").bind(String(data.key), (attempt?.attempt_no ?? 0) + 1, digest, normalized.mode, now, order.id, current.version),

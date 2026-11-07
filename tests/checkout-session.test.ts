@@ -1,85 +1,94 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { checkoutSession } from '../src/lib/checkout-session.ts'
+import { legacyRechargeSession, readRechargeInput, RECHARGE_BODY_MAX_BYTES, RECHARGE_TOKEN_MAX_CHARS } from '../shared/recharge-credential.ts'
 
-test('Session input requires both a complete account and token before authorizing recharge', () => {
-  for (const raw of ['{', 'null', '{}', '{"user":{"email":"buyer@example.test"}}', '{"user":{"email":"wrong"},"accessToken":"token"}', '{"user":{"email":"buyer@example.test"},"accessToken":" "}']) {
+const token = 'SYNTHETIC-SESSION-TOKEN-ONLY'
+const json = (extra: Record<string, unknown> = {}) => JSON.stringify({ user: { email: 'buyer@example.test' }, sessionToken: token, accessToken: 'different-access-token', ...extra })
+
+test('accessToken-only JSON is rejected locally instead of being relabelled as a recharge Session', () => {
+  for (const raw of ['{', 'null', '{}', '[]', JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: 'private-access-token' })]) {
     const parsed = checkoutSession(raw)
     assert.equal(parsed.credential, null)
-    assert.equal(parsed.email, '')
     assert.ok(parsed.problem)
   }
+  assert.match(checkoutSession('{"accessToken":"private-access-token"}').problem, /sessionToken/)
   assert.equal(checkoutSession('').problem, '')
 })
 
-test('Session recovery preserves exact JSON bytes for the original idempotent submission', () => {
-  const original = '  { "user": { "email": "buyer@example.test" }, "accessToken": "private-token" }\n'
-  const parsed = checkoutSession(original, 'session')
-  assert.equal(parsed.email, 'buyer@example.test')
-  assert.equal(parsed.problem, '')
-  assert.deepEqual(parsed.credential, { mode: 'session', session: original })
-})
-
-test('an existing uncertain access-token submission can recover from Session without changing credential mode or token bytes', () => {
-  const raw = JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: ' private-token ' })
-  assert.deepEqual(checkoutSession(raw, 'access_token').credential, { mode: 'access_token', access_token: ' private-token ' })
-  assert.deepEqual(checkoutSession(raw).credential, { mode: 'session', session: raw })
-})
-
-test('a large Session keeps the full user/account identity in Session mode instead of falling back to a bare token', () => {
-  const core = { user: { email: 'buyer@example.test', id: 'user-fixture', name: 'Fixture', mfa: true }, accessToken: 'private-token', expires: '2099-01-01T00:00:00Z', account: { id: 'account-fixture', planType: 'free', structure: 'personal' }, authProvider: 'auth0' }
-  const raw = JSON.stringify({ ...core, featureFlags: 'synthetic-extra-session-data'.repeat(12000) }, null, 2)
-  assert(raw.length > 250000)
-  const parsed = checkoutSession(raw)
-  assert.equal(parsed.email, 'buyer@example.test')
-  assert.equal(parsed.problem, '')
-  assert.equal(parsed.credential?.mode, 'session')
-  assert.deepEqual(JSON.parse(parsed.credential!.session!), core)
-  assert(new TextEncoder().encode(JSON.stringify(parsed.credential)).length < 32000)
-  assert.equal(checkoutSession(raw.slice(0, 32000)).credential, null, 'a truncated paste must never be submitted')
-  assert.equal(checkoutSession(raw, 'access_token').credential?.mode, 'access_token', 'unknown submissions retain their original mode')
-  assert.equal(checkoutSession(raw.replace('2099-01-01', '2000-01-01')).credential, null, 'Session expiry remains checked before compaction')
-})
-
-test('oversized formatting is removed before any Session fields are omitted', () => {
-  const original = { user: { email: 'buyer@example.test' }, accessToken: 'private-token', other: { preserve: true } }
-  const raw = ' '.repeat(35000) + JSON.stringify(original)
-  const parsed = checkoutSession(raw)
-  assert.equal(parsed.credential?.mode, 'session')
-  assert.deepEqual(JSON.parse(parsed.credential!.session!), original)
-})
-
-test('multibyte and heavily escaped Session content stay within the fulfillment wire budget', () => {
-  for (const extra of ['中文内容'.repeat(4000), '"'.repeat(12500)]) {
-    const raw = JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: 'private-token', extra })
-    assert(raw.length < 32000)
-    assert(new TextEncoder().encode(JSON.stringify({ mode: 'session', session: raw })).length > 32000)
-    const compact = checkoutSession(raw).credential
-    assert.equal(compact?.mode, 'session')
-    assert.deepEqual(JSON.parse(compact!.session!), { user: { email: 'buyer@example.test' }, accessToken: 'private-token' })
-    assert.deepEqual(checkoutSession(raw, 'session').credential, compact, 're-pasting the large original must recover the exact compact Session already submitted')
+test('Session Token is extracted independently from root, data and auth, with no required Access Token', () => {
+  for (const key of ['sessionToken', 'session']) for (const wrapper of ['', 'data', 'auth']) {
+    const fields = { [key]: ' ' + token + ' ', user: { email: 'buyer@example.test' } }
+    const parsed = checkoutSession(JSON.stringify(wrapper ? { [wrapper]: fields } : fields))
+    assert.equal(parsed.email, 'buyer@example.test')
+    assert.equal(parsed.problem, '')
+    assert.deepEqual(parsed.credential, { mode: 'session', session: token })
   }
 })
 
-test('legacy Session recovery keeps exact escaping even above the old conservative 32 KB byte budget', () => {
-  const raw = JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: 'private-token', extra: '"'.repeat(8000) })
-  assert(new TextEncoder().encode(JSON.stringify({ mode: 'session', session: raw })).length > 32000)
-  assert.deepEqual(checkoutSession(raw, 'session').credential, { mode: 'session', session: raw })
+test('opaque raw Session Token is supported without claiming to have identified an email', () => {
+  const parsed = checkoutSession(' ' + token + '\n')
+  assert.equal(parsed.email, '')
+  assert.equal(parsed.problem, '')
+  assert.deepEqual(parsed.credential, { mode: 'session', session: token })
 })
 
-test('oversized input and token credentials fail explicitly instead of silently dropping their tail', () => {
-  const input = (accessToken: string, extra = '') => JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken, extra })
-  const oversized = checkoutSession(input('private-token', 'x'.repeat(1024 * 1024)))
-  assert.equal(oversized.credential, null)
-  assert.match(oversized.problem, /1 MB/)
-  const longToken = checkoutSession(input('x'.repeat(32001)))
-  assert.equal(longToken.credential, null)
-  assert.match(longToken.problem, /Access Token/)
-  assert.equal(checkoutSession(input('x'.repeat(32000))).credential, null, 'do not silently change a new submission to token mode when essential Session fields cannot fit')
-  const oversizedAccount = checkoutSession(JSON.stringify({ user: { email: 'buyer@example.test', id: 'x'.repeat(33000) }, accessToken: 'private-token' }))
-  assert.equal(oversizedAccount.credential, null, 'do not drop an oversized identity field or truncate credentials')
-  assert.match(oversizedAccount.problem, /必要账号资料/)
-  const boundary = checkoutSession(input('x'.repeat(31000)))
-  assert.equal(boundary.credential?.mode, 'session')
-  assert(new TextEncoder().encode(JSON.stringify({ action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: boundary.credential })).length < 40000)
+test('a raw token explicitly marked as an API access token is not accepted as a Session Token', () => {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  for (const [header, claims] of [[{ typ: 'at+jwt' }, {}], [{ typ: 'JWT' }, { aud: 'https://api.openai.com/v1' }]]) {
+    const raw = encode(header) + '.' + encode(claims) + '.SYNTHETIC'
+    assert.equal(checkoutSession(raw).credential, null)
+    assert.match(checkoutSession(raw).problem, /Access Token/)
+  }
+})
+
+test('a multi-megabyte complete JSON is extracted before enforcing the actual token limit', () => {
+  const raw = json({ featureFlags: 'synthetic-client-flags'.repeat(100000) })
+  assert(raw.length > 1024 * 1024)
+  const parsed = checkoutSession(raw)
+  assert.equal(parsed.email, 'buyer@example.test')
+  assert.deepEqual(parsed.credential, { mode: 'session', session: token })
+  assert.equal(checkoutSession(raw.slice(0, 32000)).credential, null)
+})
+
+test('128 KiB character limit applies to the extracted token, not unrelated input or the obsolete 32k bound', () => {
+  const boundary = 'x'.repeat(RECHARGE_TOKEN_MAX_CHARS)
+  const parsed = checkoutSession(json({ sessionToken: boundary, featureFlags: '中文'.repeat(160000) }))
+  assert.deepEqual(parsed.credential, { mode: 'session', session: boundary })
+  assert(new TextEncoder().encode(JSON.stringify({ credential: parsed.credential })).length < RECHARGE_BODY_MAX_BYTES)
+  const excessive = checkoutSession(json({ sessionToken: boundary + 'x' }))
+  assert.equal(excessive.credential, null)
+  assert.match(excessive.problem, /128 KiB/)
+})
+
+test('Access Token expiry does not replace or invalidate a distinct live Session Token', () => {
+  const expiredAccess = 'e30.' + Buffer.from('{"exp":1}').toString('base64url') + '.fixture'
+  assert.deepEqual(checkoutSession(json({ accessToken: expiredAccess, expires: '2099-01-01T00:00:00Z' })).credential, { mode: 'session', session: token })
+  assert.equal(checkoutSession(json({ expires: '2000-01-01T00:00:00Z' })).credential, null)
+})
+
+test('original unknown Session and Access Token requests retain exact bytes, including expiry and spacing', () => {
+  const original = '  { "user": { "email": "buyer@example.test" }, "accessToken": " private-token ", "expires": "2000-01-01T00:00:00Z" }\n'
+  assert.deepEqual(checkoutSession(original, 'session').credential, { mode: 'session', session: original })
+  assert.deepEqual(checkoutSession(original, 'access_token').credential, { mode: 'access_token', access_token: ' private-token ' })
+  assert.deepEqual(checkoutSession(token, 'session').credential, { mode: 'session', session: token })
+})
+
+test('long unknown legacy compact submissions can be reconstructed without inventing a new credential', () => {
+  const raw = JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: 'private-token', featureFlags: 'x'.repeat(400000) })
+  assert.deepEqual(checkoutSession(raw, 'session').credential, legacyRechargeSession(raw))
+})
+
+test('named cookie chunks are joined in numeric order and unrelated cookies are omitted', () => {
+  const raw = 'irrelevant=DO-NOT-FORWARD; __Secure-next-auth.session-token.1=TOKEN; __Secure-next-auth.session-token.0=SESSION-'
+  assert.deepEqual(checkoutSession(raw).credential, { mode: 'session', session: 'SESSION-TOKEN' })
+  for (const raw of ['__Secure-next-auth.session-token.0=only-head', '__Secure-next-auth.session-token.1=only-tail', '__Secure-next-auth.session-token.0=a; __Secure-next-auth.session-token.2=c', '__Secure-next-auth.session-token=whole; __Secure-next-auth.session-token.0=chunk', '__Secure-next-auth.session-token.0=a; __Secure-next-auth.session-token.0=b']) {
+    assert.equal(checkoutSession(raw).credential, null)
+  }
+})
+
+test('extraction returns public constant errors, never includes the submitted secret in validation output', () => {
+  const raw = '{"accessToken":"DO-NOT-ECHO-PRIVATE-CREDENTIAL"}'
+  const parsed = readRechargeInput(raw)
+  assert(!JSON.stringify(parsed).includes('DO-NOT-ECHO'))
 })

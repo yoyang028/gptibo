@@ -80,7 +80,7 @@ async function act(order, action) {
 function session() {
   const exp = Math.floor(Date.now()/1000) + 86400
   const token = Buffer.from('{"alg":"none"}').toString('base64url') + '.' + Buffer.from(JSON.stringify({exp, nonce: crypto.randomUUID()})).toString('base64url') + '.MOCKONLY'
-  return JSON.stringify({user: {email: 'demo@example.invalid', id: 'user-browser-fixture'}, accessToken: token, account: {id: 'account-browser-fixture', planType: 'free', structure: 'personal'}, authProvider: 'auth0', expires: new Date(exp*1000).toISOString()})
+  return JSON.stringify({user: {email: 'demo@example.invalid', id: 'user-browser-fixture'}, accessToken: token, sessionToken: 'LOCAL_ONLY_SESSION_COOKIE_' + crypto.randomUUID(), account: {id: 'account-browser-fixture', planType: 'free', structure: 'personal'}, authProvider: 'auth0', expires: new Date(exp*1000).toISOString()})
 }
 const browser = await chromium.launch({headless: true, executablePath, env: {...process.env, TEMP: path.join(root, 'artifacts/local/tmp'), TMP: path.join(root, 'artifacts/local/tmp')}})
 const customer = await browser.newContext({baseURL: origin, ignoreHTTPSErrors: cloudflare, locale: 'zh-CN', viewport: {width: 1440, height: 1000}})
@@ -129,6 +129,15 @@ try {
     const raw = large ? JSON.stringify({ ...JSON.parse(session()), featureFlags: 'synthetic-extra-session-data'.repeat(12000) }, null, 2) : session()
     if (large) {
       const input = page.locator('#live-session')
+      await input.fill(JSON.stringify({ user: { email: 'demo@example.invalid' }, accessToken: 'LOCAL_ONLY_WRONG_ACCESS_TOKEN' }))
+      await page.getByRole('alert').filter({hasText: '未找到 sessionToken'}).waitFor()
+      assert(await page.getByRole('button', {name: label, exact: true}).isDisabled())
+      const help = page.locator('.live-credential-help')
+      await help.locator('summary').click()
+      assert(await help.getByText('__Secure-next-auth.session-token', {exact: true}).isVisible())
+      await help.locator('summary').click()
+      await input.fill('')
+      record('Access Token only is blocked before submission, with accessible instructions for the actual Session Token')
       await input.focus()
       const keyboard = await customer.newCDPSession(page)
       try { await keyboard.send('Input.insertText', { text: raw }) } finally { await keyboard.detach() }
@@ -148,10 +157,10 @@ try {
       const {featureFlags, ...core} = JSON.parse(raw)
       assert(featureFlags.length > 250000)
       assert.equal(body.credential.mode, 'session')
-      assert.deepEqual(JSON.parse(body.credential.session), core)
+      assert.equal(body.credential.session, core.sessionToken)
       assert.equal(body.credential.access_token, undefined)
       assert(Buffer.byteLength(JSON.stringify(body)) < 40000)
-      record('Native insertion retains a 300 KB Session; Session mode preserves the confirmed user, account, token, provider and expiry within upstream and HTTP limits')
+      record('Native insertion retains a 300 KB JSON; only its exact Session Token reaches the recharge API, with no Access Token or feature flags')
     }
     await api(customer, route + '/fulfillment', body, 200, 0, true)
     return body
@@ -172,9 +181,9 @@ try {
   await waitFor(async () => (await api(customer, route + '/fulfillment', {action: 'query'})).order, order => order.fulfillment?.canSubmit && order.status === 'failed', 'explicit failure permits manual retry')
   await page.getByRole('button', {name: '刷新进度', exact: true}).click()
   await page.locator('#live-session').waitFor()
-  await submit('重新提交 Session')
+  await submit('重新提交充值凭据')
   upstream = (await mockState()).orders.find(item => item.order.merchant_order_no === initial.id)
-  assert.equal(upstream.tasks.length, 2, 'mock requires retry_confirmation for the second task')
+  assert.equal(upstream.tasks.length, 2, 'an explicitly authorized retry uses the original paid order and a new key')
   assert.equal(upstream.order.payment_status, 'paid')
   await api(customer, route + '/fulfillment', firstSubmission, 409)
   await act(upstream.order.order_id, 'replay')
@@ -263,10 +272,12 @@ try {
   record('Customer refund reaches simulated supplier, final refund is reconciled, and recharge remains closed', {orderId: refundOrder.id})
   if (cloudflare) {
     const token = fs.readFileSync(path.join(root, 'artifacts/local/.secrets/quefa-cloudflare-mock/control-token'), 'utf8').trim()
-    const response = await fetch('http://127.0.0.1:8774/audit', {method: 'POST', headers: {Origin: 'http://127.0.0.1:8774', 'X-Local-Control': token}, body: JSON.stringify({needle: 'MOCKONLY'})})
-    assert.equal(response.status, 200); const audit = await response.json()
-    assert.equal(audit.credentialStored, false); assert(audit.counts.recharge_webhooks >= 3)
-    results.d1Audit = audit
+    for (const needle of ['MOCKONLY', 'LOCAL_ONLY_SESSION_COOKIE_']) {
+      const response = await fetch('http://127.0.0.1:8774/audit', {method: 'POST', headers: {Origin: 'http://127.0.0.1:8774', 'X-Local-Control': token}, body: JSON.stringify({needle})})
+      assert.equal(response.status, 200); const audit = await response.json()
+      assert.equal(audit.credentialStored, false); assert(audit.counts.recharge_webhooks >= 3)
+      results.d1Audit = audit
+    }
     record('Actual D1 stores callback digests and order history without the submitted Session or Access Token')
     await customer.storageState({path: path.join(evidence, 'synthetic-buyer-storage.json')})
   }

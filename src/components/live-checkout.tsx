@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { toString as qrToString } from 'qrcode'
 import { RefreshCw, TriangleAlert } from 'lucide-react'
@@ -27,6 +27,11 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
   const [touched, setTouched] = useState(false)
   const [busy, setBusy] = useState<'' | 'query' | 'check' | 'submit'>('')
   const [precheck, setPrecheck] = useState<SessionPrecheck | null>(null)
+  useEffect(() => {
+    if (!session) return
+    const timer = window.setTimeout(() => { setSession(''); setConfirmed(false); setPrecheck(null) }, open ? 3 * 60 * 1000 : 0)
+    return () => window.clearTimeout(timer)
+  }, [open, session])
   const checkAbort = useRef<AbortController | null>(null)
   useEffect(() => { if (!open) checkAbort.current?.abort() }, [open])
   useEffect(() => () => { checkAbort.current?.abort() }, [])
@@ -43,7 +48,7 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
   const info = order.fulfillment!
   const product = productForPlan(order.plan)
   const paused = (order.redemptionBlocked && order.status !== 'success') || order.refundHold || (order.refundedCents ?? 0) >= Math.round(order.price * 100)
-  const input = checkoutSession(session, info.retryMode)
+  const input = useMemo(() => checkoutSession(session, info.retryMode), [session, info.retryMode])
   const unknown = info.rechargeStatus === 'unknown'
   const failed = order.status === 'failed' || info.rechargeStatus === 'rejected'
   const failureTitle = info.failureCode === 'account_has_subscription' ? '账号已有订阅' : info.message?.includes('登录凭据已失效') ? 'Session 已失效' : '充值未完成'
@@ -145,7 +150,7 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
 
       <CheckoutStageTransition stage={info.canSubmit ? 'input' : info.paused || order.status === 'processing' && !unknown ? 'processing' : 'other'}>{stage => <>
       {stage === 'input' && <>
-        {unknown && busy !== 'submit' ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>提交待确认</AlertTitle><AlertDescription>{submitFailure && <>{submitFailure}<br /></>}充值服务尚未确认收到本次提交，暂不能确认已开始充值。先刷新查询；仍未确认时，粘贴原 Session 核对同一次提交。请勿重新付款。</AlertDescription></Alert>
+        {unknown && busy !== 'submit' ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>提交待确认</AlertTitle><AlertDescription>{submitFailure && <>{submitFailure}<br /></>}充值服务尚未确认收到本次提交，暂不能确认已开始充值。先刷新查询；仍未确认时，粘贴原充值资料核对同一次提交。请勿重新付款。</AlertDescription></Alert>
           : failed && busy !== 'submit' ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>{failureTitle}</AlertTitle><AlertDescription>{info.message ?? '请获取新的 Session 后重试。'} 本订单无需重复付款。</AlertDescription></Alert>
           : <PaymentConfirmed>付款已确认，请连接要充值的账号。</PaymentConfirmed>}
         <LiveSessionForm session={session} confirmed={confirmed} touched={touched} busy={busy} precheckRequired={info.precheckRequired} precheck={precheck} retryMode={info.retryMode} retryKey={info.retryKey} failed={failed} onSessionChange={value => { setSession(value); setConfirmed(false); setTouched(false); setPrecheck(null) }} onConfirmChange={setConfirmed} onTouch={() => setTouched(true)} onSubmit={() => void run(true)} />

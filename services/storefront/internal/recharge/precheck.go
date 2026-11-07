@@ -54,6 +54,9 @@ func (r *RemoteSessionChecker) Check(ctx context.Context, c Credential, plan str
 	payload.AccessToken = c.AccessToken
 	payload.Target = plan
 	if c.Mode == "session" {
+		if !strings.HasPrefix(strings.TrimSpace(c.Session), "{") {
+			return PrecheckResult{State: "unknown", Code: "insufficient_evidence", Target: plan}, nil
+		}
 		var s struct {
 			AccessToken string `json:"accessToken"`
 			Expires     string `json:"expires"`
@@ -116,24 +119,15 @@ func (r *RemoteSessionChecker) Check(ctx context.Context, c Credential, plan str
 	return out, nil
 }
 func normalizeCredential(c Credential) (Credential, error) {
-	if c.Mode == "session" && len(c.Session) > 0 && len(c.Session) <= 32000 {
-		var s struct {
-			User struct {
-				Email string `json:"email"`
-			} `json:"user"`
-			Token string `json:"accessToken"`
-		}
-		if json.Unmarshal([]byte(c.Session), &s) != nil || s.User.Email == "" || s.Token == "" {
-			return c, fault.New(400, "Session 内容不完整，请重新获取。")
-		}
+	if _, _, err := credentialToken(c, true); err != nil {
+		return c, err
+	}
+	if c.Mode == "session" {
 		c.AccessToken = ""
-		return c, nil
-	}
-	if c.Mode == "access_token" && strings.TrimSpace(c.AccessToken) != "" && len(c.AccessToken) <= 32000 {
+	} else {
 		c.Session = ""
-		return c, nil
 	}
-	return c, fault.New(400, "Session 内容无效，请重新获取。")
+	return c, nil
 }
 
 // Called only after the HTTP handler has checked order ownership. No order writes.
@@ -161,14 +155,18 @@ func (s *Service) Precheck(ctx context.Context, id, attempt string, c Credential
 		return PrecheckResult{}, err
 	}
 	if previous != nil && previous.ID == attempt {
-		raw := redemptionBody(*r.Remote, c, previous.Number > 1)
-		if expired(*previous) || previous.Hash != security.Hash(raw) {
+		raw := redemptionBody(*r.Remote, c, false)
+		legacy := redemptionBody(*r.Remote, c, previous.Number > 1)
+		if expired(*previous) || (previous.Hash != security.Hash(raw) && previous.Hash != security.Hash(legacy)) {
 			return PrecheckResult{}, orders.Conflict()
 		}
 		return PrecheckResult{State: "recovery", Code: "original_submission", Target: o.Plan}, nil
 	}
 	if previous != nil && (previous.Paused || (previous.Status != "rejected" && previous.Fallback == 0)) {
 		return PrecheckResult{}, orders.Conflict()
+	}
+	if _, _, err = credentialToken(c, false); err != nil {
+		return PrecheckResult{}, err
 	}
 	if err = credentialExpiry(c, time.Now()); err != nil {
 		return PrecheckResult{State: "expired", Code: "locally_expired", Target: o.Plan}, nil

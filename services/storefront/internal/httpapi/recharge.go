@@ -5,8 +5,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gptibo/storefront/internal/fault"
 	"gptibo/storefront/internal/orders"
-	"gptibo/storefront/internal/security"
 	"gptibo/storefront/internal/recharge"
+	"gptibo/storefront/internal/security"
 	"time"
 )
 
@@ -110,7 +110,7 @@ func registerRecharge(r *gin.Engine, group, admin *gin.RouterGroup, o orders.Ser
 				return
 			}
 			var in recharge.Input
-			if !readLimit(c, &in, 40000) {
+			if !readLimit(c, &in, recharge.CredentialBodyLimit) {
 				return
 			}
 			if e = o.Auth.Limit(c.Request.Context(), "recharge:"+access.OwnerHash, 90, 60); e != nil {

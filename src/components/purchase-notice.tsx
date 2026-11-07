@@ -47,6 +47,7 @@ export function PurchaseNotice({ plan, purchaseNote, supportsWarranty = true, ti
       <div className="purchase-notice-body">
         <div className="purchase-notice-emphasis"><Info size={16} aria-hidden="true" /><strong>{notice.emphasis}</strong></div>
         <ol className="purchase-notice-steps">{notice.steps.map(step => <li key={step}>{step}</li>)}</ol>
+        {['plus', 'pro-5x', 'pro-20x', 'pro-25x'].includes(plan) && <section className="purchase-notice-product" role="note"><h3>付款前确认充值凭据</h3><p>当前充值通道需要 sessionToken，只有 accessToken 的账号信息 JSON 不能用于充值。请先确认能在已登录 ChatGPT 的电脑浏览器中取得完整会话 Cookie 值，或已有包含 sessionToken 的 JSON；无法获取时请先联系支持，确认后再购买。</p></section>}
         {!supportsWarranty && <section className="purchase-notice-product" role="note"><h3>不支持售后质保</h3><p>该商品不支持售后质保，购买后无法提交售后申请。请确认接受此说明后再继续下单；如有疑问，请先联系商店客服。</p></section>}
         {purchaseNote?.trim() && <section className="purchase-notice-product"><h3>购买提醒</h3><p>{purchaseNote}</p></section>}
         <p className="purchase-notice-help">领取有疑问？请先联系支持，确认后再购买。</p>

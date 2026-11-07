@@ -56,6 +56,11 @@
 .live-session-validation p { display:flex; align-items:center; gap:5px; color:var(--muted-foreground); font-size:10px; line-height:1.7; }
 .live-session-validation svg { flex-shrink:0; }
 .live-session-validation p[role=alert] { color:var(--warning); }
+.live-credential-help { margin:10px 0 14px; color:var(--muted-foreground); font-size:12px; line-height:1.8; overflow-wrap:anywhere; }
+.live-credential-help summary { width:fit-content; cursor:pointer; color:var(--primary); }
+.live-credential-help ol { padding-left:20px; margin:8px 0; }
+.live-credential-help p { margin:8px 0 0; }
+.live-credential-help code { white-space:normal; overflow-wrap:anywhere; }
 .live-account { display:flex; align-items:center; gap:12px; padding:11px 14px; margin:8px 0 14px; background:color-mix(in srgb,var(--primary) 7%,var(--card)); border:1px solid color-mix(in srgb,var(--primary) 28%,var(--border)); border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.03); }
 .dark .live-account { background:color-mix(in srgb,var(--primary) 12%,var(--secondary)); border-color:color-mix(in srgb,var(--primary) 32%,var(--border)); }
 .live-account-avatar { display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background:color-mix(in srgb,var(--primary) 14%,var(--background)); color:var(--primary); flex-shrink:0; }

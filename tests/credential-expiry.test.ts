@@ -19,7 +19,7 @@ test('unknown dates and unreadable tokens do not fabricate an expiry verdict', (
 })
 
 test('checkout rejects expired input while original session and token recoveries preserve exact bytes', () => {
-  const token = jwt({ exp: 1 }), raw = '  ' + JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: token, expires: '2000-01-01T00:00:00Z' }) + '\n'
+  const token = jwt({ exp: 1 }), raw = '  ' + JSON.stringify({ user: { email: 'buyer@example.test' }, sessionToken: token, accessToken: token, expires: '2000-01-01T00:00:00Z' }) + '\n'
   assert.equal(checkoutSession(raw).credential, null)
   assert.match(checkoutSession(raw).problem, /已过期/)
   assert.deepEqual(checkoutSession(raw, 'session').credential, { mode: 'session', session: raw })

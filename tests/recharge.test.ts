@@ -19,7 +19,7 @@ import type { Env, Statement, Value } from '../worker/platform.ts'
 type Context = Parameters<Parameters<typeof test>[1]>[0]
 const secret = 'private-test-api-secret'
 const webhookSecret = 'private-test-webhook-secret'
-const session = JSON.stringify({ user: { email: 'target@example.test' }, accessToken: 'PRIVATE-TOKEN-NOT-FOR-STORAGE' })
+const session = JSON.stringify({ user: { email: 'target@example.test' }, sessionToken: 'PRIVATE-SESSION-TOKEN-NOT-FOR-STORAGE', accessToken: 'PRIVATE-TOKEN-NOT-FOR-STORAGE' })
 const digest = (s: string) => createHash('sha256').update(s).digest('hex')
 const mac = (s: string, key = secret) => createHmac('sha256', key).update(s).digest('hex')
 function setup(t: Context) {
@@ -121,14 +121,15 @@ test('a large pasted Session reaches the paid original order with account identi
   assert.equal(forwarded.length, 1)
   const upstream = JSON.parse(forwarded[0].body)
   assert.equal(upstream.credential.mode, 'session')
-  assert.deepEqual(JSON.parse(upstream.credential.session), core)
+  assert.equal(upstream.credential.session, core.sessionToken)
+  assert.equal(upstream.retry_confirmation, undefined)
   assert(forwarded[0].body.length < 40000)
   const recovered = checkoutSession(raw.replace('synthetic-extra-session-data', 'changed-extra-session-data'), 'session')
   assert.equal((await s.call(`/api/orders/${order.id}/fulfillment`, { ...request, credential: recovered.credential }, buyer)).status, 200)
   assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 1)
   assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
   assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions WHERE order_id=?').get(order.id)!.n, 1)
-  assert.doesNotMatch(JSON.stringify(s.db.prepare('SELECT * FROM recharge_redemptions').all()) + JSON.stringify(s.db.prepare('SELECT * FROM order_events').all()), /PRIVATE-TOKEN|synthetic-extra-session-data/)
+  assert.doesNotMatch(JSON.stringify(s.db.prepare('SELECT * FROM recharge_redemptions').all()) + JSON.stringify(s.db.prepare('SELECT * FROM order_events').all()), /PRIVATE-(?:SESSION-)?TOKEN|synthetic-extra-session-data/)
 })
 
 test('an uncertain compact Session can be recovered by re-pasting the original large input under the same key', async t => {
@@ -819,7 +820,7 @@ test('platform collection, actual payment verification and auto recharge stay in
   s.setTask('succeeded'); current = (await (await s.query(order.id, buyer)).json()).order
   assert.equal(current.status, 'success'); assert.equal(current.fulfillment.accountEmailMasked, 't***@example.test')
   assert.equal(JSON.stringify(current).includes('PRIVATE-TOKEN'), false); assert.equal(JSON.stringify(current).includes('110.00'), false); assert.equal(JSON.stringify(current).includes('ord_test'), false)
-  for (const table of ['orders','order_events','recharge_orders','recharge_redemptions','admin_audit']) assert.equal(JSON.stringify(s.db.prepare(`SELECT * FROM ${table}`).all()).includes('PRIVATE-TOKEN'), false)
+  for (const table of ['orders','order_events','recharge_orders','recharge_redemptions','admin_audit']) for (const marker of ['PRIVATE-TOKEN', 'PRIVATE-SESSION-TOKEN']) assert.equal(JSON.stringify(s.db.prepare(`SELECT * FROM ${table}`).all()).includes(marker), false)
   assert.equal(s.db.prepare("SELECT COUNT(*) n FROM order_events WHERE action='payment-confirmed'").get()!.n, 1)
   assert.equal((await s.call(`/api/orders/${order.id}/payment`, { action: 'create' }, buyer)).status, 409)
   assert.equal((await s.call(`/api/orders/${order.id}/demo-actions`, { action: 'pay', version: current.version }, buyer)).status, 403)
@@ -866,9 +867,8 @@ test('expired new credentials never create a redemption or call the supplier', a
   await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
   const token = 'e30.' + Buffer.from('{"exp":1}').toString('base64url') + '.fixture'
   for (const credential of [
-    { mode: 'session', session: JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: token }) },
-    { mode: 'session', session: JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: 'opaque', expires: '2000-01-01T00:00:00Z' }) },
-    { mode: 'access_token', access_token: token },
+    { mode: 'session', session: JSON.stringify({ user: { email: 'buyer@example.test' }, sessionToken: token }) },
+    { mode: 'session', session: JSON.stringify({ user: { email: 'buyer@example.test' }, sessionToken: 'opaque', expires: '2000-01-01T00:00:00Z' }) },
   ]) {
     const response = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential }, buyer)
     assert.equal(response.status, 400)
@@ -877,6 +877,44 @@ test('expired new credentials never create a redemption or call the supplier', a
   assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 0)
   assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions').get()!.n, 0)
   assert.equal(s.db.prepare('SELECT status FROM orders WHERE id=?').get(order.id)!.status, 'session')
+})
+
+test('Access Token only is rejected before creating another upstream recharge attempt', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  for (const credential of [{ mode: 'session', session: JSON.stringify({ user: { email: 'buyer@example.test' }, accessToken: 'PRIVATE-ACCESS-ONLY' }) }, { mode: 'access_token', access_token: 'PRIVATE-ACCESS-ONLY' }]) {
+    const response = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential }, buyer)
+    assert.equal(response.status, 400)
+    const data = await response.json(); assert.match(data.error, /sessionToken/); assert(!JSON.stringify(data).includes('PRIVATE-ACCESS-ONLY'))
+  }
+  assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 0)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions').get()!.n, 0)
+})
+
+test('legacy unknown credentials recover the exact old retry body only under its saved hash and key', async t => {
+  for (const mode of ['session', 'access_token']) await t.test(mode, async t => {
+    const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+    await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+    const legacy = mode === 'session' ? { mode, session: '{ "user":{"email":"buyer@example.test"}, "accessToken":"OLD-PRIVATE-TOKEN" }' } : { mode, access_token: ' OLD-PRIVATE-TOKEN ' }
+    const key = crypto.randomUUID(), raw = JSON.stringify({ mode: 'auto_recharge', order_id: 'ord_test', credential: legacy, customer_confirmed_email: true, retry_confirmation: true })
+    s.db.prepare('INSERT INTO recharge_redemptions(id,order_id,attempt_no,request_hash,credential_mode,created_at) VALUES(?,?,?,?,?,?)').run(key, order.id, 2, digest(raw), mode, Date.now())
+    const response = await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key, customerConfirmedEmail: true, credential: legacy }, buyer)
+    assert.equal(response.status, 200)
+    const sent = s.calls.filter(c => c.path === '/v1/redemptions')
+    assert.equal(sent.length, 1); assert.equal(sent[0].body, raw); assert.equal(sent[0].key, 'recharge:' + key)
+    assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions').get()!.n, 1)
+  })
+})
+
+test('the server extracts a Session Token above the old 32k bound and never sends unrelated JSON fields', async t => {
+  const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  const token = 's'.repeat(64000)
+  const response = await s.submit(order.id, buyer, crypto.randomUUID(), JSON.stringify({ auth: { sessionToken: token }, unrelated: 'DO-NOT-FORWARD' }))
+  assert.equal(response.status, 200)
+  const sent = s.calls.filter(c => c.path === '/v1/redemptions')
+  assert.equal(sent.length, 1); assert.equal(JSON.parse(sent[0].body).credential.session, token); assert(!sent[0].body.includes('DO-NOT-FORWARD'))
+  assert(!JSON.stringify(s.db.prepare('SELECT * FROM recharge_redemptions').all()).includes(token))
 })
 
 test('unknown recharge recovers identical bytes even after credential expiry', async t => {
@@ -902,7 +940,7 @@ test('unknown recharge keeps original key and body digest; other credentials/new
   const current = (await (await s.call('/api/orders/' + order.id, undefined, buyer)).json()).order
   assert.equal(current.status, 'processing'); assert.equal(current.fulfillment.retryKey, key)
   assert.equal((await s.submit(order.id, buyer)).status, 409)
-  assert.equal((await s.submit(order.id, buyer, key, session.replace('PRIVATE-TOKEN', 'CHANGED-TOKEN'))).status, 409)
+  assert.equal((await s.submit(order.id, buyer, key, session.replace('PRIVATE-SESSION', 'CHANGED-SESSION'))).status, 409)
   assert.equal((await s.submit(order.id, buyer, key)).status, 200)
   const calls = s.calls.filter(c => c.path === '/v1/redemptions'); assert.equal(calls.length, 2); assert.equal(calls[0].key, calls[1].key); assert.equal(calls[0].body, calls[1].body)
   assert.equal((await s.submit(order.id, buyer)).status, 409)
@@ -1478,7 +1516,7 @@ test('the original fulfillment list recovers an accepted submission whose respon
   assert.equal((await s.query(order.id, buyer)).status, 200)
   const saved = s.db.prepare('SELECT * FROM recharge_redemptions').get()!
   assert.equal(saved.id, key); assert.equal(saved.remote_id, 'ful_lost'); assert.equal(saved.status, 'queued')
-  assert.equal(saved.remote_attempt_no, 1); assert.equal(saved.request_hash, digest(JSON.stringify({ mode: 'auto_recharge', order_id: 'ord_test', credential: { mode: 'session', session }, customer_confirmed_email: true })))
+  assert.equal(saved.remote_attempt_no, 1); assert.equal(saved.request_hash, digest(JSON.stringify({ mode: 'auto_recharge', order_id: 'ord_test', credential: { mode: 'session', session: JSON.parse(session).sessionToken }, customer_confirmed_email: true })))
   assert.equal((await s.submit(order.id, buyer)).status, 409)
   assert.equal(s.calls.filter(c => c.path === '/v1/redemptions').length, 1)
 })

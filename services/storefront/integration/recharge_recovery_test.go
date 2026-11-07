@@ -41,7 +41,7 @@ func newRecoveryFixture(t *testing.T) recoveryFixture {
 		t.Fatal(err)
 	}
 	attempt := security.ID()
-	session := `{"user":{"email":"recharge@example.test"},"accessToken":"private-session-fixture"}`
+	session := `{"user":{"email":"recharge@example.test"},"sessionToken":"private-session-fixture","accessToken":"private-session-fixture"}`
 	object(t, request(h, "POST", "/api/orders/"+id+"/fulfillment", map[string]any{"action": "submit", "key": attempt, "customerConfirmedEmail": true, "credential": map[string]any{"mode": "session", "session": session}}, buyer), 200)
 	return recoveryFixture{owner, s, fake, h, admin, buyer, id, attempt, session}
 }
@@ -180,7 +180,7 @@ func TestRechargeAdminRetryUsesOriginalOrderAndPreventsDuplicates(t *testing.T) 
 	var first, second map[string]any
 	_ = json.Unmarshal([]byte(f.fake.bodies[0]), &first)
 	_ = json.Unmarshal([]byte(f.fake.bodies[1]), &second)
-	if first["retry_confirmation"] != nil || second["retry_confirmation"] != true || first["order_id"] != second["order_id"] || recharge.Raw(first["credential"]) != recharge.Raw(second["credential"]) || f.fake.keys[0] == f.fake.keys[1] {
+	if first["retry_confirmation"] != nil || second["retry_confirmation"] != nil || first["order_id"] != second["order_id"] || recharge.Raw(first["credential"]) != recharge.Raw(second["credential"]) || f.fake.keys[0] == f.fake.keys[1] {
 		t.Fatal("retry lost original credential/order or reused previous attempt key")
 	}
 	f.post(t, "retry", 409)

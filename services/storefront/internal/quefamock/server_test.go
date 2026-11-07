@@ -97,11 +97,11 @@ func TestMockRetryConfirmationIdempotencyAndCredentialDiscard(t *testing.T) {
 		t.Fatal("paused task accepted retry")
 	}
 	last.Paused = false
-	if call(s, "POST", "/v1/redemptions", body, "recharge:attempt-2").Code != 409 {
-		t.Fatal("new attempt accepted without manual confirmation")
+	if call(s, "POST", "/v1/redemptions", body, "recharge:attempt-2").Code != 202 || len(s.data.Orders["order"].Tasks) != 2 {
+		t.Fatal("explicit new attempt rejected without obsolete retry parameter")
 	}
-	if call(s, "POST", "/v1/redemptions", retryBody, "recharge:attempt-2").Code != 202 || len(s.data.Orders["order"].Tasks) != 2 {
-		t.Fatal("confirmed new attempt rejected")
+	if call(s, "POST", "/v1/redemptions", retryBody, "recharge:attempt-2").Code != 409 || len(s.data.Orders["order"].Tasks) != 2 {
+		t.Fatal("same key accepted a changed legacy body")
 	}
 	saved, err := os.ReadFile(filepath.Join(s.directory, "state.json"))
 	if err != nil || strings.Contains(string(saved), "sensitive_fixture_not_saved") {
