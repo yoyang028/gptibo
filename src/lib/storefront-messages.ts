@@ -100,6 +100,8 @@ export const englishMessages: Readonly<Record<string, string>> = {
   '我知道了': 'Got it',
   '关闭弹窗': 'Close dialog',
   '这间商店暂不可用': 'This store is currently unavailable',
+  '这间商店暂未开放': 'This store is not open yet',
+  '商店正在准备中，已有订单仍可查询。': 'This store is being prepared. Existing orders are still available.',
   '推广链接可能有误，或代理已暂停服务。已有订单仍可在平台查询。': 'The referral link may be incorrect, or this seller has paused service. You can still look up existing orders on the platform.',
   '返回平台商店': 'Go to the main store',
   '查询已有订单': 'Find existing orders',

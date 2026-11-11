@@ -16,6 +16,8 @@ const credential = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
 async function setup() {
   const db = new DatabaseSync(':memory:')
   for (const file of readdirSync(new URL('../migrations/', import.meta.url)).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8'))
+  // Runtime audit assertions start after migration-generated audit entries.
+  db.exec('DELETE FROM admin_audit')
   const bound = new WeakMap<Statement, { sql: string; values: Value[] }>()
   const env: Env = {
     ORDER_TESTING_ENABLED: 'true', ASSETS: { fetch: async () => new Response('asset') }, ADMIN_EMAIL: 'admin@example.invalid', ADMIN_USERNAME: 'tester', ADMIN_TOTP_SECRET: credential,

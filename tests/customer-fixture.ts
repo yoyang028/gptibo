@@ -5,9 +5,10 @@ import { hash,randomToken,type Env,type Statement,type Value } from '../worker/p
 import { totpCode } from '../worker/totp.ts'
 import { seedAdminEmailCode } from './admin-email-fixture.ts'
 
-export async function customerFixture() {
+export async function customerFixture({ openAllOwnerStores = false } = {}) {
   const db=new DatabaseSync(':memory:');db.exec('PRAGMA foreign_keys=ON')
   for(const file of readdirSync(new URL('../migrations/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'))
+  if(openAllOwnerStores)db.exec("UPDATE owner_shop_settings SET settings=json_set(settings,'$.active',json('true')),version=0 WHERE id IN ('store-2','store-3')")
   const states=new WeakMap<Statement,{sql:string;values:Value[]}>()
   const credential='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
   const env:Env={ADMIN_EMAIL: 'admin@example.invalid', ADMIN_USERNAME:'local-test',ADMIN_TOTP_SECRET:credential,PARTNER_AUTH_SECRET:'local-fixture-only-32-character-secret',ORDER_TESTING_ENABLED:'true',ASSETS:{fetch:async()=>new Response('asset')},INTEREST_LIMITER:{limit:async()=>({success:true})},API_LIMITER:{limit:async()=>({success:true})},EXPENSIVE_LIMITER:{limit:async()=>({success:true})},INTEREST_DB:{

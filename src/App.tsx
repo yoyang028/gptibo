@@ -29,7 +29,7 @@ import { orderLabel, ORDER_PLANS, type OrderAction, type PlanId } from '@/lib/de
 import { applyAppearance } from '@/lib/appearance'
 import { useScrollReveal } from '@/lib/use-scroll-reveal'
 import { useStore } from '@/lib/use-store'
-import { canonicalStorefrontUrl, storefrontHref } from '@/lib/storefront-routing'
+import { canonicalStorefrontUrl, storefrontHref, storefrontShopSlug } from '@/lib/storefront-routing'
 import { trackVisitor } from '@/lib/visitor-tracking'
 import { isClosedHomepage } from '@/components/site-closed'
 import './App.css'
@@ -70,7 +70,7 @@ function App() {
   const [selected, setSelected] = useState<PlanId>('plus')
   const store = useStore(page)
   const partnerSlug = store.partner?.slug
-  const mainShop = !store.partner
+  const mainShop = !store.partner && storefrontShopSlug(location.pathname) === undefined
   const shopIdentity = store.partner ?? store.shop
   const platformBrand = store.catalogReady && !shopIdentity
   const brandName = shopIdentity?.brandName || (platformBrand ? 'GPTibo' : t('商店'))
@@ -141,6 +141,7 @@ function App() {
   const onAction = (id: string, action: OrderAction) => { void store.action(id, action) }
   const filtered = orders.filter(o => o.id.toLowerCase().includes(query.toLowerCase().trim()) && (filter === 'all' || (filter === 'refund' ? Boolean(o.refundHold || o.refundedCents) : filter === 'active' ? ['pending', 'session', 'processing', 'failed'].includes(o.status) && (o.refundedCents ?? 0) < Math.round(o.price * 100) : o.status === 'success' && (o.refundedCents ?? 0) < Math.round(o.price * 100))))
   if (store.shopUnavailable) return <main className="empty-orders page-width"><div className="brand footer-brand"><ShopBrand name={t('商店')} /></div><h1>{t('这间商店暂不可用')}</h1><p>{t('推广链接可能有误，或代理已暂停服务。已有订单仍可在平台查询。')}</p><div className="unavailable-shop-links"><a href="/">{t('返回平台商店')}<ArrowRight size={15} /></a><a href="/orders">{t('查询已有订单')}<ArrowRight size={15} /></a></div></main>
+  if (store.shopPaused && page !== 'orders') return <main className="empty-orders page-width"><div className="brand footer-brand"><ShopBrand name={brandName} /></div><h1>{t('这间商店暂未开放')}</h1><p>{t('商店正在准备中，已有订单仍可查询。')}</p><div className="unavailable-shop-links"><a href={storefrontHref('orders')}>{t('查询已有订单')}<ArrowRight size={15} /></a></div></main>
   return <div className={`store-layout${page === 'product/chatgpt' || page === 'check' ? ' check-nav-context' : ''}`}>
     <a href="#main-content" className="skip-link" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus() }}>{t('跳转至内容')}</a>
     <header className="site-header"><div className="header-inner">

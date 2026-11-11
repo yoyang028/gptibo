@@ -112,6 +112,51 @@ function setup(t: Context) {
   return { db, env, call, buyer, create, query, submit, login, partner, notice, calls, products, remoteOrder, redemption, faceToFace: () => { faceToFace = true }, quote: (patch: Record<string, unknown>) => { quotePatch = patch }, setExpiry: (value: number) => { expiry = new Date(value).toISOString() }, setQr: (value: string | null) => { qr = value }, setPayment: (v: string) => { payment = v }, setTask: (v: string, retry = false) => { taskStatus = v; fallback = retry }, setRefund: (v: string) => { refundStatus = v }, override: (v: typeof override) => { override = v } }
 }
 
+test('general storefront checkout retains its own retail price and completes through signed callbacks and the repaired Session contract', async t => {
+  const s = setup(t), buyer = await s.buyer()
+  s.db.prepare("UPDATE owner_store_prices SET price_cents=14900,enabled=1 WHERE store_id='store-3' AND plan='plus'").run()
+  const response = await s.call('/api/orders', { partner: 'store-3', plan: 'plus', expectedPrice: 14900, email: 'buyer@example.test', key: crypto.randomUUID() }, buyer)
+  assert.equal(response.status, 201, await response.clone().text())
+  const { order } = await response.json()
+  assert.equal(order.price, 149)
+  assert.equal(s.db.prepare('SELECT owner_store_id FROM orders WHERE id=?').get(order.id)!.owner_store_id, 'store-3')
+  const snapshot = JSON.parse(String(s.db.prepare('SELECT create_body FROM recharge_orders WHERE order_id=?').get(order.id)!.create_body))
+  assert.equal(snapshot.sale_amount, '149.00')
+  assert.equal(snapshot.notify_url, s.env.RECHARGE_NOTIFY_URL)
+  await s.query(order.id, buyer)
+  const webhook = (event: string, kind: string, valid = true) => {
+    const stamp = String(Math.floor(Date.now()/1000)), raw = JSON.stringify({ event_id: event, type: kind, data: { order_id: 'ord_test', merchant_order_no: order.id } })
+    return worker.fetch(new Request('https://shop.example.invalid/api/recharge/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Quefa-Event': kind, 'X-Quefa-Event-Id': event, 'X-Quefa-Delivery': 'dlv_' + event, 'X-Quefa-Timestamp': stamp, 'X-Quefa-Signature': `t=${stamp},v1=${valid ? mac(stamp + '.' + raw, webhookSecret) : '0'.repeat(64)}` }, body: raw }), s.env)
+  }
+  assert.equal((await webhook('evt_bad', 'order.paid', false)).status, 400)
+  assert.equal((await webhook('evt_paid_general', 'order.paid')).status, 200)
+  assert.equal((await s.query(order.id, buyer)).status, 200)
+  assert.equal(s.db.prepare('SELECT payment_status FROM orders WHERE id=?').get(order.id)!.payment_status, 'unpaid', 'a signed event does not override authoritative upstream state')
+  s.setPayment('paid')
+  assert.equal((await webhook('evt_paid_general_2', 'order.paid')).status, 200)
+  const notified = s.db.prepare('SELECT notify_version FROM recharge_orders WHERE order_id=?').get(order.id)!.notify_version
+  assert.equal((await webhook('evt_paid_general_2', 'order.paid')).status, 200)
+  assert.equal(s.db.prepare('SELECT notify_version FROM recharge_orders WHERE order_id=?').get(order.id)!.notify_version, notified)
+  await s.query(order.id, buyer)
+  assert.equal((await s.call(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: {mode:'session',session} }, buyer, undefined, null)).status, 426)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions').get()!.n, 0)
+  const parsed = checkoutSession(JSON.stringify({ ...JSON.parse(session), featureFlags: 'x'.repeat(300000) }))
+  const submission = { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: parsed.credential }
+  assert.equal((await s.call(`/api/orders/${order.id}/fulfillment`, submission, buyer)).status, 200)
+  assert.equal((await s.call(`/api/orders/${order.id}/fulfillment`, submission, buyer)).status, 200)
+  const forwarded = s.calls.filter(c => c.path === '/v1/redemptions')
+  assert.equal(forwarded.length, 1)
+  assert.equal(JSON.parse(forwarded[0].body).credential.session, JSON.parse(session).sessionToken)
+  s.setTask('succeeded')
+  assert.equal((await webhook('evt_general_success', 'redemption.succeeded')).status, 200)
+  const final = await (await s.query(order.id, buyer)).json()
+  assert.equal(final.order.status, 'success')
+  assert.equal(final.order.paymentStatus, 'paid')
+  assert.equal(s.db.prepare('SELECT owner_store_id FROM orders WHERE id=?').get(order.id)!.owner_store_id, 'store-3')
+  assert.equal(s.calls.filter(c => c.path === '/v1/orders').length, 1)
+  assert.doesNotMatch(JSON.stringify(s.db.prepare('SELECT * FROM recharge_redemptions').all()) + JSON.stringify(s.db.prepare('SELECT * FROM order_events').all()), /PRIVATE-(?:SESSION-)?TOKEN|featureFlags/)
+})
+
 test('a stale frontend that drops the Session Token is stopped before creating any recharge task', async t => {
   const s = setup(t); const buyer = await s.buyer(); const order = await s.create(buyer)
   await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)

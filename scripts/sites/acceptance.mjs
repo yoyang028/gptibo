@@ -42,6 +42,11 @@ try {
   assert.equal(credentials.localOnly, true)
   await adminPage.getByLabel('2FA 验证码', { exact: true }).fill(totp(credentials.totp))
   await adminPage.getByRole('button', { name: '登录后台', exact: true }).click()
+  // This historical three-store capability test opens the reserved shop only in
+  // the isolated preview; production launch state is covered by checkout-acceptance.
+  const registry = await get(admin, '/api/admin/my-shop/stores')
+  const reserved = registry.stores.find(s => s.id === 'store-2')
+  if (!reserved.active) await post(admin, '/api/admin/my-shop/stores', { ...reserved, active: true })
   await adminPage.getByRole('button', { name: '我的店铺', exact: true }).click()
   await adminPage.locator('.store-overview-row').nth(2).waitFor()
   assert.equal(await adminPage.locator('.store-overview-row').count(), 3)

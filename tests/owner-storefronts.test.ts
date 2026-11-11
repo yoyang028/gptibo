@@ -1,9 +1,52 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { customerFixture } from './customer-fixture.ts'
+import { DatabaseSync } from 'node:sqlite'
+import { readFileSync, readdirSync } from 'node:fs'
+
+test('two-store launch preserves academic settings and prices while clearing academic copy from the general store', () => {
+  const db = new DatabaseSync(':memory:')
+  try {
+    for (const name of readdirSync(new URL('../migrations/', import.meta.url)).filter(n => n.endsWith('.sql') && n < '0060').sort()) db.exec(readFileSync(new URL('../migrations/' + name, import.meta.url), 'utf8'))
+    const academic = JSON.stringify({ name: 'ScholAI', active: true, description: '面向研究生的科研服务', announcement: 'ScholAI 科研公告', logo: 'academic-logo', email: 'owner@example.test' })
+    db.prepare('UPDATE owner_shop_settings SET settings=?').run(academic)
+    const root = db.prepare("SELECT * FROM owner_shop_settings WHERE id='platform'").get()
+    const prices = db.prepare('SELECT * FROM owner_store_prices ORDER BY store_id,plan').all()
+    db.exec(readFileSync(new URL('../migrations/0060_two_active_storefronts.sql', import.meta.url), 'utf8'))
+    assert.deepEqual(db.prepare("SELECT * FROM owner_shop_settings WHERE id='platform'").get(), root)
+    assert.deepEqual(db.prepare('SELECT * FROM owner_store_prices ORDER BY store_id,plan').all(), prices)
+    const reserved = JSON.parse(String(db.prepare("SELECT settings FROM owner_shop_settings WHERE id='store-2'").get()!.settings))
+    const general = JSON.parse(String(db.prepare("SELECT settings FROM owner_shop_settings WHERE id='store-3'").get()!.settings))
+    assert.equal(reserved.active, false)
+    assert.equal(general.active, true)
+    assert.equal(general.name, '通用商店')
+    assert.equal(general.email, 'owner@example.test')
+    assert.equal(general.logo, '')
+    assert.doesNotMatch([general.name,general.brandName,general.pageTitle,general.headline,general.description,general.announcementTitle,general.announcement].join(' '), /ScholAI|研究生|科研|学术/i)
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM admin_audit WHERE id LIKE 'two-store-launch-20261112:%'").get()!.n, 2)
+  } finally { db.close() }
+})
+
+test('the reserved storefront is closed by default and direct checkout remains blocked', async () => {
+  const f = await customerFixture()
+  try {
+    f.db.exec("UPDATE catalog_plans SET enabled=1 WHERE id='plus'; UPDATE owner_store_prices SET enabled=1 WHERE plan='plus'")
+    const catalog = await (await f.request('/api/catalog?partner=store-2')).json() as any
+    assert.equal(catalog.active, false)
+    assert.equal(catalog.checkoutEnabled, false)
+    assert(catalog.plans.every((p: any) => !p.enabled))
+    const buyer = (await f.request('/api/orders/client', {})).headers.get('set-cookie')!.split(';')[0]
+    const response = await f.request('/api/orders', { partner: 'store-2', plan: 'plus', expectedPrice: 13900, email: 'buyer@example.test', key: crypto.randomUUID() }, buyer)
+    assert.equal(response.status, 409)
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 0)
+    const general = await (await f.request('/api/catalog?partner=store-3')).json() as any
+    assert.equal(general.active, true)
+    assert.equal(general.checkoutEnabled, true)
+  } finally { f.db.close() }
+})
 
 async function fixture() {
-  const f = await customerFixture()
+  const f = await customerFixture({ openAllOwnerStores: true })
   f.db.prepare("UPDATE catalog_plans SET enabled=1,price_cents=2000 WHERE id='plus'").run()
   f.db.prepare("UPDATE owner_store_prices SET enabled=1,price_cents=CASE WHEN store_id='store-2' THEN 2500 ELSE 3000 END WHERE plan='plus'").run()
   async function read(path: string, cookie = f.admin) { const r = await f.request(path, undefined, cookie); assert.equal(r.status, 200, await r.clone().text()); return r.json() as Promise<any> }

@@ -11,6 +11,8 @@ import type { Env, Statement, Value } from '../worker/platform.ts'
 function fixture(t: TestContext) {
   const db = new DatabaseSync(':memory:')
   for (const file of readdirSync(new URL('../migrations/', import.meta.url)).filter(f => f.endsWith('.sql')).sort()) db.exec(readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8'))
+  // Runtime audit assertions start after migration-generated audit entries.
+  db.exec('DELETE FROM admin_audit')
   t.after(() => db.close())
   const statements = new WeakMap<Statement, { sql: string; values: Value[] }>()
   const env: Env = {
