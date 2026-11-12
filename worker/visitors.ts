@@ -1,4 +1,5 @@
 import { ApiError, body, hash, json, type Env } from './platform.ts'
+import { storefrontSelection } from './storefront-hosts.ts'
 
 const localDay = (time: number) => new Date(time + 8 * 3600000).toISOString().slice(0, 10)
 const daysAgo = (days: number) => localDay(Date.now() - (days - 1) * 86400000)
@@ -18,8 +19,9 @@ export async function recordVisitor(request: Request, env: Env) {
   const match = path.match(/^\/(?:r|s)\/([^/]+)(?:\/(?:orders|check|product\/[a-z0-9-]+))?$/)
   if (!match && path !== '/' && path !== '/orders' && path !== '/check' && !/^\/product\/[a-z0-9-]+$/.test(path)) throw new ApiError('页面路径无效。')
   let shopId = 'platform'
-  if (match) {
-    const partner = await env.INTEREST_DB.prepare('SELECT id FROM partners WHERE slug=?1 AND active=1 UNION ALL SELECT id FROM owner_shop_settings WHERE slug=?1').bind(match[1]).first<{ id: string }>()
+  const selection = storefrontSelection(request, env, match?.[1])
+  if (selection) {
+    const partner = await env.INTEREST_DB.prepare('SELECT id FROM partners WHERE slug=?1 AND active=1 UNION ALL SELECT id FROM owner_shop_settings WHERE slug=?1').bind(String(selection)).first<{ id: string }>()
     if (!partner) throw new ApiError('代理商店不可用。', 404)
     shopId = partner.id
   }

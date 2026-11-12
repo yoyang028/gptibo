@@ -33,7 +33,7 @@ export function useStore(page: string) {
   const [partner, setPartner] = useState<{ name: string; slug: string; brandName?: string; logo?: string; pageTitle?: string; headline?: string; description?: string }>()
   const [productArtwork, setProductArtwork] = useState<ProductArtworkMap>({})
   const [products, setProducts] = useState<ShopProduct[]>([])
-  const [shop, setShop] = useState<{name:string;brandName:string;logo:string;pageTitle:string;headline:string;description:string}>()
+  const [shop, setShop] = useState<{id?:string;name:string;brandName:string;logo:string;pageTitle:string;headline:string;description:string}>()
   const [catalogReady, setCatalogReady] = useState(false)
   const [supportContacts, setSupportContacts] = useState<SupportContacts>()
   const [announcement, setAnnouncement] = useState<AnnouncementSettings | null>(null)

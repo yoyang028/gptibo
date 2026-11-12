@@ -110,7 +110,9 @@ export async function ownerPublicSettings(env: Env, storeId = 'platform') {
   const settings = await ownerShop(env, storeId)
   const known = await ownerProductIds(env)
   return {
+    ownerStoreId: storeId,
     shop: {
+      id: storeId,
       name: settings.name,
       brandName: settings.brandName || settings.name,
       logo: settings.logo,

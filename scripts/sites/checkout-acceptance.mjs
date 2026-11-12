@@ -12,12 +12,14 @@ import {RECHARGE_INPUT_VERSION,RECHARGE_INPUT_VERSION_HEADER} from '../../shared
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..')
 if(process.platform==='win32')assert.match(root,/^D:\\/i)
-const evidence=path.join(root,'artifacts/sites/evidence/two-stores-checkout'),runtime=path.join(evidence,'runs',randomUUID())
+const domainMode=process.argv.includes('--domains')
+const evidence=path.join(root,'artifacts/sites/evidence',domainMode?'storefront-domains':'two-stores-checkout'),runtime=path.join(evidence,'runs',randomUUID())
 fs.mkdirSync(path.join(runtime,'tmp'),{recursive:true})
 Object.assign(process.env,{TEMP:path.join(runtime,'tmp'),TMP:path.join(runtime,'tmp'),XDG_CONFIG_HOME:path.join(runtime,'config'),WRANGLER_LOG_PATH:path.join(runtime,'wrangler.log'),WRANGLER_SEND_METRICS:'false'})
 const {unstable_splitSqlQuery}=await import('wrangler')
 const require=createRequire(import.meta.url),{chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH||'D:/ChatGPT/CodexCache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const origin='https://127.0.0.1:8811',upstream='https://recharge.example.invalid',secret='local-signing-fixture-only',webhookSecret='local-webhook-fixture-only'
+const generalOrigin=domainMode?'https://localhost:8811':origin
 const tls=path.join(root,'artifacts/local/.secrets/quefa-cloudflare-mock')
 const digest=value=>createHash('sha256').update(value).digest('hex'),mac=(value,key=secret)=>createHmac('sha256',key).update(value).digest('hex')
 const orders=new Map(),tasks=new Map(),orderKeys=new Map(),taskKeys=new Map()
@@ -69,7 +71,7 @@ const mf=new Miniflare({...convertV4MiniflareOptions({host:'127.0.0.1',port:8811
  d1Databases:{INTEREST_DB:'two-store-checkout-fixture'},
  ratelimits:{INTEREST_LIMITER:{namespace_id:'4001',simple:{limit:30,period:60}},API_LIMITER:{namespace_id:'4002',simple:{limit:1000,period:60}},EXPENSIVE_LIMITER:{namespace_id:'4003',simple:{limit:1000,period:60}}},
  assets:{directory:path.join(root,'dist'),binding:'ASSETS',run_worker_first:['/api/*'],routerConfig:{has_user_worker:true},assetConfig:{not_found_handling:'single-page-application'}},
- bindings:{ORDER_TESTING_ENABLED:'false',RECHARGE_API_BASE:upstream+'/v1',RECHARGE_PARTNER_ID:'pt_local_only',RECHARGE_KEY_ID:'key_local_only',RECHARGE_CLIENT_SECRET:secret,RECHARGE_WEBHOOK_SECRET:webhookSecret,RECHARGE_NOTIFY_URL:origin+'/api/recharge/webhook',RECHARGE_PRODUCT_MAP:'{"plus":"demo_plus"}',RECHARGE_COLLECTION_MODE:'platform_collect',RECHARGE_CHECKOUT_ENABLED:'true',RECHARGE_READ_ONLY:'false'},outboundService:outbound}),telemetry:{enabled:false},resourcePersistencePath:path.join(runtime,'state'),resourceTmpPath:path.join(runtime,'tmp')})
+ bindings:{...(domainMode?{OWNER_STOREFRONT_HOSTS:JSON.stringify({localhost:'store-3'})}:{}),ORDER_TESTING_ENABLED:'false',RECHARGE_API_BASE:upstream+'/v1',RECHARGE_PARTNER_ID:'pt_local_only',RECHARGE_KEY_ID:'key_local_only',RECHARGE_CLIENT_SECRET:secret,RECHARGE_WEBHOOK_SECRET:webhookSecret,RECHARGE_NOTIFY_URL:origin+'/api/recharge/webhook',RECHARGE_PRODUCT_MAP:'{"plus":"demo_plus"}',RECHARGE_COLLECTION_MODE:'platform_collect',RECHARGE_CHECKOUT_ENABLED:'true',RECHARGE_READ_ONLY:'false'},outboundService:outbound}),telemetry:{enabled:false},resourcePersistencePath:path.join(runtime,'state'),resourceTmpPath:path.join(runtime,'tmp')})
 let browser,page
 try{
  await mf.ready
@@ -81,11 +83,12 @@ try{
   db.prepare("UPDATE owner_shop_settings SET settings=json_set(settings,'$.name','ScholAI','$.brandName','ScholAI','$.headline','少研究工具，多专注科研。','$.description','面向研究生与科研人员的服务') WHERE id='platform'")])
  browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||'C:/Program Files/Google/Chrome/Application/chrome.exe',env:process.env})
  const context=await browser.newContext({baseURL:origin,ignoreHTTPSErrors:true,locale:'zh-CN',viewport:{width:1440,height:1000}})
- await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.protocol.startsWith('http')&&url.origin!==origin){result.externalRequests.push(url.origin);return route.abort()}return route.continue()})
+ await context.route('**/*',route=>{const url=new URL(route.request().url());if(url.protocol.startsWith('http')&&![origin,generalOrigin].includes(url.origin)){result.externalRequests.push(url.origin);return route.abort()}return route.continue()})
  page=await context.newPage();page.on('pageerror',e=>result.pageErrors.push(e.message))
+ let shopOrigin=origin
  async function call(url,data,expected=200,confirmedReplay=false){
   for(let attempt=0;attempt<8;attempt++){
-   const r=await context.request.fetch(url,{method:data===undefined?'GET':'POST',headers:{Origin:origin,Connection:'close',...(data?.action==='submit'?{[RECHARGE_INPUT_VERSION_HEADER]:RECHARGE_INPUT_VERSION}:{})},...(data===undefined?{}:{data})}),body=await r.json()
+   const r=await context.request.fetch(new URL(url,shopOrigin).href,{method:data===undefined?'GET':'POST',headers:{Origin:shopOrigin,Connection:'close',...(data?.action==='submit'?{[RECHARGE_INPUT_VERSION_HEADER]:RECHARGE_INPUT_VERSION}:{})},...(data===undefined?{}:{data})}),body=await r.json()
    if(r.status()===409&&body.error?.includes('正在同步')&&(data===undefined||['poll','query'].includes(data.action)||confirmedReplay)){await new Promise(resolve=>setTimeout(resolve,150));continue}
    assert.equal(r.status(),expected,JSON.stringify(body));return body
   }
@@ -103,7 +106,8 @@ try{
  await page.screenshot({path:path.join(evidence,'reserved-store.png')})
  record('Reserved storefront shows a closed page and rejects direct order creation')
  for(const [slug,price] of [['store-3',14900],['',13900]]){
-  const base=slug?'/s/'+slug:''
+  shopOrigin=slug?generalOrigin:origin
+  const base=shopOrigin+(slug&&!domainMode?'/s/'+slug:'')
   await page.goto(base+'/product/chatgpt')
   await page.getByRole('button',{name:'立即购买',exact:true}).click();await page.getByRole('button',{name:'继续下单',exact:true}).click()
   // The real checkout allows common mailbox domains. This address is never
@@ -126,7 +130,7 @@ try{
   assert.equal((await db.prepare('SELECT notify_version FROM recharge_orders WHERE order_id=?').bind(order.id).first()).notify_version,notified)
   await call(route+'/fulfillment',{action:'poll'})
   await page.locator('#live-session').waitFor()
-  const stale=await context.request.post(route+'/fulfillment',{headers:{Origin:origin,Connection:'close'},data:{action:'submit',key:randomUUID(),customerConfirmedEmail:true,credential:{mode:'session',session:sessionToken}}})
+  const stale=await context.request.post(new URL(route+'/fulfillment',shopOrigin).href,{maxRetries:2,headers:{Origin:shopOrigin,Connection:'close'},data:{action:'submit',key:randomUUID(),customerConfirmedEmail:true,credential:{mode:'session',session:sessionToken}}})
   assert.equal(stale.status(),426)
   const raw=JSON.stringify({user:{email:'demo@example.invalid'},accessToken:'LOCAL_ONLY_UNSUPPORTED_ACCESS_TOKEN',sessionToken,featureFlags:'x'.repeat(300000)})
   await page.locator('#live-session').fill(JSON.stringify({accessToken:'LOCAL_ONLY_UNSUPPORTED_ACCESS_TOKEN'}))
@@ -148,7 +152,7 @@ try{
   await page.goto(base+'/orders');await page.locator('.order-row').filter({hasText:order.id}).waitFor()
   record((slug?'General':'Academic')+' shop: UI checkout, own price, signed payment and completion callbacks, repaired Session extraction, stale-page guard and duplicate prevention all pass')
  }
- await page.goto('/s/store-3');await page.getByRole('button',{name:'通用商店 首页',exact:true}).waitFor()
+ await page.goto(generalOrigin+(domainMode?'/':'/s/store-3'));await page.getByRole('button',{name:'通用商店 首页',exact:true}).waitFor()
  await page.locator('.store-intro h1').filter({hasText:'按需选择，轻松下单。'}).waitFor()
  assert.doesNotMatch(await page.locator('body').innerText(),/ScholAI|科研|研究生|学术/i)
  assert.doesNotMatch(await page.title(),/ScholAI|科研|研究生|学术/i)

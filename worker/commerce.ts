@@ -1,4 +1,5 @@
 import { ownerStorefrontRoutes } from './owner-storefronts.ts'
+import { storefrontHostStore, storefrontSelection } from './storefront-hosts.ts'
 import { resolveOwnerStore, ownerStoreOffer, ownerCheckoutGuard } from './owner-store-prices.ts'
 import { partnerStore } from './partner-stores.ts'
 import { SMS_PRODUCT_IDS } from '../shared/grizzly-sms.ts'
@@ -129,16 +130,17 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       return await admin(request, env, url)
     }
     if (path === '/api/catalog' && method === 'GET') {
+      const selection = storefrontSelection(request, env, url.searchParams.get('partner'))
+      const ownerStoreId = await resolveOwnerStore(env, selection)
       if(url.searchParams.get('brand-logo')==='1') {
-        const owner=await ownerShop(env)
+        const owner=await ownerShop(env, ownerStoreId ?? 'platform')
         const match=owner.logo.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/)
         if(match)return new Response(Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0)),{headers:{'Content-Type':match[1],'Cache-Control':'public,max-age=300','X-Content-Type-Options':'nosniff'}})
         return env.ASSETS.fetch(new Request(new URL('/email-logo.png',url)))
       }
-      if(url.searchParams.get('identity')==='1')return json({shop:(await ownerPublicSettings(env)).shop})
+      if(url.searchParams.get('identity')==='1')return json({shop:(await ownerPublicSettings(env, ownerStoreId ?? 'platform')).shop,ownerStoreId})
       const started = performance.now()
-      const ownerStoreId = await resolveOwnerStore(env, url.searchParams.get('partner'))
-      const partner = ownerStoreId ? null : await resolvePartner(env, url.searchParams.get('partner'))
+      const partner = ownerStoreId ? null : await resolvePartner(env, selection)
       const live = supplierCheckoutEnabled(env)
       const testing = env.ORDER_TESTING_ENABLED === 'true'
       const email = emailCheckoutEnabled(env), gmail = gmailCheckoutEnabled(env), delivery_supplier = delivery_supplierCheckoutEnabled(env)
@@ -172,17 +174,19 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       return json({ ok: true }, 200, { 'Set-Cookie': cookie(request, 'buyer', token, 365 * 86400) })
     }
     if (!path.startsWith('/api/orders')) throw new ApiError('未找到接口。', 404)
+    const hostStore = storefrontHostStore(request, env) ?? null
+    storefrontSelection(request, env)
     const recovery = await recoveryRoutes(request, env, path)
     if (recovery) return recovery
     const { ownerHash, email: recoveredEmail } = await buyerAccess(request, env)
-    if (path === '/api/orders/coupon-quote' && method==='POST') {const data=await body(request);const storeId=await resolveOwnerStore(env,data.partner);if(!storeId)throw new ApiError('此优惠码仅适用于自营店铺。',409);return json(await couponQuote(env,String(data.plan),emailValue(data.email),data.code,storeId))}
+    if (path === '/api/orders/coupon-quote' && method==='POST') {const data=await body(request);const storeId=await resolveOwnerStore(env,storefrontSelection(request,env,data.partner));if(!storeId)throw new ApiError('此优惠码仅适用于自营店铺。',409);return json(await couponQuote(env,String(data.plan),emailValue(data.email),data.code,storeId))}
     if (path === '/api/orders/xgift/eligibility' && method === 'POST') {
       const data = await body(request,20000)
       if (!(await env.INTEREST_LIMITER.limit({ key: 'xgift-check:' + await hash(request.headers.get('CF-Connecting-IP') ?? ownerHash) })).success) throw new ApiError('检测较频繁，请稍后再试。', 429)
       return json(await preflightXGift(env, ownerHash, data))
     }
     if (path === '/api/orders' && method === 'GET') {
-      const rows = (await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE is_test=0 AND (owner_hash = ? OR customer_email = ?) ORDER BY created_at DESC LIMIT 100').bind(ownerHash, recoveredEmail).all<Order>()).results
+      const rows = (await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE is_test=0 AND (owner_hash = ? OR customer_email = ?) AND (? IS NULL OR (partner_id IS NULL AND owner_store_id=?)) ORDER BY created_at DESC LIMIT 100').bind(ownerHash, recoveredEmail, hostStore, hostStore).all<Order>()).results
       let synced = 0
       const syncErrors = new Set<string>()
       const settled = await Promise.all(rows.map(async row => {
@@ -198,6 +202,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     }
     if (path === '/api/orders' && method === 'POST') {
       const data = await body(request,20000)
+      data.partner = storefrontSelection(request, env, data.partner)
       const rateKey = 'orders:' + await hash(request.headers.get('CF-Connecting-IP') ?? 'local')
       if (!(await env.INTEREST_LIMITER.limit({ key: rateKey })).success) throw new ApiError('创建订单较频繁，请稍后再试。', 429)
       if (typeof data.plan !== 'string' || typeof data.key !== 'string' || !/^[a-f0-9-]{36}$/.test(data.key)) throw new ApiError('商品或请求编号无效。')
@@ -256,6 +261,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     const match = path.match(/^\/api\/orders\/([A-Z0-9-]+)(\/demo-actions|\/refunds|\/payment|\/fulfillment|\/custom-action)?$/)
     if (match) {
       let o = await getOrder(env, match[1], ownerHash, recoveredEmail)
+      if (hostStore && (o.partner_id || o.owner_store_id !== hostStore)) throw new ApiError('未找到订单。', 404)
       if (match[2]==='/custom-action'&&method==='POST'&&customProductId.test(o.plan))return json({order:await customerOrder(env,await customBuyerAction(request,env,o))})
       if (!match[2]&&method==='GET'&&customProductId.test(o.plan)) {await fulfillCustomOrder(env,o.id);return json({order:await customerOrder(env,await getOrder(env,o.id))})}
       if (match[2] === '/payment') {
