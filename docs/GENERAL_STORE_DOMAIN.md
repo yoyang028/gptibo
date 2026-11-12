@@ -1,6 +1,15 @@
 # 通用商店域名接入
 
-`scholai.vip` 已由店主在 Spaceship 购买，用于通用商店 `store-3`。科研店继续使用 `shop.scholai.top`，预留店 `store-2` 保持暂停。两家营业店共用现有 Worker、D1 和管理后台。
+2026-11-12 已完成通用商店 `store-3` 的域名接入。域名由店主在 Spaceship 购买，DNS 托管至现有 Cloudflare 账户。
+
+| 入口 | 对应店铺 |
+| --- | --- |
+| [scholai.vip](https://scholai.vip/) | 通用商店首页，直接使用根路径 |
+| [www.scholai.vip](https://www.scholai.vip/) | 同一通用商店的别名 |
+| [shop.scholai.top](https://shop.scholai.top/) | 原 ScholAI 科研店 |
+| 原域名的 `/s/store-3` | 通用商店兼容入口 |
+
+两家营业店共用现有 Worker、D1 和管理后台，统一管理入口继续为 [原主后台](https://shop.scholai.top/admin)。预留店 `store-2` 保持暂停。新域名首页、商品页、订单页及账号检测使用 `/`、`/product/chatgpt`、`/orders`、`/check`，无需携带店铺路径前缀。
 
 ## 域名与店铺的对应关系
 
@@ -12,9 +21,9 @@ Worker 的私有部署变量 `OWNER_STOREFRONT_HOSTS` 是 JSON 对象，例如 `
 
 ## DNS 与绑定
 
-2026-11-12 的首次公网检查确认该域名使用 Spaceship 默认 Nameserver，根域名为停放页 A 记录，未查到根域名 MX/TXT，注册局已存在 DNSSEC DS 记录。现有 Cloudflare 官方 CLI 授权可读账户并发布现有 Worker，创建 Zone 返回服务端权限不足。随后已在同一账户中检测到该域名的新 Zone，状态为 `pending`；实际分配的 Nameserver 已核对并告知店主。
+官方注册局已确认 Cloudflare Nameserver 登记成功，原 DNSSEC 已关闭；Cloudflare Zone 为 `active`。根域名与 `www` 均为现有商城的已启用 Custom Domain，私有部署配置已同步记录全部三个站点域名，后续发布继续沿用该配置。
 
-接入顺序：
+接入流程与维护依据：
 
 1. 在同一 Cloudflare 账户中添加该域名，使用 Free 方案，取得这个 Zone 实际分配的两条 Nameserver。检查导入的 DNS；停放页记录不作为商城源站，需保留的其他记录应逐项核对。
 2. 在 Spaceship 的 Advanced DNS 中先关闭原 DNSSEC，核对注册局 DS 删除后，再将 Nameserver 改为该 Zone 实际分配的值。
@@ -29,10 +38,16 @@ Worker 的私有部署变量 `OWNER_STOREFRONT_HOSTS` 是 JSON 对象，例如 `
 
 `node scripts/sites/checkout-acceptance.mjs --domains` 使用独立本地 workerd/D1 和两个 HTTPS 主机验证通用店根路径与科研店原路径，包括浏览器下单、独立售价、签名模拟付款与充值完成回调、Session 提取、旧页面保护、幂等、历史订单、电脑和手机布局。统一回调仍使用科研店主机。该测试不读取正式凭据、不产生真实付款或向真实供货商提交订单；截图与记录在 `artifacts/sites/evidence/storefront-domains/`。
 
-2026-11-12 已将域名识别能力部署到现有商城，代码提交 `0a5aaed`，发布标签 `general-store-domain-routing-20261112`，分支与标签均已推送到 `origin`。线上 6 组电脑/手机浏览器检查通过，3 项静态资源哈希与已验证构建一致。D1 迁移仍为 60 条；主店与其他店设置、全部售价、历史订单、原有变量、Secret 名称及统一回调前后核对保留。本轮没有创建真实订单或付款。
+2026-11-12 已将域名识别能力部署到现有商城，代码提交 `0a5aaed`，程序发布标签为 `general-store-domain-routing-20261112`，域名正式上线标签为 `general-store-domain-live-20261112`。标签对应同一实际 Worker 代码版本；新增域名绑定没有重建数据库或重新部署应用。具体版本及配置见私有发布记录。
 
-实际 Worker 版本、私有部署配置、DNS 检查与后续绑定验收记录放在 `artifacts/cloudflare/prepared/`。绑定预检保留原站且不删除任何域名，但实际新域名绑定被 Cloudflare `100117` 拒绝，提示存在外部管理的旧 DNS 记录；没有把这次尝试记为成功。
+验证范围：
 
-店主随后确认已保存 Cloudflare Nameserver 并关闭 DNSSEC。2026-11-12 11:55（北京时间）的官方注册局 RDAP 复核已确认 `delegationSigned=false`，但登记的 Nameserver 仍为 Spaceship 默认值，Cloudflare Zone 仍为 `pending`。部分递归 DNS 暂存旧 DS 并返回验证失败，不能据此认定店主没有关闭 DNSSEC。继续核对注册商 Nameserver 最终确认与注册局同步，待新 Zone 激活后复核停放页冲突、绑定 Custom Domain 并验收 HTTPS；目前不能将程序部署视为新域名已经上线。
+- 域名接入前，原站 6 组电脑/手机浏览器检查及 3 项静态资源哈希核对通过。
+- 接入后，独立网络浏览器确认两个新域名的正常 HTTPS、通用商店首页，以及根域名商品页和订单页可访问；外部公开 JSON 复核两个域名的 `shop.id` 与 `ownerStoreId` 均为 `store-3`。
+- 店主用普通浏览器确认 ChatGPT 商品页显示「立即购买」，且没有来源验证提示。自动浏览器在初始化时观察到来源拒绝，故未把自动下单表单检查记为通过；原有严格 Origin 校验继续保留。该证据边界与店主确认均已记录。
+- 发布后再次只读核对实际 Worker 版本、三个启用的域名、全部店铺设置和售价、历史订单归属、生产绑定、Secret 名称及原有变量；全部与发布前快照对应一致。D1 迁移仍为 60 条，统一供货回调继续使用原主站地址，原站健康检查通过。
+- 本轮没有创建真实订单或付款，也未把模拟支付、浏览器购买入口检查或域名上线当作新的真实付费交付验收。
 
-2026-11-12 12:35（北京时间）已由官方注册局确认两条 Cloudflare Nameserver 登记成功，DNSSEC 仍为关闭状态。随后 `www.scholai.vip` 成功绑定现有商城并申请证书，私有部署配置同步保留该绑定。根域名仍被 `100117` 阻挡；当前 OAuth 无 DNS 记录读取/修改权限，也无主动触发 Zone 激活检查的权限。已请店主在 Cloudflare 网页核对并清理识别出的旧停放 A 记录、触发名称服务器检查；不能把 `www` 的配置成功当作两个域名的公网 HTTPS 验收完成。现有科研店绑定继续保留，Worker 代码版本没有变更。
+首次根域名绑定遇到 Cloudflare `100117`，由店主清理已识别的旧停放 A 记录、完成名称服务器检查后，重新绑定成功。维护时保留 Custom Domain 自动管理的记录；若后续恢复 DNSSEC，使用 Cloudflare 为该 Zone 生成的新 DS 参数。
+
+实际 Worker 版本、配置、DNS、证书、外部浏览器、店主确认与生产数据核对记录保存在被 Git 忽略的 `artifacts/cloudflare/prepared/`。分支、上线记录提交和带说明的发布标签同步至现有 `origin` 仓库。
