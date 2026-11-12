@@ -34,3 +34,5 @@ Worker 的私有部署变量 `OWNER_STOREFRONT_HOSTS` 是 JSON 对象，例如 `
 实际 Worker 版本、私有部署配置、DNS 检查与后续绑定验收记录放在 `artifacts/cloudflare/prepared/`。绑定预检保留原站且不删除任何域名，但实际新域名绑定被 Cloudflare `100117` 拒绝，提示存在外部管理的旧 DNS 记录；没有把这次尝试记为成功。
 
 店主随后确认已保存 Cloudflare Nameserver 并关闭 DNSSEC。2026-11-12 11:55（北京时间）的官方注册局 RDAP 复核已确认 `delegationSigned=false`，但登记的 Nameserver 仍为 Spaceship 默认值，Cloudflare Zone 仍为 `pending`。部分递归 DNS 暂存旧 DS 并返回验证失败，不能据此认定店主没有关闭 DNSSEC。继续核对注册商 Nameserver 最终确认与注册局同步，待新 Zone 激活后复核停放页冲突、绑定 Custom Domain 并验收 HTTPS；目前不能将程序部署视为新域名已经上线。
+
+2026-11-12 12:35（北京时间）已由官方注册局确认两条 Cloudflare Nameserver 登记成功，DNSSEC 仍为关闭状态。随后 `www.scholai.vip` 成功绑定现有商城并申请证书，私有部署配置同步保留该绑定。根域名仍被 `100117` 阻挡；当前 OAuth 无 DNS 记录读取/修改权限，也无主动触发 Zone 激活检查的权限。已请店主在 Cloudflare 网页核对并清理识别出的旧停放 A 记录、触发名称服务器检查；不能把 `www` 的配置成功当作两个域名的公网 HTTPS 验收完成。现有科研店绑定继续保留，Worker 代码版本没有变更。
