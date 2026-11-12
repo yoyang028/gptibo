@@ -12,7 +12,7 @@ Worker 的私有部署变量 `OWNER_STOREFRONT_HOSTS` 是 JSON 对象，例如 `
 
 ## DNS 与绑定
 
-2026-11-12 的首次公网检查确认该域名使用 Spaceship 默认 Nameserver，根域名为停放页 A 记录，未查到根域名 MX/TXT，注册局已存在 DNSSEC DS 记录。当前 Cloudflare 官方 CLI 授权可读账户并发布现有 Worker，创建 Zone 返回服务端权限不足；没有替店主创建新的域名 Zone。
+2026-11-12 的首次公网检查确认该域名使用 Spaceship 默认 Nameserver，根域名为停放页 A 记录，未查到根域名 MX/TXT，注册局已存在 DNSSEC DS 记录。现有 Cloudflare 官方 CLI 授权可读账户并发布现有 Worker，创建 Zone 返回服务端权限不足。随后已在同一账户中检测到该域名的新 Zone，状态为 `pending`；实际分配的 Nameserver 已核对并告知店主。
 
 接入顺序：
 
@@ -29,4 +29,6 @@ Worker 的私有部署变量 `OWNER_STOREFRONT_HOSTS` 是 JSON 对象，例如 `
 
 `node scripts/sites/checkout-acceptance.mjs --domains` 使用独立本地 workerd/D1 和两个 HTTPS 主机验证通用店根路径与科研店原路径，包括浏览器下单、独立售价、签名模拟付款与充值完成回调、Session 提取、旧页面保护、幂等、历史订单、电脑和手机布局。统一回调仍使用科研店主机。该测试不读取正式凭据、不产生真实付款或向真实供货商提交订单；截图与记录在 `artifacts/sites/evidence/storefront-domains/`。
 
-实际 Worker 版本、私有部署配置、DNS 检查与后续绑定验收记录放在 `artifacts/cloudflare/prepared/`。当前仍待店主完成 Cloudflare Zone 创建及 Spaceship 设置，不能将本地验收视为公网域名已经上线。
+2026-11-12 已将域名识别能力部署到现有商城，代码提交 `0a5aaed`，发布标签 `general-store-domain-routing-20261112`，分支与标签均已推送到 `origin`。线上 6 组电脑/手机浏览器检查通过，3 项静态资源哈希与已验证构建一致。D1 迁移仍为 60 条；主店与其他店设置、全部售价、历史订单、原有变量、Secret 名称及统一回调前后核对保留。本轮没有创建真实订单或付款。
+
+实际 Worker 版本、私有部署配置、DNS 检查与后续绑定验收记录放在 `artifacts/cloudflare/prepared/`。绑定预检保留原站且不删除任何域名，但实际新域名绑定被 Cloudflare `100117` 拒绝，提示存在外部管理的旧 DNS 记录；没有把这次尝试记为成功。当前仍待店主完成 Spaceship 的 DNSSEC 与 Nameserver 设置，再激活新 Zone、复核停放页冲突并绑定 Custom Domain；上述程序部署不能视为新域名已经上线。
