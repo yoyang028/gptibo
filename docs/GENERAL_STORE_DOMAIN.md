@@ -31,4 +31,6 @@ Worker 的私有部署变量 `OWNER_STOREFRONT_HOSTS` 是 JSON 对象，例如 `
 
 2026-11-12 已将域名识别能力部署到现有商城，代码提交 `0a5aaed`，发布标签 `general-store-domain-routing-20261112`，分支与标签均已推送到 `origin`。线上 6 组电脑/手机浏览器检查通过，3 项静态资源哈希与已验证构建一致。D1 迁移仍为 60 条；主店与其他店设置、全部售价、历史订单、原有变量、Secret 名称及统一回调前后核对保留。本轮没有创建真实订单或付款。
 
-实际 Worker 版本、私有部署配置、DNS 检查与后续绑定验收记录放在 `artifacts/cloudflare/prepared/`。绑定预检保留原站且不删除任何域名，但实际新域名绑定被 Cloudflare `100117` 拒绝，提示存在外部管理的旧 DNS 记录；没有把这次尝试记为成功。当前仍待店主完成 Spaceship 的 DNSSEC 与 Nameserver 设置，再激活新 Zone、复核停放页冲突并绑定 Custom Domain；上述程序部署不能视为新域名已经上线。
+实际 Worker 版本、私有部署配置、DNS 检查与后续绑定验收记录放在 `artifacts/cloudflare/prepared/`。绑定预检保留原站且不删除任何域名，但实际新域名绑定被 Cloudflare `100117` 拒绝，提示存在外部管理的旧 DNS 记录；没有把这次尝试记为成功。
+
+店主随后确认已保存 Cloudflare Nameserver 并关闭 DNSSEC。2026-11-12 11:55（北京时间）的官方注册局 RDAP 复核已确认 `delegationSigned=false`，但登记的 Nameserver 仍为 Spaceship 默认值，Cloudflare Zone 仍为 `pending`。部分递归 DNS 暂存旧 DS 并返回验证失败，不能据此认定店主没有关闭 DNSSEC。继续核对注册商 Nameserver 最终确认与注册局同步，待新 Zone 激活后复核停放页冲突、绑定 Custom Domain 并验收 HTTPS；目前不能将程序部署视为新域名已经上线。
