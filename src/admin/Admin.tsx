@@ -33,6 +33,7 @@ import AdminVisitorsPage from './VisitorsPage'
 import AccountingPage from './AccountingPage'
 import InvoiceWorkspace from '@/components/invoice-workspace'
 import CustomerManagement from '@/components/customer-management'
+import MembersPage from './MembersPage'
 import PartnerRankingChart from './PartnerRankingChart'
 import { VisitorStats } from '@/components/visitor-stats'
 import { OrderActionForm } from './OrderActionForm'
@@ -49,6 +50,7 @@ const money = (cents: number) => new Intl.NumberFormat('zh-CN', { style: 'curren
 const time = (value: number | string) => new Date(typeof value === 'string' && !value.includes('T') ? value.replace(' ', 'T') + 'Z' : value).toLocaleString('zh-CN', { hour12: false })
 const productName = (plan: string) => emailProduct(plan) ? productNameForId(emailProduct(plan)!.productId) : productNameForPlan(plan)
 const views = [
+  { id: 'members', label: '会员与邀新', icon: Users },
   { id: 'my-shop', label: '我的店铺', icon: Package },
   { id: 'products', label: '商品管理', icon: Package },
   { id: 'security', label: '安全审计', icon: ShieldCheck },
@@ -61,7 +63,7 @@ const views = [
   { id: 'interest', label: '上线提醒', icon: Mail },
   { id: 'contacts', label: '联系方式', icon: MessageCircle }, { id: 'integrations', label: '服务接入', icon: Plug }, { id: 'partners', label: '代理管理', icon: Users }, { id: 'visitors', label: '访客统计', icon: ChartNoAxesCombined },
 ]
-type Session = { authenticated: boolean; configured: boolean; mailReady: boolean; username?: string }
+type Session = { membershipEnabled?: boolean; authenticated: boolean; configured: boolean; mailReady: boolean; username?: string }
 type Overview = { stats: { total: number; pending: number; active: number; completed: number; refund_amount: number; paid_amount: number }; interest: { total: number }; recent: ServerOrder[] }
 type Detail = { order: ServerOrder & { platformStatus: PlatformOrderStatus | null; rechargeCredential?: RechargeCredential }; events: { id: string; actor: string; action: string; note: string; to_status: string; created_at: number }[] }
 function SettlementBadge({ status }: { status?: 'pending' | 'paid' | null }) {
@@ -250,7 +252,7 @@ export default function Admin() {
     <aside className="admin-sidebar">
       <a className="admin-brand" href="/admin"><ShopBrand platform name={shopName} logo={shopIdentity?.shop.logo} /></a>
       <span className="admin-workspace-label">管理工作台</span>
-      <nav aria-label="后台导航">{views.map(item => <Button variant="ghost" key={item.id} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><item.icon size={17} />{item.label}</Button>)}</nav>
+      <nav aria-label="后台导航">{views.filter(item => item.id !== 'members' || session.membershipEnabled).map(item => <Button variant="ghost" key={item.id} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><item.icon size={17} />{item.label}</Button>)}</nav>
       <div className="admin-sidebar-bottom"><span><ShieldCheck size={15} />{session.username}</span><Button variant="ghost" onClick={() => void logout()} disabled={busy}><LogOut size={15} />退出登录</Button></div>
     </aside>
     <div className="admin-workspace">
@@ -274,6 +276,7 @@ export default function Admin() {
         {view === 'accounting' && <AccountingPage revision={revision} />}
         {view === 'invoices' && <InvoiceWorkspace admin revision={revision} />}
         {view === 'customers' && <CustomerManagement admin revision={revision} />}
+        {view === 'members' && <MembersPage revision={revision} />}
         <footer className="admin-footer"><Check size={13} />订单与操作记录可追溯</footer>
       </main>
     </div>

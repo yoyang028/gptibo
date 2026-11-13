@@ -11,8 +11,9 @@ import { readStoreResources } from './store-reads'
 import type { ShopProduct, CustomOrderView } from '../../shared/shop-products'
 import type { ProductArtworkMap } from '../../shared/product-artwork'
 import type { SmsPublicCatalog } from '../../shared/grizzly-sms'
+import type { PromotionSelection, PromotionView } from '../../shared/member-promotions'
 
-export type ServerOrder = DemoOrder & { custom?: CustomOrderView | null; supportsWarranty?: boolean; paymentSummary?: { amountCents: number; feeCents: number; feeBps: number; refundedFeeCents: number } | null; xgift?: { username: string; state: string; receipt: string | null; failureCode: string | null; message: string } | null; delivery?: DeliverySummary; purchaseNote?: string; manualFulfillment?: boolean; isTest?: boolean; version: number; mode: 'demo' | 'live'; paymentStatus: string; planName: string; partnerName?: string; settlementStatus?: 'pending' | 'paid' | null; partnerSource?: { id: string; slug: string; name: string; email: string; wechat: string; qq: string } | null; supportContacts?: SupportContacts; updatedAt: number; fulfillment?: { paused?: boolean; precheckRequired?: boolean; syncError?: boolean; financialHold?: boolean; paymentUrl: string | null; paymentQr?: string | null; paymentKind?: 'qr' | 'link' | null; expiresAt: number | null; paymentExpired?: boolean; rechargeStatus: string | null; failureCode?: string | null; errorCategory?: string | null; resultCode?: string | null; progressStage?: string | null; progressVersion?: number; progressUpdatedAt?: number | null; attemptNo?: number | null; retryKey: string | null; retryMode: 'session' | 'access_token' | null; canSubmit: boolean; message: string | null; accountEmailMasked: string | null; finishedAt: number | null } }
+export type ServerOrder = DemoOrder & { promotion?: PromotionView | null; custom?: CustomOrderView | null; supportsWarranty?: boolean; paymentSummary?: { amountCents: number; feeCents: number; feeBps: number; refundedFeeCents: number } | null; xgift?: { username: string; state: string; receipt: string | null; failureCode: string | null; message: string } | null; delivery?: DeliverySummary; purchaseNote?: string; manualFulfillment?: boolean; isTest?: boolean; version: number; mode: 'demo' | 'live'; paymentStatus: string; planName: string; partnerName?: string; settlementStatus?: 'pending' | 'paid' | null; partnerSource?: { id: string; slug: string; name: string; email: string; wechat: string; qq: string } | null; supportContacts?: SupportContacts; updatedAt: number; fulfillment?: { paused?: boolean; precheckRequired?: boolean; syncError?: boolean; financialHold?: boolean; paymentUrl: string | null; paymentQr?: string | null; paymentKind?: 'qr' | 'link' | null; expiresAt: number | null; paymentExpired?: boolean; rechargeStatus: string | null; failureCode?: string | null; errorCategory?: string | null; resultCode?: string | null; progressStage?: string | null; progressVersion?: number; progressUpdatedAt?: number | null; attemptNo?: number | null; retryKey: string | null; retryMode: 'session' | 'access_token' | null; canSubmit: boolean; message: string | null; accountEmailMasked: string | null; finishedAt: number | null } }
 const shopSlug = storefrontShopSlug(location.pathname)
 let clientReady: Promise<unknown> | undefined
 function initializeClient() {
@@ -29,6 +30,7 @@ export function useStore(page: string) {
   const [sms,setSms] = useState<SmsPublicCatalog>()
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>([])
   const [checkoutEnabled, setCheckoutEnabled] = useState(false)
+  const [membershipEnabled, setMembershipEnabled] = useState(false)
   const [testingEnabled, setTestingEnabled] = useState(false)
   const [partner, setPartner] = useState<{ name: string; slug: string; brandName?: string; logo?: string; pageTitle?: string; headline?: string; description?: string }>()
   const [productArtwork, setProductArtwork] = useState<ProductArtworkMap>({})
@@ -47,7 +49,7 @@ export function useStore(page: string) {
   const mutation = useRef(false)
   const fetching = useRef<number | undefined>(undefined)
   const generation = useRef(0)
-  const retryCreate = useRef<{ plan: PlanId; price: number; email: string; username?: string; couponCode?: string; key: string } | undefined>(undefined)
+  const retryCreate = useRef<{ plan: PlanId; price: number; email: string; username?: string; couponCode?: string; promotionKey?: string; key: string } | undefined>(undefined)
   const pollingPeriod = orders.some(o => o.mode === 'live' && ['pending','processing'].includes(o.status)) ? orders.some(o => o.mode === 'live' && ['pending','processing'].includes(o.status) && pollingClock - (o.startedAt ?? o.createdAt) < 120000) ? 5000 : 15000 : orders.some(o => o.status === 'processing') ? 1500 : page === 'orders' ? 15000 : 30000
   const refresh = useCallback(async (force = false) => {
     if (mutation.current || (fetching.current !== undefined && !force)) return
@@ -57,9 +59,9 @@ export function useStore(page: string) {
       const [list, offers] = await readStoreResources({
         initialize: initializeClient,
         orders: () => api<{ orders: ServerOrder[]; recoveryEmail: string | null }>('/api/orders'),
-        catalog: () => api<{ active?:boolean; managedProductGroups?:string[]; sms?:SmsPublicCatalog; productArtwork?:ProductArtworkMap; products?:ShopProduct[]; shop?:{name:string;brandName:string;logo:string;pageTitle:string;headline:string;description:string}; completedOrdersByProduct?: Record<string, number>; plans: CatalogPlan[]; paymentMethods?: PaymentMethodOption[]; productOrder?: StorefrontProductId[]; hiddenProductIds?: StorefrontProductId[]; supportContacts: SupportContacts; announcement?: AnnouncementSettings | null; checkoutEnabled?: boolean; testingEnabled?: boolean; partner?: { name: string; slug: string; brandName?: string; logo?: string; pageTitle?: string; headline?: string; description?: string } }>('/api/catalog' + (shopSlug ? '?partner=' + encodeURIComponent(shopSlug) : '')),
+        catalog: () => api<{ active?:boolean; membershipEnabled?: boolean; managedProductGroups?:string[]; sms?:SmsPublicCatalog; productArtwork?:ProductArtworkMap; products?:ShopProduct[]; shop?:{name:string;brandName:string;logo:string;pageTitle:string;headline:string;description:string}; completedOrdersByProduct?: Record<string, number>; plans: CatalogPlan[]; paymentMethods?: PaymentMethodOption[]; productOrder?: StorefrontProductId[]; hiddenProductIds?: StorefrontProductId[]; supportContacts: SupportContacts; announcement?: AnnouncementSettings | null; checkoutEnabled?: boolean; testingEnabled?: boolean; partner?: { name: string; slug: string; brandName?: string; logo?: string; pageTitle?: string; headline?: string; description?: string } }>('/api/catalog' + (shopSlug ? '?partner=' + encodeURIComponent(shopSlug) : '')),
         onOrders: value => { if (generation.current === current) { setOrders(value.orders); setRecoveryEmail(value.recoveryEmail) } },
-        onCatalog: value => { if (generation.current === current) { setManagedProductGroups(value.managedProductGroups ?? []); setSms(value.sms); setProductArtwork(value.productArtwork ?? {}); setProducts(value.products ?? []); setShop(value.shop); setCatalog(value.plans); setCompletedOrdersByProduct(value.completedOrdersByProduct ?? {}); setPaymentMethods(value.paymentMethods ?? []); setProductOrder(value.productOrder ?? []); setHiddenProductIds(value.hiddenProductIds ?? []); setSupportContacts(value.supportContacts); setAnnouncement(value.announcement ?? null); setCheckoutEnabled(value.checkoutEnabled === true); setTestingEnabled(value.testingEnabled === true); setPartner(value.partner); setCatalogReady(true); setShopPaused(value.active === false); setShopUnavailable(false) } },
+        onCatalog: value => { if (generation.current === current) { setMembershipEnabled(value.membershipEnabled === true); setManagedProductGroups(value.managedProductGroups ?? []); setSms(value.sms); setProductArtwork(value.productArtwork ?? {}); setProducts(value.products ?? []); setShop(value.shop); setCatalog(value.plans); setCompletedOrdersByProduct(value.completedOrdersByProduct ?? {}); setPaymentMethods(value.paymentMethods ?? []); setProductOrder(value.productOrder ?? []); setHiddenProductIds(value.hiddenProductIds ?? []); setSupportContacts(value.supportContacts); setAnnouncement(value.announcement ?? null); setCheckoutEnabled(value.checkoutEnabled === true); setTestingEnabled(value.testingEnabled === true); setPartner(value.partner); setCatalogReady(true); setShopPaused(value.active === false); setShopUnavailable(false) } },
         onReady: () => { if (generation.current === current) setReady(true) },
       })
       if (generation.current === current) {
@@ -90,12 +92,12 @@ export function useStore(page: string) {
     } catch (e) { setError(errorMessage(e)); return undefined }
     finally { mutation.current = false; setBusy(false); setPendingAction(undefined) }
   }
-  const create = async (plan: PlanId, price: number, email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, expectedSupportsWarranty = true, couponCode?: string) => {
+  const create = async (plan: PlanId, price: number, email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, expectedSupportsWarranty = true, couponCode?: string, promotion?: PromotionSelection) => {
     if (!ready) { setError('订单服务尚未就绪，请稍后重试。'); return }
     if (!checkoutEnabled) { setError('该服务暂未开放购买，请稍后再来。'); return }
-    if (!retryCreate.current || retryCreate.current.plan !== plan || retryCreate.current.price !== price || retryCreate.current.email !== email || retryCreate.current.username !== username || retryCreate.current.couponCode !== couponCode) retryCreate.current = { plan, price, email, username, couponCode, key: crypto.randomUUID() }
+    if (!retryCreate.current || retryCreate.current.plan !== plan || retryCreate.current.price !== price || retryCreate.current.email !== email || retryCreate.current.username !== username || retryCreate.current.couponCode !== couponCode || retryCreate.current.promotionKey !== JSON.stringify(promotion)) retryCreate.current = { plan, price, email, username, couponCode, promotionKey: JSON.stringify(promotion), key: crypto.randomUUID() }
     const attempt = retryCreate.current
-    const result = await mutate(() => api('/api/orders', { couponCode, email, plan, username, preflightToken, paymentMethod, expectedFeeBps, turnstileToken, expectedSupportsWarranty, expectedPrice: Math.round(price * 100), key: attempt.key, partner: shopSlug }))
+    const result = await mutate(() => api('/api/orders', { promotion, couponCode, email, plan, username, preflightToken, paymentMethod, expectedFeeBps, turnstileToken, expectedSupportsWarranty, expectedPrice: Math.round(price * 100), key: attempt.key, partner: shopSlug }))
     if (result) retryCreate.current = undefined
     return result
   }
@@ -111,5 +113,5 @@ export function useStore(page: string) {
       return old && old.version > order.version ? previous : [order, ...previous.filter(item => item.id !== order.id)].sort((a,b) => b.createdAt-a.createdAt).slice(0,100)
     })
   }
-  return { managedProductGroups, orders, recoveryEmail, catalog, sms, products, productArtwork, shop, completedOrdersByProduct, paymentMethods, productOrder, hiddenProductIds, checkoutEnabled, testingEnabled, partner, catalogReady, supportContacts, announcement, shopUnavailable, shopPaused, ready, busy, pendingAction, error, refresh, create, action, acceptOrder }
+  return { membershipEnabled, managedProductGroups, orders, recoveryEmail, catalog, sms, products, productArtwork, shop, completedOrdersByProduct, paymentMethods, productOrder, hiddenProductIds, checkoutEnabled, testingEnabled, partner, catalogReady, supportContacts, announcement, shopUnavailable, shopPaused, ready, busy, pendingAction, error, refresh, create, action, acceptOrder }
 }

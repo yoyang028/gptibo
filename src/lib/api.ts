@@ -33,7 +33,7 @@ export async function api<T>(path: string, data?: unknown, signal?: AbortSignal)
     if (response.status === 401 && scope && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('ymx-session-expired', { detail: scope }))
     }
-    throw new RequestError(result?.error ?? '请求失败，请稍后重试。', response.status)
+    throw new RequestError((typeof result?.error === 'string' ? result.error : path.startsWith('/api/member/auth/') && typeof result?.message === 'string' ? result.message : '请求失败，请稍后重试。'), response.status)
   }
   if (!result) throw new RequestError('服务返回异常，请稍后重试。', 503)
   return result as T

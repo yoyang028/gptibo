@@ -1,3 +1,4 @@
+import { PromotionPending } from './member-promotion'
 import { isXGiftPlan } from '../../shared/xgift-products'
 import { AsyncButton, PaymentConfirmed, RequestNotice } from './payment-feedback'
 import { useState } from 'react'
@@ -16,6 +17,7 @@ export type CheckoutProps = { testingEnabled?: boolean; order: ServerOrder | und
 export function Checkout({ order, open, onOpenChange, onAction, onOrders, busy, pendingAction, error, onUpdated, testingEnabled, onOrderUpdated, refreshTarget, refreshDisabled }: CheckoutProps) {
   const [credential, setCredential] = useState('')
   const [outcome, setOutcome] = useState<'success' | 'failed'>('success')
+  if (order?.promotion && (order.status === 'cancelled' || order.promotion.cashCents === 0 || ['required','rejected'].includes(order.promotion.reviewStatus) || order.promotion.procurementStatus === 'awaiting_supplier')) return <PromotionPending order={order} onUpdated={onUpdated} />
   if (order?.mode === 'live' && (order.manualFulfillment || isXGiftPlan(order.plan))) return <ManualCheckout key={order.id} order={order} open={open} onUpdated={onUpdated} onOrderUpdated={onOrderUpdated} onOrders={onOrders} onOpenChange={onOpenChange} onAction={onAction} refreshTarget={refreshTarget} refreshDisabled={refreshDisabled} />
   if (order?.mode === 'live' && order.fulfillment) return <LiveCheckout key={order.id} order={order} open={open} onUpdated={onUpdated} onOrderUpdated={onOrderUpdated} onOrders={onOrders} error={error} refreshTarget={refreshTarget} refreshDisabled={refreshDisabled} />
   if (order && (order.mode !== 'demo' || !testingEnabled)) return <OrderRecord order={order} open={open} onOpenChange={onOpenChange} onAction={onAction} onOrders={onOrders} error={error} />

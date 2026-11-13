@@ -46,6 +46,9 @@ import { hanfolkAvailability } from './hanfolk/availability.ts'
 import { inventoryLabel } from '../shared/product-inventory.ts'
 import { concealRedemptionLinks } from '../shared/redemption-copy.ts'
 import { supplierManagement } from './supplier-management.ts'
+import { memberStore, verifiedMember } from './member-auth.ts'
+import { adminMemberRoutes } from './member-routes.ts'
+import { quotePromotion, promotionStatements, promotionView, promotionFor, promotionRequestHash, cancelPromotion } from './member-promotions.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
 type OrderPartnerSource = { id: string; slug: string; name: string; email: string; wechat: string; qq: string }
@@ -68,7 +71,8 @@ const customerOrder = async (env: Env, o: Order, contacts = new Map<string, Prom
   const [support, fulfillment] = await Promise.all([settings, rechargeSummary(env, o)])
   if (fulfillment) Object.assign(fulfillment, { syncError })
   const custom = await customOrderSummary(env,o)
-  return { ...publicOrder(o), ...(custom?.requiresRedemption ? { purchaseNote: concealRedemptionLinks(o.purchase_note ?? '') } : {}), custom, xgift: await xgiftSummary(env, o), manualFulfillment: isLegacyManualOrder(o, Boolean(fulfillment)) || Boolean(emailProduct(o.plan)), delivery: await emailDeliverySummary(env, o), supportContacts: support.contacts, refundHold: !!o.refund_hold || !!fulfillment?.financialHold, fulfillment }
+  const promotion = await promotionView(env, o)
+  return { ...publicOrder(o), ...(promotion ? { promotion, price: promotion.cashCents / 100 } : {}), ...(custom?.requiresRedemption ? { purchaseNote: concealRedemptionLinks(o.purchase_note ?? '') } : {}), custom, xgift: await xgiftSummary(env, o), manualFulfillment: !promotion && (isLegacyManualOrder(o, Boolean(fulfillment)) || Boolean(emailProduct(o.plan))), delivery: await emailDeliverySummary(env, o), supportContacts: support.contacts, refundHold: !!o.refund_hold || !!fulfillment?.financialHold, fulfillment }
 }
 async function orderPartnerSource(env: Env, order: Order): Promise<OrderPartnerSource | null> {
   if (!order.partner_id) return null
@@ -98,6 +102,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     if (path.startsWith('/api/partner/')) return await partnerRoutes(request, env, url)
     if (path.startsWith('/api/admin/')) {
       await requireAdmin(request, env)
+      if (path === '/api/admin/members') return await adminMemberRoutes(request, env, url)
       if (path === '/api/admin/sms') return await smsManagement(request,env,url)
       if (path === '/api/admin/hanfolk' || path === '/api/admin/hanfolk/monitor') return await hanfolkManagement(request,env)
       if (path.startsWith('/api/admin/my-shop/products')) return await shopProductRoutes(request,env,url)
@@ -107,7 +112,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         const {page,offset}=pageParams(url)
         const storeId=url.searchParams.get('store'); if(storeId) await ownerShop(env,storeId)
         const rows=(await env.INTEREST_DB.prepare("SELECT o.*,MAX(0,o.price_cents-COALESCE(r.supply_cents,o.cost_cents,0)-MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))) profit_cents,COALESCE(r.supply_cents,o.cost_cents,0) cost_cents FROM orders o LEFT JOIN recharge_orders r ON r.order_id=o.id WHERE o.partner_id IS NULL AND o.is_test=0 AND (? IS NULL OR o.owner_store_id=?) ORDER BY o.created_at DESC LIMIT 20 OFFSET ?").bind(storeId,storeId,offset).all<Order>()).results
-        const records=await Promise.all(rows.map(async o=>({...o,discount_cents:(await env.INTEREST_DB.prepare('SELECT discount_cents FROM shop_coupon_uses WHERE order_id=?').bind(o.id).first<{discount_cents:number}>())?.discount_cents??0,custom:await customOrderSummary(env,o)})))
+        const records=await Promise.all(rows.map(async o=>{const p=await promotionFor(env,o.id);return {...o,...(p?{price_cents:p.cash_cents,profit_cents:o.payment_status==='paid'?p.cash_cents-p.supply_cents-o.refunded_cents:0}:{}),discount_cents:p?p.original_cents-p.cash_cents:(await env.INTEREST_DB.prepare('SELECT discount_cents FROM shop_coupon_uses WHERE order_id=?').bind(o.id).first<{discount_cents:number}>())?.discount_cents??0,custom:await customOrderSummary(env,o)}}))
         return json({page,total:(await env.INTEREST_DB.prepare('SELECT COUNT(*) total FROM orders WHERE partner_id IS NULL AND is_test=0 AND (? IS NULL OR owner_store_id=?)').bind(storeId,storeId).first<{total:number}>())?.total??0,orders:records,rows:records})
       }
       if (path === '/api/admin/product-artwork') return await artworkRoute(request,env)
@@ -166,7 +171,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       const offers = (catalog.plans as Plan[]).filter(plan=>(!managedProductGroups.includes(plan.product_id)||products.some(p=>p.id===plan.id))&&(!customProductId.test(plan.id)||products.some(p=>p.id===plan.id&&!p.pricePending))).map(plan => { const product=products.find(p=>p.id===plan.id); return ({ ...plan,purchase_note:product?.purchaseNote??quefaPurchaseNote(mapped[plan.id],plan.purchase_note),delivery_instructions:product?.deliveryInstructions??plan.delivery_instructions,has_coupons:coupons.some(c=>c.targets.some((t:{storeId:string;plan:string})=>t.storeId===ownerStoreId&&t.plan===plan.id)), enabled: plan.enabled && (
         customProductId.test(plan.id) ? products.some(p=>p.id===plan.id&&p.status==='published'&&!inventoryLabel(p)) : isXGiftPlan(plan.id) ? xgiftCheckoutEnabled(env) : plan.id === 'gmail-account' ? gmail : isDeliverySupplierPlan(plan.id) ? delivery_supplier : emailProduct(plan.id) ? email : testing || (live && Boolean(mapped[plan.id]))
       ) ? 1 : 0 }) })
-      return json({ ...catalog,...owner, managedProductGroups, products, sms: {...sms,projects:sms.projects.map(p=>({...p,enabled:shopActive && p.enabled && Boolean(offers.find(o=>o.id===p.planId)?.enabled)}))}, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: !shopActive?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: !shopActive?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
+      return json({ ...catalog,...owner, membershipEnabled: memberStore(request, env), managedProductGroups, products, sms: {...sms,projects:sms.projects.map(p=>({...p,enabled:shopActive && p.enabled && Boolean(offers.find(o=>o.id===p.planId)?.enabled)}))}, productArtwork, supportContacts: support.contacts, announcement:owner?.announcement??announcement, plans: !shopActive?offers.map(p=>({...p,enabled:0})):offers, mode: live ? 'live' : 'demo', checkoutEnabled: !shopActive?false:testing || live || email || xgiftCheckoutEnabled(env) || products.some(p=>p.status==='published'&&p.stock!==0), testingEnabled: testing }, 200, { 'Server-Timing': `catalog;dur=${(performance.now() - started).toFixed(1)}` })
     }
     if (path === '/api/orders/client' && method === 'POST') {
       await body(request)
@@ -178,7 +183,9 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     storefrontSelection(request, env)
     const recovery = await recoveryRoutes(request, env, path)
     if (recovery) return recovery
-    const { ownerHash, email: recoveredEmail } = await buyerAccess(request, env)
+    const buyer = await buyerAccess(request, env), member = await verifiedMember(request, env)
+    const ownerHash = buyer.ownerHash, recoveredEmail = member?.email ?? buyer.email
+    if (path === '/api/orders/promotion-quote' && method === 'POST') return json((await quotePromotion(request, env, await body(request))).quote)
     if (path === '/api/orders/coupon-quote' && method==='POST') {const data=await body(request);const storeId=await resolveOwnerStore(env,storefrontSelection(request,env,data.partner));if(!storeId)throw new ApiError('此优惠码仅适用于自营店铺。',409);return json(await couponQuote(env,String(data.plan),emailValue(data.email),data.code,storeId))}
     if (path === '/api/orders/xgift/eligibility' && method === 'POST') {
       const data = await body(request,20000)
@@ -214,6 +221,8 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       if (existing) {
         if (existing.customer_email !== email || existing.plan !== data.plan || existing.partner_id !== (partner?.id ?? null) || (!partner && existing.owner_store_id !== ownerStoreId)) throw new ApiError('请求编号已被另一套餐或商店使用。', 409)
         if (isXGiftPlan(existing.plan) && (await xgiftSummary(env, existing))?.username !== xUsername(data.username)) throw new ApiError('请求编号已绑定其他接收账号。', 409)
+        const previousPromotion = await promotionFor(env, existing.id)
+        if ((previousPromotion && previousPromotion.request_hash !== await promotionRequestHash(data)) || (!previousPromotion && data.promotion)) throw new ApiError('请求编号已绑定其他优惠或邀请来源，请重新确认。', 409)
         return json({ order: await customerOrder(env, existing) })
       }
       const emailDelivery = Boolean(emailProduct(data.plan))
@@ -232,9 +241,11 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
       if (partner && !offer) throw new ApiError('该代理尚未开通此套餐。', 409)
       if(partner&&data.couponCode)throw new ApiError('此优惠码仅适用于主店铺。',409)
       const coupon=data.couponCode?await couponQuote(env,plan.id,email,data.couponCode,ownerStoreId!):null
-      const price = coupon?.priceCents ?? offer?.price_cents ?? plan.price_cents
-      if (data.expectedPrice !== price) throw new ApiError('套餐价格已更新，请刷新后重新确认。', 409)
-      const snapshot = live && !emailDelivery && !isXGiftPlan(plan.id) ? await supplierSnapshot(env, plan.id, price, offer?.cost_cents) : null
+      const promotion = data.promotion ? await quotePromotion(request, env, data) : null
+      const cashPrice = promotion?.quote.cashCents ?? coupon?.priceCents ?? offer?.price_cents ?? plan.price_cents
+      const price = cashPrice || promotion!.quote.originalCents
+      if (data.expectedPrice !== cashPrice) throw new ApiError('套餐价格或优惠已更新，请刷新后重新确认。', 409)
+      const snapshot = promotion ? promotion.quote.procurementStatus === 'ready' && promotion.quote.reviewStatus === 'none' ? promotion.snapshot : null : live && !emailDelivery && !isXGiftPlan(plan.id) ? await supplierSnapshot(env, plan.id, price, offer?.cost_cents) : null
       const delivery_supplier = isDeliverySupplierPlan(plan.id) ? await delivery_supplierSnapshot(env, plan.id, price, offer?.cost_cents, plan.delivery_instructions) : null
       const gmail = plan.id === 'gmail-account' ? await gmailSnapshot(env, price, offer?.cost_cents, plan.delivery_instructions) : null
       const xgift = isXGiftPlan(plan.id) ? await xgiftSnapshot(env, ownerHash, data) : null
@@ -247,21 +258,27 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         ...(coupon?[couponReservation(env,coupon,id,email)]:[]),
         env.INTEREST_DB.prepare('UPDATE orders SET purchase_note=(SELECT purchase_note FROM catalog_plans WHERE id=orders.plan) WHERE id=?').bind(id),
         ...(live ? [env.INTEREST_DB.prepare("UPDATE orders SET mode='live' WHERE id=? AND payment_status='unpaid'").bind(id)] : []),
+        ...(promotion ? [env.INTEREST_DB.prepare('UPDATE orders SET member_promotion=1 WHERE id=?').bind(id)] : []),
+        ...(promotion ? await promotionStatements(env, id, data, promotion) : []),
         ...(xgift ? [await xgiftSnapshotStatement(env, id, xgift)] : []),
-        ...(snapshot ? [snapshotStatement(env, id, snapshot, price)] : []),
+        ...(snapshot ? [snapshotStatement(env, id, snapshot, cashPrice)] : []),
         ...(gmail ? [gmailSnapshotStatement(env, id, gmail)] : []),
         ...(delivery_supplier ? [delivery_supplierSnapshotStatement(env, id, delivery_supplier)] : []),
         env.INTEREST_DB.prepare("INSERT INTO order_events(id,order_id,actor,action,to_status,note,order_version,created_at) SELECT ?,id,'customer','create','pending',?,0,? FROM orders WHERE id=? ON CONFLICT DO NOTHING").bind(eventId, live ? '创建订单，等待支付' : '创建测试订单', now, id),
       ])
       const created = await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE owner_hash=? AND idempotency_key=?').bind(ownerHash, data.key).first<Order>()
       if (!created || created.customer_email !== email || created.plan !== plan.id || created.partner_id !== (partner?.id ?? null)) throw new ApiError('商品已更新，请刷新后重试。', 409)
+      if (!partner && created.owner_store_id !== ownerStoreId) throw new ApiError('请求编号已绑定其他商店。', 409)
+      const committedPromotion = await promotionFor(env, created.id)
+      if ((committedPromotion && committedPromotion.request_hash !== await promotionRequestHash(data)) || (!committedPromotion && promotion)) throw new ApiError('请求编号已绑定其他优惠或邀请来源。', 409)
       if (xgift && (await xgiftSummary(env, created))?.username !== xgift.username) throw new ApiError('请求编号已绑定其他接收账号。', 409)
       return json({ order: await customerOrder(env, created) }, 201)
     }
-    const match = path.match(/^\/api\/orders\/([A-Z0-9-]+)(\/demo-actions|\/refunds|\/payment|\/fulfillment|\/custom-action)?$/)
+    const match = path.match(/^\/api\/orders\/([A-Z0-9-]+)(\/demo-actions|\/refunds|\/payment|\/fulfillment|\/custom-action|\/promotion-cancel)?$/)
     if (match) {
       let o = await getOrder(env, match[1], ownerHash, recoveredEmail)
       if (hostStore && (o.partner_id || o.owner_store_id !== hostStore)) throw new ApiError('未找到订单。', 404)
+      if (match[2] === '/promotion-cancel' && method === 'POST') return await cancelPromotion(request, env, o)
       if (match[2]==='/custom-action'&&method==='POST'&&customProductId.test(o.plan))return json({order:await customerOrder(env,await customBuyerAction(request,env,o))})
       if (!match[2]&&method==='GET'&&customProductId.test(o.plan)) {await fulfillCustomOrder(env,o.id);return json({order:await customerOrder(env,await getOrder(env,o.id))})}
       if (match[2] === '/payment') {
@@ -306,6 +323,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     }
     throw new ApiError('未找到接口或请求方法不支持。', 404)
   } catch (e) {
+    if (e instanceof Error && /member (credit|first purchase|invitation|promotion|review|reward version|allocation|capture|restoration)|member_first_purchases/.test(e.message)) return json({error:'优惠额度、首单资格或审核状态已变化，请刷新后重新确认。'},409)
     if (e instanceof Error && /sms activation requires reconciliation/.test(e.message)) return json({error:'接码状态需要核对，请先停止接码或联系店主处理原订单。'},409)
     if(e instanceof Error && /coupon unavailable/.test(e.message))return json({error:'优惠码已被使用或已更新，请重新核对。'},409)
     if (e instanceof RechargeError) return json({ error: e.message, code: e.code, retryable: e.retryable, retryAfter: e.retryAfter }, e.status, e.retryAfter === null ? {} : { 'Retry-After': String(e.retryAfter) })

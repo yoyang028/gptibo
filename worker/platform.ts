@@ -12,6 +12,9 @@ export interface Database {
   batch(statements: Statement[]): Promise<unknown[]>
 }
 export interface Env {
+  /** Consumer membership pilot. Independent from administrator and reseller auth. */
+  MEMBERSHIP_ENABLED?: string
+  MEMBER_AUTH_SECRET?: string
   /** JSON hostname -> owner storefront ID; maintained in private deployment config. */
   OWNER_STOREFRONT_HOSTS?: string
   ASSETS: { fetch(request: Request): Promise<Response> }

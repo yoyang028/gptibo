@@ -7,6 +7,8 @@ import { amountText } from '../payments/types.ts'
 import { PAYMENT_WINDOW_MS, paymentDeadline } from '../../shared/payment-window.ts'
 import { publicAlipayQr } from '../../shared/public-payment.ts'
 import { rechargeStage, type RechargeStage } from '../../shared/recharge-progress.ts'
+import { assertPromotionReady } from '../member-promotions.ts'
+import { captureRewards, checkRewardTarget, promotionPaymentConfirmed } from '../member-rewards.ts'
 import { authorizedProduct, cashierLink, checkoutEnabled, config, notifyUrl, paymentLink, paymentQr, productMap, readRaw, request, hmac, marginCents, moneyCents as amountCents, RechargeError, type Product, type RemoteOrder, type Redemption, type RemoteRefund } from './client.ts'
 
 type SupplierOrder = { order_id: string; account: string; product_code: string; collection_mode: string; create_body: string; remote_id: string | null; payment_status: string; payment_url: string | null; payment_qr: string | null; expires_at: number | null; attempted_at: number | null; updated_at: number; lease_token: string | null; lease_until: number; supply_cents: number | null; merchant_margin_cents: number | null; refunded_cents: number; financial_hold: number; notify_version: number; checked_notify_version: number }
@@ -56,7 +58,7 @@ export async function supplierSnapshot(env: Env, plan: string, price: number, pa
   if (partnerCost !== undefined && partnerCost < amountCents(product.supply_price)) throw new ApiError('该代理套餐供货价需重新核对，请联系平台支持。', 409)
   const methods = await request<{ code: string }[]>(env, '/payment-methods')
   if (!Array.isArray(methods) || !methods.some(m => m.code === 'alipay')) throw new ApiError('支付宝通道暂不可用，请稍后重试。', 409)
-  return { account: config(env).account, product: product.product_code, notify: notifyUrl(env) }
+  return { account: config(env).account, product: product.product_code, notify: notifyUrl(env), supplyCents: authorizedPrice }
 }
 export function snapshotStatement(env: Env, id: string, snapshot: Awaited<ReturnType<typeof supplierSnapshot>>, price: number): Statement {
   const raw = JSON.stringify({ merchant_order_no: id, product_code: snapshot.product, quantity: 1, sale_amount: amountText(price), collection_mode: 'platform_collect', delivery_mode: 'auto_recharge', payment_channel: 'alipay', notify_url: snapshot.notify })
@@ -100,6 +102,7 @@ async function applyRemoteOrder(env: Env, row: SupplierOrder, remote: RemoteOrde
       .bind(event, paid ? 'payment-confirmed' : 'payment-closed', order.status, paid ? '支付渠道已核验收款，等待提交充值资料' : '支付渠道已确认订单关闭', now, row.order_id, event),
   ])
   if (linkError) throw linkError
+  if (remote.payment_status === 'paid' && order.payment_status === 'unpaid') await promotionPaymentConfirmed(env, order.id)
   // Manual upstream fulfillment can complete the order while its historical
   // automatic attempts remain failed. Keep those attempts and the no-resubmit
   // marker intact; only the validated original order can confirm this success.
@@ -127,6 +130,7 @@ async function applyRemoteOrder(env: Env, row: SupplierOrder, remote: RemoteOrde
 }
 async function ensureRemote(env: Env, row: SupplierOrder) {
   if (row.remote_id) return row
+  await assertPromotionReady(env, row.order_id)
   const order = await expireRechargeOrder(env, await getOrder(env, row.order_id))
   // Recover only an already attempted idempotent write after timeout; no new payment entrance.
   const recovering = !!row.attempted_at && order.status === 'cancelled' && paymentDeadline(order.created_at, row.expires_at) <= Date.now()
@@ -287,8 +291,11 @@ export async function rechargeAction(requestMessage: Request, env: Env, order: O
   else throw new ApiError('请填写本次授权的充值会话凭据。')
   await locked(env, row, async () => {
     const current = await getOrder(env, order.id); const ready = await findRechargeOrder(env, order.id)
+    await assertPromotionReady(env, order.id)
     if (current.redemption_blocked) throw new ApiError('本订单已禁止再次兑换，请联系支持。', 409)
     if (!ready?.remote_id || ready.financial_hold || ready.payment_status !== 'paid' || current.payment_status !== 'paid' || current.refund_hold || current.refunded_cents || current.status === 'success') throw new ApiError('当前订单不能提交充值，请先刷新付款和售后状态。', 409)
+    await checkRewardTarget(env, order.id, original)
+    await captureRewards(env, order.id)
     let attempt = await latestAttempt(env, order.id)
     const number = attempt ? attempt.attempt_no + Number(attempt.id !== data.key) : 1
     const payload = (value: RechargeCredential, oldRetry = false) => JSON.stringify({ mode: 'auto_recharge', order_id: ready.remote_id, credential: value, customer_confirmed_email: true, ...(oldRetry && number > 1 ? { retry_confirmation: true } : {}) })

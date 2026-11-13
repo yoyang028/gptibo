@@ -1,4 +1,6 @@
 # Copy to .dev.vars and set independent local credentials.
+MEMBERSHIP_ENABLED=false
+MEMBER_AUTH_SECRET= # Independent random secret, at least 32 characters; configure locally.
 GRIZZLY_SMS_ENABLED=false
 ADMIN_USERNAME= # Configure locally; never commit a real value.
 ADMIN_EMAIL= # Configure locally; never commit a real value.

@@ -93,6 +93,7 @@ async function sync(env: Env, p: Payment, o: Order, close: boolean) {
   await env.INTEREST_DB.prepare('UPDATE payments SET updated_at=? WHERE order_id=?').bind(Date.now(), p.order_id).run()
 }
 export async function paymentAction(request: Request, env: Env, order: Order, adminTest = false) {
+  if (!adminTest) await (await import('../member-promotions.ts')).assertPromotionReady(env, order.id)
   if (request.method !== 'POST') throw new ApiError('请通过订单发起支付操作。', 405)
   const data = await body(request)
   if (!['create', 'query', 'close'].includes(String(data.action))) throw new ApiError('支付操作无效。')

@@ -1,3 +1,4 @@
+import type { PromotionSelection } from '../../shared/member-promotions'
 import type { PaymentMethodOption } from './payment-method-choices'
 import { emailProduct, productNameForId } from '../../shared/email-products'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
@@ -47,8 +48,8 @@ function FlowStage({ stage, children }: { stage: string; children: ReactNode }) 
   return <div ref={viewport} className="flow-viewport"><div ref={content} className="flow-stage">{children}</div></div>
 }
 
-type Props = CheckoutProps & { couponAvailable?: boolean; shopSlug?: string; onCloseComplete?: () => void; notice?: { supportsWarranty?: boolean; purchaseNote?: string; onContinue: () => void }; emailMode: boolean; paymentMethods?: PaymentMethodOption[]; draft: { plan: PlanId; price: number }; initialEmail?: string | null; onSubmitEmail: (email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, couponCode?: string, couponPrice?: number) => Promise<void>; children?: ReactNode | ((refreshTarget: HTMLElement | null) => ReactNode) }
-export function PurchaseFlow({ couponAvailable = false, shopSlug, notice, onCloseComplete, emailMode, paymentMethods, draft, initialEmail, onSubmitEmail, children, ...checkout }: Props) {
+type Props = CheckoutProps & { membershipEnabled?: boolean; couponAvailable?: boolean; shopSlug?: string; onCloseComplete?: () => void; notice?: { supportsWarranty?: boolean; purchaseNote?: string; onContinue: () => void }; emailMode: boolean; paymentMethods?: PaymentMethodOption[]; draft: { plan: PlanId; price: number }; initialEmail?: string | null; onSubmitEmail: (email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, couponCode?: string, couponPrice?: number, promotion?: PromotionSelection) => Promise<void>; children?: ReactNode | ((refreshTarget: HTMLElement | null) => ReactNode) }
+export function PurchaseFlow({ membershipEnabled = false, couponAvailable = false, shopSlug, notice, onCloseComplete, emailMode, paymentMethods, draft, initialEmail, onSubmitEmail, children, ...checkout }: Props) {
   const { order, open, onOpenChange, busy, error } = checkout
   const [refreshTarget, setRefreshTarget] = useState<HTMLDivElement | null>(null)
   const [supportReason, setSupportReason] = useState<string | null>(null)
@@ -116,10 +117,10 @@ export function PurchaseFlow({ couponAvailable = false, shopSlug, notice, onClos
   const reconnect = !sms && order?.mode === 'live' && order.fulfillment?.canSubmit
   const step = emailMode ? 0 : order?.status === 'pending' || order?.status === 'cancelled' ? 1 : order?.status === 'session' || (manual || xgift) && order?.status === 'processing' || reconnect || (!sms && order?.status === 'failed' && order.mode === 'demo') ? sms && order.smsPhone ? 3 : 2 : 3
   const completed = !emailMode && order?.status === 'success' && !paused
-  const steps = [xgift ? '填写账号' : '下单邮箱', '确认付款', xgift ? '充值处理' : automaticDelivery ? '自动发货' : emailProductInfo ? '邮件发货' : sms ? '获取号码' : manual ? '人工开通' : '连接账号', xgift ? '查看结果' : automaticDelivery ? '领取商品' : emailProductInfo ? '查收邮件' : sms ? '查询结果' : '开通结果']
+  const steps = [xgift ? '填写账号' : '下单邮箱', !emailMode && order?.promotion?.cashCents === 0 ? '审核订单' : '确认付款', xgift ? '充值处理' : automaticDelivery ? '自动发货' : emailProductInfo ? '邮件发货' : sms ? '获取号码' : manual ? '人工开通' : '连接账号', xgift ? '查看结果' : automaticDelivery ? '领取商品' : emailProductInfo ? '查收邮件' : sms ? '查询结果' : '开通结果']
   const archived = !emailMode && order?.mode !== 'live' && !checkout.testingEnabled
   const result = !emailMode && (archived || !reconnect && ['processing', 'success', 'failed', 'cancelled'].includes(order?.status ?? '') || (sms && step === 2))
-  const title = emailMode ? xgift ? '为哪个账号开通？' : '填写下单邮箱' : archived ? '订单已归档' : paused ? orderLabel(order!) : result ? orderLabel(order!) : step === 1 ? '确认本次付款' : step === 2 ? xgift ? '等待充值' : automaticDelivery ? '等待自动发货' : emailProductInfo ? '等待邮件发货' : manual ? '等待人工开通' : '连接你的账号' : '查询接码结果'
+  const title = !emailMode && order?.promotion && (order.promotion.reviewStatus === 'required' || order.promotion.procurementStatus === 'awaiting_supplier') ? '订单待处理' : emailMode ? xgift ? '为哪个账号开通？' : '填写下单邮箱' : archived ? '订单已归档' : paused ? orderLabel(order!) : result ? orderLabel(order!) : step === 1 ? '确认本次付款' : step === 2 ? xgift ? '等待充值' : automaticDelivery ? '等待自动发货' : emailProductInfo ? '等待邮件发货' : manual ? '等待人工开通' : '连接你的账号' : '查询接码结果'
   const stage = emailMode ? 'email' : `${order?.id}-${order?.status}-${Boolean(order?.smsPhone)}-${Boolean(paused)}`
   const close = (value: boolean) => { if (busy || salesBusy) return; if (!value && showingSales) closeSales(); else onOpenChange(value) }
   return <OrderSupportGuideContext.Provider value={showSupportGuide}><Dialog open={open} disablePointerDismissal onOpenChange={close} onOpenChangeComplete={value => { if (!value) { setSalesOpen(false); setSalesOrder(null); setSalesHeight(null); setDismissedSupportReason(null); onCloseComplete?.() } }}>
@@ -138,7 +139,7 @@ export function PurchaseFlow({ couponAvailable = false, shopSlug, notice, onClos
       </header>
       <FlowStage stage={stage}>
         <DialogTitle ref={titleRef} tabIndex={-1} data-stage-title className={(xgift && !emailMode) || (result && !paused) || step === 1 ? 'sr-only' : 'flow-title'}>{title}</DialogTitle>
-        {emailMode ? <PurchaseEmail couponAvailable={couponAvailable} shopSlug={shopSlug} purchasePlan={current.plan} price={current.price} key={`${shopSlug}:${current.plan}:${couponAvailable}`} paymentMethods={!checkout.testingEnabled && (xgift || emailProductInfo) ? paymentMethods ?? [] : undefined} plan={xgift ? current.plan : undefined} initialEmail={initialEmail} busy={Boolean(busy)} error={error ?? ''} inputRef={emailRef} onSubmit={onSubmitEmail} /> : typeof children === 'function' ? children(refreshTarget) : children ?? <Checkout key={order?.id} {...checkout} refreshTarget={refreshTarget} refreshDisabled={Boolean(busy) || salesBusy} />}
+        {emailMode ? <PurchaseEmail membershipEnabled={membershipEnabled} couponAvailable={couponAvailable} shopSlug={shopSlug} purchasePlan={current.plan} price={current.price} key={`${shopSlug}:${current.plan}:${couponAvailable}`} paymentMethods={!checkout.testingEnabled && (xgift || emailProductInfo) ? paymentMethods ?? [] : undefined} plan={xgift ? current.plan : undefined} initialEmail={initialEmail} busy={Boolean(busy)} error={error ?? ''} inputRef={emailRef} onSubmit={onSubmitEmail} /> : typeof children === 'function' ? children(refreshTarget) : children ?? <Checkout key={order?.id} {...checkout} refreshTarget={refreshTarget} refreshDisabled={Boolean(busy) || salesBusy} />}
         <footer className="flow-footer" data-email-step={emailMode}>
           {emailMode ? <p><ShieldCheck size={14} />{xgift ? '仅用于订单通知与找回' : '用于商品交付、订单找回与服务联系，不订阅营销邮件。'}</p> : <>
             <OrderSupportButton key={order?.id} contacts={order?.supportContacts} name={order?.partnerName ?? 'GPTibo'} disabled={busy || salesBusy || !order} guided={open && !showingSales && Boolean(supportReason) && supportReason !== dismissedSupportReason} onGuideDismiss={() => setDismissedSupportReason(supportReason)} />

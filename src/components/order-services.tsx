@@ -1,3 +1,5 @@
+import type { PromotionSelection } from '../../shared/member-promotions'
+import { PromotionChooser, type PromotionState } from './member-promotion'
 import { storefrontShopSlug } from '@/lib/storefront-routing'
 import { useAuthVerification } from './use-auth-verification'
 import { OrderVerification } from './order-verification'
@@ -23,7 +25,7 @@ import '@/styles/order-services.css'
 
 import { refundCaseLabel, refundLabel, type RefundCase, type RefundEvent } from '@/lib/refunds'
 
-export function PurchaseEmail({ couponAvailable = false, shopSlug, purchasePlan, plan, price, paymentMethods, initialEmail, busy, error, inputRef, onSubmit }: { couponAvailable?: boolean; shopSlug?: string; purchasePlan?: string; plan?: string; price: number; paymentMethods?: PaymentMethodOption[]; initialEmail?: string | null; busy: boolean; error: string; inputRef: RefObject<HTMLInputElement | null>; onSubmit: (email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, couponCode?: string, couponPrice?: number) => Promise<void> }) {
+export function PurchaseEmail({ membershipEnabled = false, couponAvailable = false, shopSlug, purchasePlan, plan, price, paymentMethods, initialEmail, busy, error, inputRef, onSubmit }: { membershipEnabled?: boolean; couponAvailable?: boolean; shopSlug?: string; purchasePlan?: string; plan?: string; price: number; paymentMethods?: PaymentMethodOption[]; initialEmail?: string | null; busy: boolean; error: string; inputRef: RefObject<HTMLInputElement | null>; onSubmit: (email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, couponCode?: string, couponPrice?: number, promotion?: PromotionSelection) => Promise<void> }) {
   const [verification, setVerification] = useState({ ready: false, token: '' })
   const [verificationRevision, setVerificationRevision] = useState(0)
   const [email, setEmail] = useState(initialEmail ?? '')
@@ -33,7 +35,12 @@ export function PurchaseEmail({ couponAvailable = false, shopSlug, purchasePlan,
   const [couponBusy, setCouponBusy] = useState(false)
   const [couponError, setCouponError] = useState('')
   const appliedCoupon = showCoupon && coupon && coupon.code === couponCode.trim().toUpperCase() && coupon.email === email.trim().toLowerCase() && coupon.listPriceCents === Math.round(price * 100) ? coupon : null
-  const payablePrice = appliedCoupon ? appliedCoupon.priceCents / 100 : price
+  const activityEnabled = membershipEnabled && ['plus','pro-5x','pro-20x','pro-25x'].includes(purchasePlan ?? '')
+  const [activity,setActivity] = useState<PromotionState>({key:'',quote:null,pending:false,error:''})
+  const activityKey = [email.trim().toLowerCase(),purchasePlan,appliedCoupon?.code ?? ''].join('|')
+  const activityQuote = activityEnabled && activity.key === activityKey ? activity.quote : null
+  const payablePrice = activityQuote ? activityQuote.cashCents / 100 : appliedCoupon ? appliedCoupon.priceCents / 100 : price
+  const activityHeld = activityQuote && (activityQuote.reviewStatus === 'required' || activityQuote.procurementStatus === 'awaiting_supplier')
   async function applyCoupon() {
     if (!showCoupon || couponBusy || busy) return
     setCouponBusy(true); setCouponError(''); setCoupon(null)
@@ -62,7 +69,7 @@ export function PurchaseEmail({ couponAvailable = false, shopSlug, purchasePlan,
   const submitting = useRef(false)
   async function submit() {
     if (busy || submitting.current) return
-    if (methodMissing || couponBusy) return
+    if (methodMissing || couponBusy || (activityEnabled && !activityQuote)) return
     if (showCoupon && couponCode.trim() && !appliedCoupon) { setCouponError('请先应用优惠码，或清空后继续。'); return }
     setTouched(true); if (problem) { inputRef.current?.focus(); return }
     submitting.current = true; setCheckError('')
@@ -76,7 +83,7 @@ export function PurchaseEmail({ couponAvailable = false, shopSlug, purchasePlan,
         return
       }
       if (!verification.ready) { setCheckError('请先完成人机验证。'); return }
-      try { await onSubmit(email.trim().toLowerCase(), plan ? normalized ?? undefined : undefined, plan ? check?.token : undefined, method, paymentMethods ? feeBps : undefined, verification.token, appliedCoupon?.code, appliedCoupon ? appliedCoupon.priceCents / 100 : undefined) }
+      try { await onSubmit(email.trim().toLowerCase(), plan ? normalized ?? undefined : undefined, plan ? check?.token : undefined, method, paymentMethods ? feeBps : undefined, verification.token, appliedCoupon?.code, activityQuote ? activityQuote.cashCents / 100 : appliedCoupon ? appliedCoupon.priceCents / 100 : undefined, activityQuote?.selection) }
       finally { setVerification({ ready: false, token: '' }); setVerificationRevision(v => v + 1) }
     } catch (e) { setCheckError(errorMessage(e)) }
     finally { submitting.current = false; setChecking(false) }
@@ -89,12 +96,13 @@ export function PurchaseEmail({ couponAvailable = false, shopSlug, purchasePlan,
     <EmailAutocomplete onPointerDown={event => event.currentTarget.focus({ preventScroll: true })} ref={inputRef} id="purchase-email" required maxLength={254} aria-invalid={Boolean(validation)} aria-describedby="purchase-email-hint" onBlur={() => setTouched(true)} value={email} onValueChange={setEmail} disabled={busy} placeholder="you@qq.com" />
     <div className="email-validation" id="purchase-email-hint">{validation ? <p role="alert">{validation}</p> : <p>{plan ? '用于接收通知、找回订单。' : '换设备后，可用这个邮箱验证并找回订单。'}</p>}</div>
     {showCoupon && <div className="purchase-coupon"><label htmlFor="purchase-coupon">优惠码 <span>选填</span></label><div className="purchase-coupon-controls"><Input id="purchase-coupon" value={couponCode} maxLength={32} disabled={busy || couponBusy} onChange={e => {setCouponCode(e.target.value);setCoupon(null);setCouponError('')}} placeholder="输入本店商品优惠码" /><Button type="button" variant="outline" disabled={busy || couponBusy || !couponCode.trim() || Boolean(problem)} onClick={() => void applyCoupon()}>{couponBusy ? '校验中…' : '应用'}</Button></div>{couponError && <p role="alert">{couponError}</p>}{appliedCoupon && <p role="status">已优惠 {money(appliedCoupon.discountCents)}，商品应付 {money(appliedCoupon.priceCents)}</p>}</div>}
+    {activityEnabled && <PromotionChooser email={email} plan={purchasePlan!} price={price} couponCode={appliedCoupon?.code ?? ''} onChange={setActivity} />}
     {paymentMethods !== undefined && <PaymentMethodSelector methods={paymentMethods} value={method} busy={busy || checking} onChange={setSelectedMethod} />}
     {paymentMethods !== undefined && method && <dl className="purchase-fee-summary" aria-live="polite"><div><dt>商品金额</dt><dd>¥{payablePrice.toFixed(2)}</dd></div><div><dt>平台手续费（{feeBps / 100}%）</dt><dd>¥{(feeCents / 100).toFixed(2)}</dd></div><div><dt>实付金额</dt><dd>¥{((Math.round(payablePrice * 100) + feeCents) / 100).toFixed(2)}</dd></div></dl>}
     <OrderVerification key={verificationRevision} onChange={setVerification} />
     {(checkError || error) && <p className="purchase-submit-error" role="alert">{checkError || error}</p>}
-    <AsyncButton className="primary-action" type="submit" loading={busy || checking} pendingLabel={checking ? "正在验证账号" : "正在创建订单"} disabled={Boolean(problem) || methodMissing || (!!plan && !normalized) || ((!plan || verified) && !verification.ready)}>{plan ? verified ? "确认账号，继续付款" : "验证账号" : "继续付款"} <ArrowRight size={16} /></AsyncButton>
-    <div className="checkout-action-feedback">{busy && <RequestNotice label="正在保存订单，完成后自动进入付款。" slowLabel="订单仍在确认中，请勿重复下单。" />}</div>
+    <AsyncButton className="primary-action" type="submit" loading={busy || checking} pendingLabel={checking ? "正在验证账号" : "正在创建订单"} disabled={(activityEnabled && !activityQuote) || Boolean(problem) || methodMissing || (!!plan && !normalized) || ((!plan || verified) && !verification.ready)}>{plan ? verified ? "确认账号，继续付款" : "验证账号" : activityHeld ? "确认优惠订单" : "继续付款"} <ArrowRight size={16} /></AsyncButton>
+    <div className="checkout-action-feedback">{busy && <RequestNotice label={activityHeld ? '正在保存优惠订单，完成后查看处理进度。' : '正在保存订单，完成后自动进入付款。'} slowLabel="订单仍在确认中，请勿重复下单。" />}</div>
   </form>
 }
 

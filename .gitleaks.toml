@@ -7,7 +7,15 @@ useDefault = true
 description = "Published RFC HOTP test vector"
 regexTarget = "secret"
 regexes = ['''^GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ$''']
-paths = ['''(?:^|/)(?:tests/[^/]+\.ts|services/storefront/internal/security/security_test\.go)$''']
+paths = ['''(?:^|/)(?:tests/[^/]+\.ts|scripts/sites/member-acceptance\.mjs|services/storefront/internal/security/security_test\.go)$''']
+condition = "AND"
+
+# Synthetic expired JWT with a literal, noncryptographic fixture signature.
+[[allowlists]]
+description = "Expired JWT parsing test fixture"
+regexTarget = "secret"
+regexes = ['''^e30\.eyJleHAiOjF9\.fixture$''']
+paths = ['''(?:^|/)services/storefront/internal/recharge/credential_input_test\.go$''']
 condition = "AND"
 
 # Public Xiaojiu HMAC-v2 signature vector from the official sample, test-only.

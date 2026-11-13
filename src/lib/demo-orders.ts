@@ -23,7 +23,9 @@ export type OrderStatus = 'pending' | 'session' | 'processing' | 'success' | 'fa
 export type DemoOrder = { id: string; plan: PlanId; price: number; createdAt: number; status: OrderStatus; startedAt?: number; outcome?: 'success' | 'failed'; smsPhone?: string; customerEmail?: string | null; refundedCents?: number; platformStatus?: PlatformOrderStatus | null; refundHold?: boolean; redemptionBlocked?: boolean }
 export type OrderAction = 'pay' | 'acquire-phone' | 'submit-success' | 'submit-failed' | 'settle' | 'retry' | 'cancel'
 export const ORDER_LABELS: Record<OrderStatus, string> = { pending: '待付款', session: '待提交凭据', processing: '充值中', success: '已完成', failed: '需重新提交', cancelled: '已关闭' }
-export function orderLabel(order: DemoOrder & { custom?: {productName:string;sms?:{state:string}}|null; manualFulfillment?: boolean; fulfillment?: { paymentExpired?: boolean; rechargeStatus?: string | null } }): string {
+export function orderLabel(order: DemoOrder & { promotion?: { cashCents: number; reviewStatus: string; procurementStatus: string } | null; custom?: {productName:string;sms?:{state:string}}|null; manualFulfillment?: boolean; fulfillment?: { paymentExpired?: boolean; rechargeStatus?: string | null } }): string {
+  if (order.promotion && order.status === 'cancelled') return '已关闭'
+  if (order.promotion && (order.promotion.cashCents === 0 || ['required','rejected'].includes(order.promotion.reviewStatus) || order.promotion.procurementStatus === 'awaiting_supplier')) return order.promotion.reviewStatus === 'rejected' ? '审核未通过' : '待处理'
   const refundLabel = confirmedRefundLabel(Math.max(order.refundedCents ?? 0, order.platformStatus?.refundedCents ?? 0), Math.round(order.price * 100))
   if (refundLabel) return refundLabel
   if (order.refundHold) return '售后处理中'
