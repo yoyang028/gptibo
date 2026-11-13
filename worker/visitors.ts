@@ -1,5 +1,5 @@
 import { ApiError, body, hash, json, type Env } from './platform.ts'
-import { storefrontSelection } from './storefront-hosts.ts'
+import { storefrontSelection, ownerStorefrontLinks } from './storefront-hosts.ts'
 
 const localDay = (time: number) => new Date(time + 8 * 3600000).toISOString().slice(0, 10)
 const daysAgo = (days: number) => localDay(Date.now() - (days - 1) * 86400000)
@@ -51,5 +51,10 @@ export async function adminVisitorSummary(env: Env, url: URL) {
   const platform = await env.INTEREST_DB.prepare("SELECT COALESCE(SUM(page_views),0) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE day>=? AND shop_id='platform'").bind(since).first<{ pageViews: number; visitors: number }>()
   const partners = (await env.INTEREST_DB.prepare(`SELECT p.id,p.name,p.slug,p.active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
     FROM partners p LEFT JOIN visitor_days v ON v.shop_id=p.id AND v.day>=? GROUP BY p.id ORDER BY visitors DESC,pageViews DESC,p.created_at DESC`).bind(since).all<{ id: string; name: string; slug: string; active: number; pageViews: number; visitors: number }>()).results
-  return { ...summary, platform: platform ?? { pageViews: 0, visitors: 0 }, partners }
+  const stores = (await env.INTEREST_DB.prepare(`SELECT s.id,s.slug,COALESCE(NULLIF(json_extract(s.settings,'$.name'),''),'GPTibo') name,
+    COALESCE(json_extract(s.settings,'$.active'),1) active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
+    FROM owner_shop_settings s LEFT JOIN visitor_days v ON v.shop_id=s.id AND v.day>=? GROUP BY s.id ORDER BY s.slot`)
+    .bind(since).all<{ id: string; slug: string; name: string; active: number; pageViews: number; visitors: number }>()).results
+  const ownerStores = stores.map(store => ({ ...store, ...ownerStorefrontLinks(env, url.origin, store.id, store.slug) }))
+  return { ...summary, platform: platform ?? { pageViews: 0, visitors: 0 }, ownerStores, partners }
 }

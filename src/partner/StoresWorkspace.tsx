@@ -50,6 +50,7 @@ type Settings = {
 }
 type Shop = {
   id: string
+  storefront_url?: string
   slot: number
   slug: string
   name: string
@@ -105,6 +106,7 @@ type Data = {
 }
 type Binding = {
   id: string
+  url?: string
   storeId: string
   hostname: string
   free: boolean
@@ -206,7 +208,8 @@ export function StoresWorkspace({
   const data = resource.data
   const setSelected = (id: string) => { setLocalSelected(id); onStoreChange?.(id) }
   const shop = data?.stores.find((s) => s.id === (selectedStoreId ?? selected)) ?? data?.stores[0]
-  const storefrontPath = (slug: string) => owner && !slug ? '/' : partnerStorefrontPath(slug)
+  const storefrontPath = (slug: string) => owner ? slug ? '/s/' + slug : '/' : partnerStorefrontPath(slug)
+  const storefrontUrl = (store: Shop) => store.storefront_url || (data?.referralOrigin || location.origin) + storefrontPath(store.slug)
   const reload = () => {
     setRevision((v) => v + 1)
     onSaved?.()
@@ -298,24 +301,17 @@ export function StoresWorkspace({
         <div>
           <strong>{shop.name}</strong>
           <a
-            href={
-              (data.referralOrigin || location.origin) +
-              storefrontPath(shop.slug)
-            }
+            href={storefrontUrl(shop)}
             target="_blank"
             rel="noreferrer"
           >
-            {(data.referralOrigin || location.origin) +
-              storefrontPath(shop.slug)}{' '}
+            {storefrontUrl(shop)}{' '}
             <ArrowUpRight size={14} />
           </a>
         </div>
         <div>
           <CopyButton
-            value={
-              (data.referralOrigin || location.origin) +
-              storefrontPath(shop.slug)
-            }
+            value={storefrontUrl(shop)}
             label={owner ? '复制店铺链接' : '复制推广链接'}
           />
           {!readOnly && (
@@ -422,10 +418,7 @@ export function StoresWorkspace({
                       </div>
                       <div className="store-overview-actions">
                         <CopyButton
-                          value={
-                            (data.referralOrigin || location.origin) +
-                            storefrontPath(s.slug)
-                          }
+                          value={storefrontUrl(s)}
                           label={owner ? '复制店铺链接' : '复制推广链接'}
                         />
                         <Button
@@ -595,14 +588,14 @@ export function StoresWorkspace({
                           域名与续费
                         </h3>
                         <p>
-                          {owner ? '主商城域名已绑定 Cloudflare；域名变更需同步正式回调配置。' : monthlyFee === 0
+                          {owner ? '查看当前店铺已绑定的正式域名与访问入口。' : monthlyFee === 0
                             ? '额外域名暂时免费（¥0/月），免费开通、自动续期，不扣余额。'
                             : `每个代理一个免费域名，额外域名 ${money(monthlyFee)}/月。到期自动抵扣可提现余额，不足时宽限三天。`}
                         </p>
                       </div>
                     </div>
                     <p className="stores-help">
-                      {owner ? '当前使用主商城正式域名，访问与后台登录共用该域名。' : '域名暂停不影响主站推广链接、已有订单和售后。登录状态在不同域名独立。'}
+                      {owner ? '各店使用各自的访问域名，统一在主后台管理店铺参数、商品与经营数据。' : '域名暂停不影响主站推广链接、已有订单和售后。登录状态在不同域名独立。'}
                     </p>
                     {!readOnly && !owner &&
                       domainResource.data?.enabled &&
@@ -632,6 +625,7 @@ export function StoresWorkspace({
                         单。
                       </p>
                     )}
+                    {owner && domainResource.data && !domainResource.data.domains.some(d => d.storeId === shop.id) && <p className="stores-help">当前店铺尚未绑定独立域名，可使用上方的店铺访问入口。</p>}
                     {domainResource.data?.domains
                       .filter((d) => d.storeId === shop.id)
                       .map((d) => (
@@ -654,11 +648,9 @@ export function StoresWorkspace({
                               )}
                             </div>
                             <CopyButton
-                              value={
-                                'https://' +
+                              value={d.url || ('https://' +
                                 d.hostname +
-                                storefrontPath(shop.slug)
-                              }
+                                storefrontPath(shop.slug))}
                               label="复制域名推广链接"
                             />
                           </div>

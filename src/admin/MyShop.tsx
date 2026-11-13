@@ -41,7 +41,7 @@ export default function MyShop({
   const [tab, setTab] = useState('stores')
   const [storeId, setStoreId] = useState('platform')
   const { data } = useResource<{
-    stores: { id: string; name: string; slug: string }[]
+    stores: { id: string; name: string; slug: string; storefront_url: string }[]
     prices: {
       store_id: string
       plan: string
@@ -62,6 +62,7 @@ export default function MyShop({
   }))
   const selected = data?.stores.find(s => s.id === storeId)
   const storePath = selected?.slug ? '/s/' + selected.slug : '/'
+  const storeUrl = selected?.storefront_url ?? location.origin + storePath
   return (
     <div className="owner-shop-canvas">
       <div className="partner-section-heading">
@@ -69,7 +70,7 @@ export default function MyShop({
           <h2>店铺管理</h2>
           <p>三家自营店共用商品资料，分别管理店铺参数、售价与经营数据。</p>
         </div>
-        <a href={storePath} target="_blank" rel="noreferrer">
+        <a href={storeUrl} target="_blank" rel="noreferrer">
           预览当前店铺 <ArrowUpRight size={14} />
         </a>
       </div>
@@ -109,7 +110,7 @@ export default function MyShop({
                     ]}
                     endpoint={'/api/admin/my-shop/product-order?store=' + storeId}
                     plans={offers}
-                    storeUrl={location.origin + storePath}
+                    storeUrl={storeUrl}
                     onSaved={onSaved}
                   />
                 }

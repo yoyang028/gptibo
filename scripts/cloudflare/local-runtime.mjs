@@ -114,6 +114,7 @@ const config = {
   },
   assets: { directory: path.join(root, 'dist'), binding: 'ASSETS', run_worker_first: ['/api/*'], routerConfig: { has_user_worker: true }, assetConfig: { not_found_handling: 'single-page-application', headers: { version: 2, rules } } },
   bindings: {
+    OWNER_STOREFRONT_HOSTS: process.env.GPTIBO_LOCAL_OWNER_STOREFRONT_HOSTS || '',
     ADMIN_USERNAME: 'dev-admin', ADMIN_EMAIL: 'admin@example.invalid', ADMIN_TOTP_SECRET: fs.readFileSync(authPath, 'utf8').trim(),
     RESEND_API_KEY: 'local_mailbox_only', RESEND_FROM: 'GPTibo Local <noreply@example.invalid>', PARTNER_AUTH_SECRET: 'local_cloudflare_partner_fixture_not_a_real_secret_32',
     ORDER_TESTING_ENABLED: 'false', EMAIL_PRODUCTS_ENABLED: 'false', PAYMENT_CHECKOUT_ENABLED: 'false', PAYMENT_TEST_ENABLED: 'false', XGIFT_CHECKOUT_ENABLED: 'false', ACCOUNT_SUPPLIER_CHECKOUT_ENABLED: 'false', DELIVERY_SUPPLIER_CHECKOUT_ENABLED: 'false',

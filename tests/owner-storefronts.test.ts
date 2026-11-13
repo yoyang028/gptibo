@@ -168,6 +168,61 @@ test('visitor statistics follow owner shop links without creating reseller recor
   } finally { f.db.close() }
 })
 
+test('management links and domain cards follow configured storefront hosts, with a path fallback for unbound stores', async () => {
+  const f = await fixture()
+  try {
+    f.env.OWNER_STOREFRONT_HOSTS = JSON.stringify({ 'www.general.example.test': 'store-3', 'general.example.test': 'store-3' })
+    const before = f.db.prepare('SELECT * FROM owner_shop_settings ORDER BY slot').all()
+    const stores = (await f.stores()).stores
+    assert.deepEqual(stores.map((s: any) => [s.id, s.storefront_url]), [
+      ['platform', 'https://shop.example.invalid/'],
+      ['store-2', 'https://shop.example.invalid/s/store-2'],
+      ['store-3', 'https://general.example.test/'],
+    ])
+    assert.equal(stores[2].legacy_url, 'https://shop.example.invalid/s/store-3')
+    const domains = (await f.read('/api/admin/my-shop/domain')).domains
+    assert.deepEqual(domains.map((d: any) => [d.storeId, d.hostname, d.url]), [
+      ['platform', 'shop.example.invalid', 'https://shop.example.invalid/'],
+      ['store-3', 'general.example.test', 'https://general.example.test/'],
+      ['store-3', 'www.general.example.test', 'https://www.general.example.test/'],
+    ])
+    assert(domains.every((d: any) => d.state === 'active'))
+    assert.deepEqual(f.db.prepare('SELECT * FROM owner_shop_settings ORDER BY slot').all(), before)
+    f.env.OWNER_STOREFRONT_HOSTS = undefined
+    assert.equal((await f.stores()).stores[2].storefront_url, 'https://shop.example.invalid/s/store-3')
+    assert.equal((await f.read('/api/admin/my-shop/domain')).domains.length, 1)
+  } finally { f.db.close() }
+})
+
+test('selected-store visitor periods retain store ownership across legacy links and mapped hosts', async () => {
+  const f = await fixture()
+  try {
+    f.env.OWNER_STOREFRONT_HOSTS = JSON.stringify({ 'general.example.test': 'store-3' })
+    const visitorId = crypto.randomUUID()
+    await f.request('/api/visitors', { path: '/', visitorId })
+    await f.request('/api/visitors', { path: '/s/store-3', visitorId })
+    const { default: worker } = await import('../worker/index.ts')
+    const visit = await worker.fetch(new Request('https://general.example.test/api/visitors', {
+      method: 'POST', headers: { Origin: 'https://general.example.test', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/product/chatgpt', visitorId }),
+    }), f.env)
+    assert.equal(visit.status, 200)
+    for (const days of [1, 7, 30, 90]) {
+      for (const [store, views] of [['platform', 1], ['store-2', 0], ['store-3', 2]] as const) {
+        const stats = await f.read(`/api/admin/my-shop/visitors?store=${store}&days=${days}`)
+        assert.equal(stats.days, days)
+        assert.equal(stats.trend.length, days)
+        assert.equal(stats.pageViews, views)
+      }
+    }
+    const global = await f.read('/api/admin/visitors?days=1')
+    assert.deepEqual(global.ownerStores.map((s: any) => [s.id, s.pageViews]), [['platform', 1], ['store-2', 0], ['store-3', 2]])
+    assert.equal(global.ownerStores[2].storefront_url, 'https://general.example.test/')
+    assert.equal(global.visitors, 1)
+    assert.equal((await f.request('/api/admin/my-shop/visitors?store=store-3?days=7', undefined, f.admin)).status, 404)
+  } finally { f.db.close() }
+})
+
 test('custom products share inventory but retain each storefront price, contact and order snapshot', async () => {
   const f = await fixture()
   try {

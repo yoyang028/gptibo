@@ -154,7 +154,9 @@ export function VisitorStats({
   const [internalDays, setInternalDays] = useState<VisitorPeriod>(7)
   const days = selectedDays ?? internalDays
   const setDays = onDaysChange ?? setInternalDays
-  const { data, error, loading } = useResource<VisitorSummary>(`${endpoint}?days=${days}`, revision)
+  const query = new URL(endpoint, location.origin)
+  query.searchParams.set('days', String(days))
+  const { data, error, loading } = useResource<VisitorSummary>(query.pathname + query.search, revision)
 
   const avgDailyVisitors = data
     ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(

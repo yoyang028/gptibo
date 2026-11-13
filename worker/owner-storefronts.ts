@@ -5,6 +5,7 @@ import { supportContactsSettings } from './support-contacts.ts'
 import { safeImage, hasControlCharacters } from '../shared/shop-products.ts'
 import { emailValue } from './partner-auth.ts'
 import { visitorSummary } from './visitors.ts'
+import { ownerStorefrontLinks } from './storefront-hosts.ts'
 
 const fields: Record<string, number> = { name: 80, brandName: 32, logo: 400000, pageTitle: 120, headline: 120, description: 500, wechat: 64, qq: 20, email: 254, announcementTitle: 100, announcement: 2000 }
 const syncFields = new Set([...Object.keys(fields), 'active', 'announcementPlacement', 'productIds', 'hiddenProductIds', 'orderCompletedEmail'])
@@ -68,7 +69,20 @@ export async function ownerStorefrontRoutes(request: Request, env: Env, url: URL
       base.stores.push({ ...record, name: settings.name, active: settings.active, settings, ...stats, visitors: visits.visitors })
       base.prices.push(...rows.map(p => ({ ...p, store_id: record.id, enabled: Boolean(p.enabled), cost_cents: costs[p.plan] ?? 0, cost_known: costs[p.plan] != null, child_cost_cents: null, supply_version: p.catalog_version })))
     }
+    base.stores = (base.stores as { id: string; slug: string }[]).map(store => ({ ...store, ...ownerStorefrontLinks(env, url.origin, store.id, store.slug) }))
     return json({ ...base, capabilities: { maxStores: 3, bulkSettings: true } })
+  }
+  if (suffix === '/domain' && request.method === 'GET') {
+    const domains = (await allStores(env)).flatMap(store => {
+      const links = ownerStorefrontLinks(env, url.origin, store.id, store.slug)
+      return links.domains.map(hostname => ({
+        id: store.id + ':' + hostname, storeId: store.id, hostname,
+        url: store.id === 'platform' ? links.storefront_url : 'https://' + hostname + '/',
+        free: true, state: 'active', message: '该域名对应当前店铺，店铺共用统一管理后台。',
+        billingState: 'paid', expiresAt: null, billingVersion: 0, records: [],
+      }))
+    })
+    return json({ enabled: true, eligible: true, completedOrders: 0, requiredOrders: 0, monthlyFeeCents: 0, managed: true, domains })
   }
   if (suffix === '/stores/bulk' && request.method === 'POST') {
     const data = await body(request, 32768), stores = await allStores(env)
