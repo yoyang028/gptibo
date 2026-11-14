@@ -7,6 +7,7 @@ import { ownerStoreOffer } from './owner-store-prices.ts'
 import { ownerShop } from './owner-shop.ts'
 import { supplierSnapshot } from './recharge/service.ts'
 import { couponQuote } from './shop-coupons.ts'
+import { riskFlags, riskMetrics } from './member-risk.ts'
 
 export async function simulatePromotion(env: Env, data: Record<string, unknown>) {
   if (!(INVITATION_PLANS as readonly unknown[]).includes(data.plan) || !['scenario','member'].includes(String(data.mode))) throw new ApiError('预演商品或模式无效。')
@@ -52,6 +53,7 @@ export async function simulatePromotion(env: Env, data: Record<string, unknown>)
   if (referrer && (referrer.id === member?.id || referrer.email.toLowerCase() === customerEmail)) flags.push('self_invitation')
   if (data.abnormal === true) flags.push('simulated_anomaly')
   if (amounts.rewardCents > 3000 && amounts.rewardCents < 10000 && recent >= 5) flags.push('frequent_redemption')
+  if (data.mode === 'member' || data.customerEmail) flags.push(...riskFlags(await riskMetrics(env, { memberId: member?.id, customerKey: await identityKey(env, 'email', customerEmail) })))
   const path = promotionPath(offer.price_cents, amounts.cashCents, snapshot.supplyCents, flags)
   return json({ ...amounts, ...path, originalCents: offer.price_cents, supplyCents: snapshot.supplyCents, availableCents: available,
     newcomerCents, otherCents: ordinary?.discountCents ?? 0, flags, basis: data.mode, invitationEligible: inviteValid && newCustomer,

@@ -49,6 +49,8 @@ import { supplierManagement } from './supplier-management.ts'
 import { memberStore, verifiedMember } from './member-auth.ts'
 import { adminMemberRoutes } from './member-routes.ts'
 import { memberOperations } from './member-operations.ts'
+import { riskSignalStatements } from './member-risk.ts'
+import { INVITATION_PLANS } from '../shared/member-promotions.ts'
 import { quotePromotion, promotionStatements, promotionView, promotionFor, promotionRequestHash, cancelPromotion } from './member-promotions.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
@@ -262,6 +264,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         ...(live ? [env.INTEREST_DB.prepare("UPDATE orders SET mode='live' WHERE id=? AND payment_status='unpaid'").bind(id)] : []),
         ...(promotion ? [env.INTEREST_DB.prepare('UPDATE orders SET member_promotion=1 WHERE id=?').bind(id)] : []),
         ...(promotion ? await promotionStatements(env, id, data, promotion) : []),
+        ...(live && ownerStoreId==='store-3' && env.MEMBERSHIP_ENABLED!==undefined && (INVITATION_PLANS as readonly string[]).includes(plan.id) ? await riskSignalStatements(request, env, id, email, member?.id ?? null) : []),
         ...(xgift ? [await xgiftSnapshotStatement(env, id, xgift)] : []),
         ...(snapshot ? [snapshotStatement(env, id, snapshot, cashPrice)] : []),
         ...(gmail ? [gmailSnapshotStatement(env, id, gmail)] : []),

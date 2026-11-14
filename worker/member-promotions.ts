@@ -1,10 +1,13 @@
-import { ApiError, hash, json, body, type Env, type Statement } from './platform.ts'
+import { ApiError, hash, json, body, owner, type Env, type Statement } from './platform.ts'
 import { memberStore, membershipEnabled, verifiedMember, MEMBER_STORE } from './member-auth.ts'
 import { ownerStoreOffer, ownerCheckoutGuard } from './owner-store-prices.ts'
 import { supplierSnapshot, snapshotStatement } from './recharge/service.ts'
 import { emailValue } from './partner-auth.ts'
 import { couponQuote } from './shop-coupons.ts'
 import { promotionAmounts, promotionPath } from '../shared/member-policy.ts'
+import { identityKey } from './member-identity.ts'
+import { riskFlags, riskMetrics, riskIpKey } from './member-risk.ts'
+export { identityKey } from './member-identity.ts'
 import type { Order } from './order-state.ts'
 import { INVITATION_PLANS, NEWCOMER_DISCOUNT_CENTS, type PromotionQuote, type PromotionView } from '../shared/member-promotions.ts'
 
@@ -26,11 +29,6 @@ export async function promotionFor(env: Env, id: string) {
   return env.INTEREST_DB.prepare('SELECT * FROM member_order_promotions WHERE order_id=?').bind(id).first<Promotion>()
 }
 
-export async function identityKey(env: Env, kind: string, value: string) {
-  if (!env.MEMBER_AUTH_SECRET) throw new ApiError('会员活动尚未配置。', 503)
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.MEMBER_AUTH_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  return Array.from(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`store-3:${kind}:${value.toLowerCase().trim()}`))), b => b.toString(16).padStart(2, '0')).join('')
-}
 export async function memberProfile(env: Env, id: string) {
   await env.INTEREST_DB.prepare('INSERT INTO member_profiles(id,invite_code,created_at) SELECT id,?,? FROM member_s3_user WHERE id=? AND emailVerified=1 ON CONFLICT(id) DO NOTHING')
     .bind(crypto.randomUUID().replaceAll('-', '').toUpperCase(), Date.now(), id).run()
@@ -81,6 +79,8 @@ export async function quotePromotion(request: Request, env: Env, data: Record<st
     const recent = await env.INTEREST_DB.prepare('SELECT COUNT(*) n FROM member_order_promotions WHERE member_id=? AND created_at>?').bind(member?.id ?? '', Date.now() - 86400000).first<{ n: number }>()
     if ((recent?.n ?? 0) >= 5) flags.push('frequent_redemption')
   }
+  const history = await riskMetrics(env, { memberId: member?.id, customerKey, browserKey: await owner(request) }, await riskIpKey(env, request.headers.get('CF-Connecting-IP')))
+  flags.push(...riskFlags(history))
   const { reviewStatus, procurementStatus } = promotionPath(offer.price_cents, cashCents, snapshot.supplyCents, flags)
   const allocations: { id: string; amount: number }[] = []
   let remaining = rewardCents

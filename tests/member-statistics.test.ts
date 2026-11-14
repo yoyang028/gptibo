@@ -21,6 +21,8 @@ test('inviter statistics keep paid, delivery, refunds and reward usage separate 
   assert.equal(row.refunded_cents, 20700); assert.equal(row.delivered_orders, 2); assert.equal(row.converted_buyers, 1)
   assert.equal(row.issued_cents, 2000); assert.equal(row.used_cents, 750); assert.equal(row.restored_cents, 750); assert.equal(row.available_cents, 1250)
   assert.equal(totals.paid_cents, 27600)
+  f.db.prepare('UPDATE member_profiles SET frozen=1 WHERE id=?').run(f.member.id)
+  assert.equal((await (await f.call('/api/admin/member-ops/statistics?q=operations', undefined, f.admin)).json()).rows[0].available_cents, 0)
   assert.equal((await f.call('/api/admin/member-ops/statistics')).status, 401)
 })
 

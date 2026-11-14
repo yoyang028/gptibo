@@ -3,6 +3,7 @@ import { api, errorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { money } from './member-operation-format'
+import { RISK_LABELS } from '../../shared/member-risk'
 
 type Result = { originalCents: number; supplyCents: number; availableCents: number; rewardCents: number; newcomerCents: number; otherCents: number; cashCents: number; remainingCents: number; reviewStatus: string; reviewTier: string; procurementPath: string; flags: string[]; message: string; basis: string }
 const pathLabels: Record<string, string> = { hold_for_supplier: '锁券等待上游补差方案，取消恢复额度', review_then_platform_collect: '先人工审核，通过后按实付向上游代收', platform_collect: '按实付金额向原上游代收' }
@@ -23,6 +24,6 @@ export default function MemberSimulationPage() {
       <label>本次奖励抵扣（元）<Input aria-label="预演奖励抵扣" type="number" min="0" step="0.01" value={reward} onChange={e => setReward(e.target.value)} required /></label><label className="member-simulation-check"><input type="checkbox" checked={newcomer} onChange={e => setNewcomer(e.target.checked)} />新人减5元（与其他优惠互斥）</label>
       <label>购买邮箱（可选，填写后核查真实首购记录）<Input aria-label="预演购买邮箱" type="email" value={customerEmail} onChange={e => setCustomerEmail(e.target.value)} /></label><label>邀请码（可选，填写后核查真实资格）<Input aria-label="预演邀请码" value={inviteCode} onChange={e => setInviteCode(e.target.value)} maxLength={32} /></label><label>普通优惠码（可选）<Input aria-label="预演普通优惠码" value={couponCode} onChange={e => setCouponCode(e.target.value)} maxLength={32} /></label><label className="member-simulation-check"><input type="checkbox" checked={abnormal} onChange={e => setAbnormal(e.target.checked)} />模拟其他异常，触发人工审核</label>
       <Button type="submit" disabled={busy}>{busy ? '正在读取报价并预演…' : '开始预演'}</Button></form>
-    {error && <p role="alert">{error}</p>}{result && <div className="member-simulation-result" role="status"><h3>预演结果 · {result.basis === 'member' ? '真实会员余额快照' : '假设场景'}</h3><dl>{[['商品原价',money(result.originalCents)],['上游采购价',money(result.supplyCents)],['奖励抵扣',money(result.rewardCents)],['新人／其他优惠',`${money(result.newcomerCents)}／${money(result.otherCents)}`],['应付金额',money(result.cashCents)],['预演后剩余额度',money(result.remainingCents)],['审核方式',tiers[result.reviewTier]],['采购路径',pathLabels[result.procurementPath]]].map(([l,v]) => <div key={l}><dt>{l}</dt><dd>{v}</dd></div>)}</dl><p>{result.message}</p></div>}
+    {error && <p role="alert">{error}</p>}{result && <div className="member-simulation-result" role="status"><h3>预演结果 · {result.basis === 'member' ? '真实会员余额快照' : '假设场景'}</h3><dl>{[['商品原价',money(result.originalCents)],['上游采购价',money(result.supplyCents)],['奖励抵扣',money(result.rewardCents)],['新人／其他优惠',`${money(result.newcomerCents)}／${money(result.otherCents)}`],['应付金额',money(result.cashCents)],['预演后剩余额度',money(result.remainingCents)],['审核方式',tiers[result.reviewTier]],['采购路径',pathLabels[result.procurementPath]]].map(([l,v]) => <div key={l}><dt>{l}</dt><dd>{v}</dd></div>)}</dl>{result.flags.length>0&&<p>风险提示：{result.flags.map(f=>RISK_LABELS[f]??f).join('、')}</p>}<p>{result.message}</p><p>预演未包含实际购买浏览器的辅助记录，实际下单会重新检查。</p></div>}
   </section>
 }

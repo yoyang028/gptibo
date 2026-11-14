@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Feedback } from '@/components/workspace-loading'
+import { RISK_LABELS } from '../../shared/member-risk'
 
 type Member = { id: string; email: string; emailVerified: number; frozen: number; version: number; invited: number; balance_cents: number }
 type ActivityOrder = { order_id: string; customer_email: string; plan_name: string; referrer_email: string | null; original_cents: number; newcomer_cents: number; reward_cents: number; cash_cents: number; review_status: string; procurement_status: string; allocation_status: string; risk_flags: string; updated_at: number; order_version: number; status: string; payment_status: string }
@@ -14,7 +15,7 @@ type Data = { enabled: boolean; members: Member[]; orders: ActivityOrder[]; rewa
 type Decision = { action: string; id: string; label: string; version?: number; updatedAt?: number }
 const money = (n: number) => `¥${(n / 100).toFixed(2)}`
 const statuses: Record<string,string> = { pending:'待生效',active:'已生效',cancelled:'已撤销',expired:'已到期',frozen:'已冻结',reserved:'已占用',captured:'已核销',released:'已释放',restored:'已恢复',none:'无需人工审核',required:'待审核',approved:'已通过',rejected:'未通过' }
-const risks: Record<string,string> = { self_invitation:'疑似自邀',target_repeat:'充值目标重复',frequent_redemption:'短期频繁抵扣' }
+const risks = RISK_LABELS
 const ledgerLabels: Record<string,string> = { grant:'发放待生效奖励',activate:'奖励生效',reserve:'订单占用',captured:'订单抵扣',released:'取消释放',restored:'退款恢复',expire:'到期',cancelled:'撤销',frozen:'冻结' }
 export function RewardLedger({id}: {id:string}){
   const [page,setPage]=useState(1)

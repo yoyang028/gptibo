@@ -215,6 +215,23 @@ try{
  await adminPage.getByRole('button',{name:'核对明细',exact:true}).first().waitFor()
  await adminPage.screenshot({path:path.join(evidence,'admin-reward-audit-desktop.png'),fullPage:true})
  record('reward audit matches native D1 ledger and allocations while preserving all original rows')
+ const riskContext=await context();await call(riskContext,'/api/orders/client',{})
+ const writesBeforeRisk=writes.length
+ for(let i=0;i<10;i++){
+  const data={plan:'plus',email:'risk-local-fixture@example.invalid',promotion:{rewardCents:0}}
+  const q=await call(riskContext,'/api/orders/promotion-quote',data);assert.equal(q.reviewStatus,'none')
+  await call(riskContext,'/api/orders',{...data,expectedPrice:q.cashCents,key:randomUUID()},201)
+ }
+ const flaggedQuote=await call(riskContext,'/api/orders/promotion-quote',{plan:'plus',email:'risk-local-fixture@example.invalid',promotion:{rewardCents:0}})
+ assert.equal(flaggedQuote.reviewStatus,'required')
+ await adminPage.getByRole('button',{name:'轻量风控',exact:true}).click()
+ await adminPage.getByRole('heading',{name:'轻量风控',exact:true}).waitFor()
+ await adminPage.getByRole('button',{name:'检查一批近期记录',exact:true}).click()
+ await adminPage.getByRole('button',{name:'核查与记录',exact:true}).first().waitFor()
+ const risks=await call(adminContext,'/api/admin/member-ops/risk');assert(risks.rows.some(r=>JSON.parse(r.flags).includes('many_unpaid_orders')))
+ assert.equal(writes.length,writesBeforeRisk)
+ await adminPage.screenshot({path:path.join(evidence,'admin-risk-desktop.png'),fullPage:true})
+ record('risk centre identifies abnormal unpaid orders without procurement or changes to normal guest checkout')
  assert.deepEqual(result.pageErrors,[]);assert.deepEqual(result.externalRequests,[])
  result.passed=true
  fs.writeFileSync(path.join(evidence,'result.json'),JSON.stringify(result,null,2))

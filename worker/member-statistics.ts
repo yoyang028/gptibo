@@ -43,7 +43,7 @@ export async function memberStatistics(env: Env, url: URL) {
       COALESCE(o.refunded_cents,0) refunded_cents,COALESCE(o.refunded_orders,0) refunded_orders,
       COALESCE(o.delivered_orders,0) delivered_orders,COALESCE(o.converted_buyers,0) converted_buyers,
       COALESCE(g.rewards,0) rewards,COALESCE(g.issued_cents,0) issued_cents,COALESCE(g.pending_cents,0) pending_cents,
-      COALESCE(g.available_cents,0) available_cents,COALESCE(g.reserved_cents,0) reserved_cents,
+      CASE WHEN p.frozen=0 THEN COALESCE(g.available_cents,0) ELSE 0 END available_cents,COALESCE(g.reserved_cents,0) reserved_cents,
       COALESCE(a.used_cents,0) used_cents,COALESCE(a.restored_cents,0) restored_cents
     FROM member_profiles p JOIN member_s3_user u ON u.id=p.id LEFT JOIN order_stats o ON o.referrer_id=p.id
       LEFT JOIN grant_stats g ON g.member_id=p.id LEFT JOIN usage_stats a ON a.member_id=p.id

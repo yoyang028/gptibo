@@ -59,6 +59,7 @@ async function stillRelevant(env: Env, row: Notification) {
   if (row.kind === 'review') return !!await db.prepare("SELECT 1 FROM member_order_promotions p JOIN orders o ON o.id=p.order_id WHERE p.order_id=? AND p.review_status='required' AND o.status<>'cancelled' AND p.allocation_status NOT IN ('released','restored')").bind(row.target_id).first()
   if (row.kind === 'reconciliation') return !!await db.prepare("SELECT 1 FROM member_order_reconciliations WHERE order_id=? AND state IN ('difference','error')").bind(row.target_id).first()
   if (row.kind === 'ledger') return !!await db.prepare("SELECT 1 FROM member_reward_audits WHERE grant_id=? AND state='difference'").bind(row.target_id).first()
+  if (row.kind === 'risk') return !!await db.prepare("SELECT 1 FROM member_risk_cases WHERE id=? AND status='open'").bind(row.target_id).first()
   if (row.kind === 'procurement' || row.kind === 'backlog') return !!await db.prepare("SELECT 1 FROM orders WHERE id=? AND status NOT IN ('success','cancelled')").bind(row.target_id).first()
   return true
 }
