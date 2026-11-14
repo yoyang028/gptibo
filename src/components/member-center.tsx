@@ -26,7 +26,7 @@ export default function MemberCenter({ onSessionChanged }: { onSessionChanged: (
     document.getElementById('member-auth')?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
     document.getElementById('member-email')?.focus({ preventScroll: true })
   }
-  return <section className="member-page page-width"><div className="member-heading"><div><h1>会员中心</h1><p>查看邀请、奖励与使用记录。游客也可以直接购买商品。</p></div>{data?.member&&<Button variant="outline" disabled={busy} onClick={()=>void logout()}>退出登录</Button>}</div>
+  return <section className="member-page page-width"><div className="member-heading"><div><h1>会员中心</h1><p>查看邀请、奖励与使用记录。游客也可以直接购买商品。</p></div>{data?.member&&<div className="member-account"><div className="member-account-identity"><small>已验证邮箱</small><span>{data.member.email}</span></div><Button variant="outline" disabled={busy} onClick={()=>void logout()}>退出登录</Button></div>}</div>
     {error&&<p className="member-error" role="alert">{error}<Button variant="ghost" onClick={()=>{setError('');setRevision(v=>v+1)}}>重试</Button></p>}
     {data?.enabled&&<section className="member-invite-hero" aria-labelledby="member-invite-headline">
       <div><h2 id="member-invite-headline">邀请好友，你得<strong>10</strong>元，<span>好友首单减<strong>5</strong>元</span></h2><p>多邀多得 · 多张可叠加 · 最高抵至0元</p></div>
@@ -38,13 +38,14 @@ export default function MemberCenter({ onSessionChanged }: { onSessionChanged: (
     {!data&&!error&&<p role="status">正在读取会员信息…</p>}
     {data&&!data.enabled&&<p className="member-notice">当前商店尚未开放会员功能。</p>}
     {data?.enabled&&!data.member&&<MemberAuthForm onAuthenticated={changed}/>}
-    {data?.member&&<><p>已验证邮箱：{data.member.email}</p>{data.member.frozen&&<p className="member-notice">账号权益正在审核。历史记录保留，请联系支持处理。</p>}
-      <MemberInviteCard member={data.member} onSaved={changed}/>
+    {data?.member&&<>
       <div className="member-metrics">{[['可用奖励',money(data.balanceCents)],['待生效',money(data.totals.pending)],['订单占用',money(data.totals.reserved)],['累计奖励',money(data.totals.earned)],['已使用',money(data.usedCents)],['有效邀请',data.invitations.effective??0]].map(([label,value])=><div className="member-card" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+      {data.member.frozen&&<p className="member-notice">账号权益正在审核。历史记录保留，请联系支持处理。</p>}
       <section className="member-card"><h2>通知中心</h2>{data.notifications?.length?<ul>{data.notifications.map(n=><li key={n.id}><strong>{n.subject}</strong><small>{date(n.created_at)}</small><p style={{whiteSpace:'pre-line'}}>{n.text.split('\n\n查看详情：')[0]}</p></li>)}</ul>:<p>奖励生效或即将到期时，提醒会显示在这里并发送到已验证邮箱。</p>}</section>
       <section className="member-card"><h2>奖励与有效期</h2>{data.rewards.length?<div className="member-table-scroll"><table><thead><tr><th>来源订单</th><th>状态</th><th>剩余额度／占用</th><th>生效／到期</th></tr></thead><tbody>{data.rewards.map(g=><tr key={g.id}><td>{g.source_order_id}</td><td>{statusLabel[g.status]??g.status}</td><td>{money(g.remaining_cents)}／{money(g.reserved_cents)}</td><td>{g.status==='pending'?date(g.eligible_at)+' 后生效':g.expires_at?date(g.expires_at)+' 到期':'—'}</td></tr>)}</tbody></table></div>:<p>还没有邀请奖励。分享链接后，可在这里查看进度。</p>}</section>
       <section className="member-card"><h2>额度变化与使用记录</h2>{data.ledger.length?<div className="member-table-scroll"><table><thead><tr><th>时间</th><th>事项</th><th>金额</th><th>该笔剩余／占用</th></tr></thead><tbody>{data.ledger.map(l=><tr key={l.id}><td>{date(l.created_at)}</td><td>{eventLabel[l.kind]??l.kind}<small>{l.order_id}</small></td><td>{money(l.amount_cents)}</td><td>{money(l.remaining_after)}／{money(l.reserved_after)}</td></tr>)}</tbody></table></div>:<p>暂无额度变化记录。</p>}</section>
       <div className="member-pagination"><Button variant="outline" disabled={page===1} onClick={()=>setPage(v=>v-1)}>上一页</Button><span>第 {page} 页</span><Button variant="outline" disabled={data.rewards.length<20&&data.ledger.length<20} onClick={()=>setPage(v=>v+1)}>下一页</Button></div>
+      <MemberInviteCard member={data.member} onSaved={changed}/>
     </>}
     {data?.enabled&&<InvitationRules/>}
   </section>
