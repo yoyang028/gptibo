@@ -17,18 +17,19 @@ export async function memberRoutes(request: Request, env: Env) {
   if (!member) return json({ enabled: true, member: null })
   const profile = await memberProfile(env, member.id), db = env.INTEREST_DB
   const { page, offset } = pageOf(url)
-  const [available, totals, rewards, ledger, invitations] = await Promise.all([
+  const [available, totals, rewards, ledger, invitations, notifications] = await Promise.all([
     availableRewards(env, member.id),
     db.prepare("SELECT COALESCE(SUM(amount_cents),0) earned,COALESCE(SUM(CASE WHEN status='pending' THEN remaining_cents ELSE 0 END),0) pending,COALESCE(SUM(reserved_cents),0) reserved FROM member_reward_grants WHERE member_id=?").bind(member.id).first(),
     db.prepare('SELECT id,source_order_id,amount_cents,remaining_cents,reserved_cents,status,eligible_at,expires_at,version FROM member_reward_grants WHERE member_id=? ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(member.id, offset).all(),
     db.prepare('SELECT l.* FROM member_reward_ledger l JOIN member_reward_grants g ON g.id=l.grant_id WHERE g.member_id=? ORDER BY l.created_at DESC,l.id LIMIT 20 OFFSET ?').bind(member.id, offset).all(),
     db.prepare("SELECT COUNT(*) total,SUM(CASE WHEN status<>'cancelled' THEN 1 ELSE 0 END) effective FROM member_reward_grants WHERE member_id=?").bind(member.id).first(),
+    db.prepare("SELECT id,json_extract(mail_body,'$.subject') subject,json_extract(mail_body,'$.text') text,created_at FROM member_notifications WHERE member_id=? AND status<>'cancelled' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?").bind(member.id, offset).all(),
   ])
   const used = await db.prepare("SELECT COALESCE(SUM(a.amount_cents-a.restored_cents),0) cents FROM member_reward_allocations a JOIN member_order_promotions p ON p.order_id=a.order_id WHERE p.member_id=? AND a.status='captured'").bind(member.id).first<{ cents: number }>()
   return json({ enabled: true, member: { id: member.id, email: member.email, frozen: !!profile.frozen,
     inviteUrl: new URL('/?invite=' + profile.invite_code, url.origin).href },
     balanceCents: profile.frozen ? 0 : available.reduce((s, g) => s + g.available, 0), totals, usedCents: used?.cents ?? 0,
-    rewards: rewards.results, ledger: ledger.results, invitations, page })
+    rewards: rewards.results, ledger: ledger.results, invitations, notifications: notifications.results, page })
 }
 
 export async function adminMemberRoutes(request: Request, env: Env, url: URL) {

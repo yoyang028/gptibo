@@ -28,7 +28,7 @@ PUBLIC_HOSTS = {
     'ai6666.com',  # User-requested public onepay API and documentation.
 }
 PUBLIC_DOC_REFERENCES = {
-    'docs/MEMBER_OPERATIONS.md': {'dujiao-next.com'},
+    'docs/MEMBER_OPERATIONS.md': {'dujiao-next.com', 'resend.com'},
     'docs/GENERAL_STORE_DOMAIN.md': {'www.spaceship.com', 'scholai.vip', 'www.scholai.vip', 'shop.scholai.top'},
     'docs/OPCPAY.md': {'www.npmjs.com'},
     # Existing public reference links are permitted only in their documentation;

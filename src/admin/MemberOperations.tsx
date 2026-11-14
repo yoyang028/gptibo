@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useResource } from '@/lib/use-resource'
 import { api, errorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -40,4 +40,8 @@ function ReconciliationPage({ revision }: { revision: number }) {
     <Dialog open={!!selected} onOpenChange={v => { if (!v && !busy) setSelected('') }}><DialogContent style={{ maxWidth: 'min(900px, calc(100vw - 2rem))', maxHeight: '85dvh', overflowY: 'auto' }}><DialogHeader><DialogTitle>订单处理记录</DialogTitle><DialogDescription>{selected} · 同步只读取原上游结果；金额不符时会拒绝同步，记录说明不会抹去差异。</DialogDescription></DialogHeader><label htmlFor="reconciliation-note">处理说明</label><Textarea id="reconciliation-note" value={note} onChange={e => setNote(e.target.value)} maxLength={500} /><div><Button disabled={busy || !note.trim()} onClick={() => void act('note', selected)}>保存说明</Button><Button variant="outline" disabled={busy || !note.trim()} onClick={() => void act('sync', selected)}>同步原上游状态</Button></div>{message && <p role="status">{message}</p>}{selected && <History key={selected} id={selected} revision={refresh} />}</DialogContent></Dialog>
   </section>
 }
-export default function MemberOperations({ revision }: { revision: number }) { return <ReconciliationPage revision={revision} /> }
+const Notifications=lazy(()=>import('./MemberNotificationPage'))
+export default function MemberOperations({ revision }: { revision: number }) {
+ const [tab,setTab]=useState('reconciliation')
+ return <><nav className="member-pagination" aria-label="会员运营分类"><Button variant={tab==='reconciliation'?'default':'outline'} onClick={()=>setTab('reconciliation')}>订单对账</Button><Button variant={tab==='notifications'?'default':'outline'} onClick={()=>setTab('notifications')}>通知中心</Button></nav>{tab==='reconciliation'?<ReconciliationPage revision={revision}/>:<Suspense fallback={<p>正在加载通知…</p>}><Notifications revision={revision}/></Suspense>}</>
+}

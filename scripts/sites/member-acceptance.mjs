@@ -178,6 +178,13 @@ try{
  await adminPage.getByRole('button',{name:'处理记录',exact:true}).first().waitFor()
  await adminPage.screenshot({path:path.join(evidence,'admin-reconciliation-desktop.png'),fullPage:true})
  record('administrator reconciles original order and delivery with zero new upstream writes')
+ await adminPage.getByRole('button',{name:'通知中心',exact:true}).click()
+ await adminPage.getByRole('heading',{name:'通知中心',exact:true}).waitFor()
+ const notifications=await call(adminContext,'/api/admin/member-ops/notifications')
+ assert(notifications.rows.length>0);assert(notifications.configured)
+ await adminPage.getByRole('button',{name:'发送日志',exact:true}).first().waitFor()
+ await adminPage.screenshot({path:path.join(evidence,'admin-notifications-desktop.png'),fullPage:true})
+ record('administrator notification centre shows persistent deduplicated sends and provider results')
  assert.deepEqual(result.pageErrors,[]);assert.deepEqual(result.externalRequests,[])
  result.passed=true
  fs.writeFileSync(path.join(evidence,'result.json'),JSON.stringify(result,null,2))
