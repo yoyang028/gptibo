@@ -57,7 +57,7 @@ export function MemberAuthForm({ onAuthenticated }: { onAuthenticated: () => voi
     try { await sendCode(mode === 'reset') } catch (e) { setError(authError(e)) } finally { setBusy(false) }
   }
   const verifying = mode === 'verify' || mode === 'reset'
-  return <form className="member-card member-auth-form" onSubmit={e => { e.preventDefault(); void submit() }}>
+  return <form id="member-auth" className="member-card member-auth-form" onSubmit={e => { e.preventDefault(); void submit() }}>
     <h2>{titles[mode]}</h2>
     {error && <p className="member-error" role="alert">{error}</p>}
     {message && <p className="member-notice" role="status">{message}</p>}
