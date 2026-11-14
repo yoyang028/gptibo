@@ -6,4 +6,12 @@
 .member-operations-panel select{border:1px solid var(--border);border-radius:7px;background:var(--background);padding:8px}
 .member-operations-panel .admin-filters label{font-size:12px;display:flex;align-items:center;gap:8px}
 .member-operations-panel .admin-filters>input{max-width:360px}
+.member-simulation-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;padding:20px 22px;border-block:1px solid var(--border)}
+.member-simulation-form>label{display:grid;gap:8px;font-size:13px}
+.member-simulation-form>.member-simulation-check{display:flex;align-items:center;gap:8px}
+.member-simulation-form>button{align-self:end}
+.member-simulation-result{margin:22px;padding:20px;border-radius:12px;background:var(--muted);font-size:13px;line-height:1.8}
+.member-simulation-result h3{font-size:16px;font-weight:600;margin-bottom:12px}
+.member-simulation-result dl>div{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:7px 0}
+.member-simulation-result dd{font-weight:550;text-align:right;margin:0}
 @media(max-width:640px){.member-operations-panel>h2{margin:18px 14px 8px}.member-operations-panel>p{margin:10px 14px}.member-operations-panel>.admin-metrics{margin:14px}.member-operations-panel .admin-filters>input{max-width:100%}}

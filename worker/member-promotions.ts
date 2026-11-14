@@ -4,6 +4,7 @@ import { ownerStoreOffer, ownerCheckoutGuard } from './owner-store-prices.ts'
 import { supplierSnapshot, snapshotStatement } from './recharge/service.ts'
 import { emailValue } from './partner-auth.ts'
 import { couponQuote } from './shop-coupons.ts'
+import { promotionAmounts, promotionPath } from '../shared/member-policy.ts'
 import type { Order } from './order-state.ts'
 import { INVITATION_PLANS, NEWCOMER_DISCOUNT_CENTS, type PromotionQuote, type PromotionView } from '../shared/member-promotions.ts'
 
@@ -68,10 +69,11 @@ export async function quotePromotion(request: Request, env: Env, data: Record<st
   if (requested && (!member || profile?.frozen)) throw new ApiError(profile?.frozen ? '账号权益正在审核，请联系支持。' : '请登录并验证邮箱后使用奖励。', 403)
   const rewards = member ? await availableRewards(env, member.id) : []
   const availableCents = profile?.frozen ? 0 : rewards.reduce((s, g) => s + g.available, 0)
-  const rewardCents = Math.min(requested, offer.price_cents)
-  if (rewardCents > availableCents) throw new ApiError('可用奖励余额已变化，请刷新后重试。', 409)
   const ordinary = data.couponCode ? await couponQuote(env, String(data.plan), email, data.couponCode, MEMBER_STORE) : null
-  const cashCents = offer.price_cents - newcomer - rewardCents - (ordinary?.discountCents ?? 0)
+  let amounts: ReturnType<typeof promotionAmounts>
+  try { amounts = promotionAmounts(offer.price_cents, availableCents, requested, newcomer, ordinary?.discountCents ?? 0, !!data.couponCode) }
+  catch (e) { throw new ApiError((e as Error).message, 409) }
+  const { rewardCents, cashCents } = amounts
   const snapshot = await supplierSnapshot(env, String(data.plan), offer.price_cents)
   const flags: string[] = []
   if (referrer && (referrer.id === member?.id || referrer.email.toLowerCase() === email)) flags.push('self_invitation')
@@ -79,8 +81,7 @@ export async function quotePromotion(request: Request, env: Env, data: Record<st
     const recent = await env.INTEREST_DB.prepare('SELECT COUNT(*) n FROM member_order_promotions WHERE member_id=? AND created_at>?').bind(member?.id ?? '', Date.now() - 86400000).first<{ n: number }>()
     if ((recent?.n ?? 0) >= 5) flags.push('frequent_redemption')
   }
-  const reviewStatus = offer.price_cents - cashCents >= 10000 || cashCents === 0 || flags.length ? 'required' : 'none'
-  const procurementStatus = cashCents < snapshot.supplyCents ? 'awaiting_supplier' : 'ready'
+  const { reviewStatus, procurementStatus } = promotionPath(offer.price_cents, cashCents, snapshot.supplyCents, flags)
   const allocations: { id: string; amount: number }[] = []
   let remaining = rewardCents
   for (const grant of rewards) { const amount = Math.min(remaining, grant.available); if (amount) allocations.push({ id: grant.id, amount }); remaining -= amount; if (!remaining) break }
