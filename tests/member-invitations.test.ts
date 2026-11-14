@@ -8,7 +8,7 @@ test('a member can customize once; concurrent attempts, collisions and retries k
   for (const alias of ['ab','admin','bad/address','-invalid','中文名字']) assert.equal((await f.call('/api/member/invitation', { alias }, a.cookie)).status, 400)
   const chosen = await f.call('/api/member/invitation', { alias: ' My-Planet ' }, a.cookie)
   assert.equal(chosen.status, 200, await chosen.clone().text())
-  assert.equal((await chosen.json()).inviteUrl, f.origin + '/i/my-planet')
+  assert.equal((await chosen.json()).inviteUrl, f.origin + '/ref/my-planet')
   assert.equal((await f.call('/api/member/invitation', { alias: 'MY-PLANET' }, a.cookie)).status, 200, 'An identical retry is idempotent')
   assert.equal((await f.call('/api/member/invitation', { alias: 'second-try' }, a.cookie)).status, 409)
   assert.equal((await f.call('/api/member/invitation', { alias: 'my-planet' }, b.cookie)).status, 409, 'A taken alias does not consume the other member’s chance')
@@ -18,7 +18,7 @@ test('a member can customize once; concurrent attempts, collisions and retries k
   assert.equal(info.member.inviteCode, before)
   assert.equal(info.member.inviteCustomized, true)
   assert.equal(f.db.prepare("SELECT COUNT(*) n FROM member_operation_events WHERE category='invitation'").get()!.n, 2)
-  for (const path of [new URL(defaultUrl).pathname, '/i/my-planet', '/i/MY-PLANET']) {
+  for (const path of [new URL(defaultUrl).pathname, '/ref/my-planet', '/ref/MY-PLANET', '/i/my-planet', '/i/MY-PLANET', new URL(defaultUrl).pathname.replace('/ref/', '/i/')]) {
     const response = await f.call(path)
     assert.equal(response.status, 302)
     assert.equal(response.headers.get('Location'), '/')
@@ -38,6 +38,7 @@ test('short invitations enforce actual host, verified membership, frozen state a
   const { default: worker } = await import('../worker/index.ts')
   assert.equal((await worker.fetch(forged, f.env)).status, 403)
   assert.equal((await f.call(path, undefined, '', 'https://shop.example.invalid')).status, 404)
+  assert.equal((await f.call('/ref/missing-alias')).status, 404)
   assert.equal((await f.call('/i/missing-alias')).status, 404)
   f.db.prepare('UPDATE member_profiles SET frozen=1 WHERE id=?').run(a.id)
   assert.equal((await f.call(path)).status, 404)

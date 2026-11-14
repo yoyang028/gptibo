@@ -7,7 +7,7 @@ import { CopyButton } from './copy-button'
 
 export function MemberInviteCard({ member, onSaved }: { member: { frozen: boolean; inviteUrl: string; inviteAlias: string; inviteCustomized: boolean }; onSaved: () => void }) {
   const [open, setOpen] = useState(false), [alias, setAlias] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState('')
-  const prefix = new URL('/i/', member.inviteUrl).href
+  const prefix = new URL('/ref/', member.inviteUrl).href
   async function save() {
     if (busy) return
     setBusy(true); setError('')

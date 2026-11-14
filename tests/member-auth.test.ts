@@ -19,7 +19,7 @@ test('consumer email/password registration verifies email and grants an invitati
   const cookie = f.cookieOf(verified)
   const info = await (await f.call('/api/member/session', undefined, cookie)).json()
   assert.equal(info.member.email, 'new@example.test')
-  assert.match(info.member.inviteUrl, /^https:\/\/general\.example\.test\/i\/[a-z0-9]{10}$/)
+  assert.match(info.member.inviteUrl, /^https:\/\/general\.example\.test\/ref\/[a-z0-9]{10}$/)
   assert.match(info.member.inviteCode, /^[A-Z0-9]{32}$/)
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM orders').get()!.n, 0)
   assert.match(f.sent[0].subject, /AI星球/)

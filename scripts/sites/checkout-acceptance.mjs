@@ -70,7 +70,7 @@ await build({entryPoints:[path.join(root,'worker/index.ts')],bundle:true,format:
 const mf=new Miniflare({...convertV4MiniflareOptions({host:'127.0.0.1',port:8811,https:true,httpsCert:fs.readFileSync(path.join(tls,'cert.pem'),'utf8'),httpsKey:fs.readFileSync(path.join(tls,'key.pem'),'utf8'),modules:true,scriptPath:path.join(runtime,'worker.mjs'),compatibilityDate:'2026-09-26',compatibilityFlags:['nodejs_compat'],cf:false,
  d1Databases:{INTEREST_DB:'two-store-checkout-fixture'},
  ratelimits:{INTEREST_LIMITER:{namespace_id:'4001',simple:{limit:30,period:60}},API_LIMITER:{namespace_id:'4002',simple:{limit:1000,period:60}},EXPENSIVE_LIMITER:{namespace_id:'4003',simple:{limit:1000,period:60}}},
- assets:{directory:path.join(root,'dist'),binding:'ASSETS',run_worker_first: ['/api/*', '/i/*'],routerConfig:{has_user_worker:true},assetConfig:{not_found_handling:'single-page-application'}},
+ assets:{directory:path.join(root,'dist'),binding:'ASSETS',run_worker_first: ['/api/*', '/ref/*', '/i/*'],routerConfig:{has_user_worker:true},assetConfig:{not_found_handling:'single-page-application'}},
  bindings:{...(domainMode?{OWNER_STOREFRONT_HOSTS:JSON.stringify({localhost:'store-3'})}:{}),ORDER_TESTING_ENABLED:'false',RECHARGE_API_BASE:upstream+'/v1',RECHARGE_PARTNER_ID:'pt_local_only',RECHARGE_KEY_ID:'key_local_only',RECHARGE_CLIENT_SECRET:secret,RECHARGE_WEBHOOK_SECRET:webhookSecret,RECHARGE_NOTIFY_URL:origin+'/api/recharge/webhook',RECHARGE_PRODUCT_MAP:'{"plus":"demo_plus"}',RECHARGE_COLLECTION_MODE:'platform_collect',RECHARGE_CHECKOUT_ENABLED:'true',RECHARGE_READ_ONLY:'false'},outboundService:outbound}),telemetry:{enabled:false},resourcePersistencePath:path.join(runtime,'state'),resourceTmpPath:path.join(runtime,'tmp')})
 let browser,page
 try{

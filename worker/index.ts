@@ -84,7 +84,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     }
     if (url.pathname === '/api/telegram/webhook') return telegramWebhook(request, env)
     if (url.pathname === '/api/tools/account-check') return checkAccount(request, env)
-    if (url.pathname.startsWith('/i/')) {
+    if (url.pathname.startsWith('/ref/') || url.pathname.startsWith('/i/')) {
       try { return await invitationRedirect(request, env) }
       catch (caught) { return error(caught instanceof ApiError ? caught.message : '邀请链接暂不可用。', caught instanceof ApiError ? caught.status : 503) }
     }

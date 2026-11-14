@@ -48,7 +48,7 @@ const tls=path.join(root,'artifacts/local/.secrets/quefa-cloudflare-mock')
 const mf=new Miniflare({...convertV4MiniflareOptions({host:'127.0.0.1',port:localPort,https:true,httpsCert:fs.readFileSync(path.join(tls,'cert.pem'),'utf8'),httpsKey:fs.readFileSync(path.join(tls,'key.pem'),'utf8'),modules:true,scriptPath:path.join(runtime,'worker.mjs'),compatibilityDate:'2026-09-26',compatibilityFlags:['nodejs_compat'],cf:false,
  d1Databases:{INTEREST_DB:'member-pilot-fixture'},
  ratelimits:{INTEREST_LIMITER:{namespace_id:'4101',simple:{limit:1000,period:60}},API_LIMITER:{namespace_id:'4102',simple:{limit:2000,period:60}},EXPENSIVE_LIMITER:{namespace_id:'4103',simple:{limit:1000,period:60}}},
- assets:{directory:path.join(root,'dist'),binding:'ASSETS',run_worker_first: ['/api/*', '/i/*'],routerConfig:{has_user_worker:true},assetConfig:{not_found_handling:'single-page-application'}},
+ assets:{directory:path.join(root,'dist'),binding:'ASSETS',run_worker_first: ['/api/*', '/ref/*', '/i/*'],routerConfig:{has_user_worker:true},assetConfig:{not_found_handling:'single-page-application'}},
  bindings:{MEMBERSHIP_ENABLED:'true',MEMBER_AUTH_SECRET:'local-only-independent-member-secret-32-characters',OWNER_STOREFRONT_HOSTS:JSON.stringify({'127.0.0.1':'store-3'}),ADMIN_USERNAME:'local-admin',ADMIN_EMAIL:adminEmail,ADMIN_TOTP_SECRET:totpSecret,RESEND_API_KEY:'local-mail-only',RESEND_FROM:'Local <noreply@example.invalid>',PARTNER_AUTH_SECRET:'local-partner-secret',ORDER_TESTING_ENABLED:'false',RECHARGE_API_BASE:upstream+'/v1',RECHARGE_PARTNER_ID:'local-pilot',RECHARGE_KEY_ID:'local-key',RECHARGE_CLIENT_SECRET:'local-api-secret',RECHARGE_WEBHOOK_SECRET:webhookSecret,RECHARGE_NOTIFY_URL:academic+'/api/recharge/webhook',RECHARGE_PRODUCT_MAP:'{"plus":"plus"}',RECHARGE_COLLECTION_MODE:'platform_collect',RECHARGE_CHECKOUT_ENABLED:'true',RECHARGE_READ_ONLY:'false'},outboundService:outbound}),telemetry:{enabled:false},resourcePersistencePath:path.join(runtime,'state'),resourceTmpPath:path.join(runtime,'tmp')})
 let browser
 try{
@@ -86,15 +86,16 @@ try{
  await page.getByRole('heading',{name:'我的邀请链接',exact:true}).waitFor()
  const member=await call(memberContext,'/api/member/session')
  const defaultInvite=await page.getByLabel('我的邀请链接',{exact:true}).inputValue(),code=member.member.inviteCode
- assert.match(defaultInvite,/\/i\/[a-z0-9]{10}$/)
+ assert.match(defaultInvite,/\/ref\/[a-z0-9]{10}$/)
  assert(member.member&&code)
  record('real D1 email/password registration, verification and invitation without purchase')
  await page.getByRole('button',{name:'自定义邀请链接',exact:true}).click()
+ assert.equal(await page.locator('.member-alias-input > span').textContent(),origin+'/ref/')
  await page.getByLabel('专属地址',{exact:true}).fill('star-friend')
  await page.getByRole('button',{name:'确认并永久保存',exact:true}).click()
  await page.getByText('自定义地址已确定，不能再次修改。原来的邀请链接仍然有效。',{exact:true}).waitFor()
  const inviteUrl=await page.getByLabel('我的邀请链接',{exact:true}).inputValue()
- assert.equal(inviteUrl,origin+'/i/star-friend')
+ assert.equal(inviteUrl,origin+'/ref/star-friend')
  assert.equal((await page.getByRole('button',{name:'自定义邀请链接',exact:true}).count()),0)
  record('custom invitation dialog saves once and keeps the canonical order identity')
  await page.screenshot({path:path.join(evidence,'member-desktop.png'),fullPage:true})
@@ -136,6 +137,8 @@ try{
  await page.goto(origin+'/account');await page.getByRole('heading',{name:'我的邀请链接',exact:true}).waitFor()
  await page.screenshot({path:path.join(evidence,'member-mobile.png'),fullPage:true})
  const guestContext=await context(),guest=await guestContext.newPage()
+ const legacyInvite=await guestContext.request.get(inviteUrl.replace('/ref/','/i/'),{maxRedirects:0})
+ assert.equal(legacyInvite.status(),302);assert.equal(legacyInvite.headers().location,'/')
  await guest.goto(inviteUrl)
  assert.equal(new URL(guest.url()).pathname,'/')
  assert.equal(new URL(guest.url()).search,'')
