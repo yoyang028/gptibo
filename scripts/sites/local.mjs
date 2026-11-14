@@ -42,7 +42,7 @@ async function start(site, port) {
     host: '127.0.0.1', port, cf: false, modules: true, scriptPath: path.join(runtime, 'worker.mjs'), compatibilityDate: '2026-09-26', compatibilityFlags: ['nodejs_compat','service_binding_extra_handlers'],
     d1Databases: { INTEREST_DB: `gptibo-${site}-preview` },
     ratelimits: { INTEREST_LIMITER: { namespace_id: '3001', simple: { limit: 30, period: 60 } }, API_LIMITER: { namespace_id: '3002', simple: { limit: 120, period: 60 } }, EXPENSIVE_LIMITER: { namespace_id: '3003', simple: { limit: 90, period: 60 } } },
-    assets: { directory: path.join(root, `artifacts/sites/${site}/dist`), binding: 'ASSETS', run_worker_first: ['/api/*'], routerConfig: { has_user_worker: true }, assetConfig: { not_found_handling: 'single-page-application', headers: { version: 2, rules } } }, bindings,
+    assets: { directory: path.join(root, `artifacts/sites/${site}/dist`), binding: 'ASSETS', run_worker_first: ['/api/*', '/i/*'], routerConfig: { has_user_worker: true }, assetConfig: { not_found_handling: 'single-page-application', headers: { version: 2, rules } } }, bindings,
     outboundService: async request => {
       const url = new URL(request.url)
       if (url.href === 'https://api.resend.com/emails' && request.method === 'POST') {

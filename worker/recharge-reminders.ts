@@ -7,7 +7,7 @@ const LEASE_MS = 60_000
 // Resend retains idempotency keys for 24 hours. Stop ambiguous retries before that expires.
 const RETRY_WINDOW_MS = 23 * 60 * 60_000
 type Reminder = { order_id: string; paid_at: number; attempt_count: number; first_attempt_at: number | null; message_json: string | null; recipient: string | null; lock_token: string }
-type WaitingOrder = { customer_email: string; plan_name: string; partner_id: string | null }
+type WaitingOrder = { customer_email: string; plan_name: string; partner_id: string | null; owner_store_id: string }
 const eligible = `o.mode='live' AND o.is_test=0 AND o.payment_status='paid' AND o.status='session'
   AND o.plan<>'codex-sms-once' AND o.customer_email IS NOT NULL AND o.customer_email<>''
   AND o.redemption_blocked=0 AND o.refund_hold=0 AND o.refunded_cents=0 AND o.started_at IS NULL
@@ -46,7 +46,7 @@ export async function sendDueRechargeReminders(env: Env, limit = 20) {
     if (claimed?.lock_token !== token) continue
     row = claimed
     try {
-      const order = await env.INTEREST_DB.prepare(`SELECT o.customer_email,o.plan_name,o.partner_id FROM orders o WHERE o.id=? AND ${eligible}`).bind(row.order_id).first<WaitingOrder>()
+      const order = await env.INTEREST_DB.prepare(`SELECT o.customer_email,o.plan_name,o.partner_id,o.owner_store_id FROM orders o WHERE o.id=? AND ${eligible}`).bind(row.order_id).first<WaitingOrder>()
       if (!order) {
         await env.INTEREST_DB.prepare('UPDATE recharge_reminders SET cancelled_at=?,locked_until=0 WHERE order_id=? AND lock_token=?').bind(Date.now(), row.order_id, token).run()
         continue
@@ -60,7 +60,7 @@ export async function sendDueRechargeReminders(env: Env, limit = 20) {
         await env.INTEREST_DB.prepare('UPDATE recharge_reminders SET cancelled_at=?,locked_until=0 WHERE order_id=? AND lock_token=?').bind(Date.now(), row.order_id, token).run()
         continue
       }
-      await sendRechargeReminderEmail(env, recipient, message, row.order_id)
+      await sendRechargeReminderEmail(env, recipient, message, row.order_id, order.owner_store_id || 'platform')
       await env.INTEREST_DB.prepare('UPDATE recharge_reminders SET delivered_at=?,locked_until=0,attempt_count=attempt_count+1 WHERE order_id=? AND lock_token=?').bind(Date.now(), row.order_id, token).run()
       sent++
     } catch {

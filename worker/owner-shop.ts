@@ -8,6 +8,8 @@ import {
   type ShopProduct,
 } from '../shared/shop-products.ts'
 import { supportContactsSettings } from './support-contacts.ts'
+import { synchronizeOwnerIdentity } from '../shared/owner-identity.ts'
+import { shopBrand, shopMailFrom } from './store-branding.ts'
 import { visitorSummary } from './visitors.ts'
 import { productMap, authorizedProduct } from './recharge/client.ts'
 
@@ -268,6 +270,8 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
       throw new ApiError('QQ 号需为 5–20 位数字。')
     if (data.version !== settings.version)
       throw new ApiError('店铺设置已更新，请刷新。', 409)
+    Object.assign(patch, synchronizeOwnerIdentity(settings, patch))
+    patch.brandName = text(patch.brandName ?? '', 32, '店铺名称')
     const changeId = crypto.randomUUID(),
       now = Date.now()
     await db.batch([
@@ -638,9 +642,9 @@ async function sendStoreOrderNotifications(env: Env, storeId: string) {
           'Idempotency-Key': 'owner-completed/' + row.id,
         },
         body: JSON.stringify({
-          from: env.RESEND_FROM,
+          from: shopMailFrom(env.RESEND_FROM, shop),
           to: [env.ADMIN_EMAIL],
-          subject: '店铺订单已完成 · ' + row.id,
+          subject: shopBrand(shop) + ' · 店铺订单已完成 · ' + row.id,
           text: `订单：${row.id}\n商品：${row.plan_name}\n金额：${(row.price_cents / 100).toFixed(2)} 元\n请在主后台查看详情。`,
         }),
         signal: AbortSignal.timeout(10000),

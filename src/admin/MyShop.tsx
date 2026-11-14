@@ -23,6 +23,8 @@ import '@/components/shop-products.css'
 
 export default function MyShop({
   revision,
+  storeId,
+  onStoreChange: setStoreId,
   onSaved,
   orders,
   customers,
@@ -31,6 +33,8 @@ export default function MyShop({
   onManageProducts,
 }: {
   revision: number
+  storeId: string
+  onStoreChange: (id: string) => void
   onSaved: () => void
   orders: ReactNode
   customers: ReactNode
@@ -39,7 +43,6 @@ export default function MyShop({
   onManageProducts: () => void
 }) {
   const [tab, setTab] = useState('stores')
-  const [storeId, setStoreId] = useState('platform')
   const { data } = useResource<{
     stores: { id: string; name: string; slug: string; storefront_url: string }[]
     prices: {

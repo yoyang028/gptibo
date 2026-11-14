@@ -1,6 +1,7 @@
 import { ApiError, body, cookie, hash, json, LOGIN_SESSION_SECONDS, randomToken, readCookie, type Env } from './platform.ts'
 import { validTotpSecret, verifyTotp } from './totp.ts'
 import { sendVerificationEmail } from './email.ts'
+import { storefrontHostStore } from './storefront-hosts.ts'
 
 // Server-owned destination; request parameters cannot override it.
 export function adminLoginEmail(env: Env) {
@@ -54,7 +55,8 @@ export async function authRoute(request: Request, env: Env, path: string) {
       db.prepare('INSERT INTO admin_email_login_codes(id,code_hash,credential_version,expires_at) VALUES (?,?,?,?)').bind(id, await codeHash(env, version, id, code), version, now + 600000),
     ])
     try {
-      await sendVerificationEmail(env, 'admin-login', adminLoginEmail(env), code, id)
+      const storeId = ['platform','store-2','store-3'].includes(String(data.storeId)) ? String(data.storeId) : storefrontHostStore(request, env) || 'platform'
+      await sendVerificationEmail(env, 'admin-login', adminLoginEmail(env), code, id, storeId)
       await db.prepare('UPDATE admin_email_login_codes SET ready=1 WHERE id=?').bind(id).run()
     } catch {
       await db.prepare('DELETE FROM admin_email_login_codes WHERE id=?').bind(id).run()

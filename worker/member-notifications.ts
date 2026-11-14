@@ -2,6 +2,7 @@ import { ApiError, hash, type Env } from './platform.ts'
 import { ownerShop } from './owner-shop.ts'
 import { ownerStorefrontLinks } from './storefront-hosts.ts'
 import { operationEvent } from './member-reconciliation.ts'
+import { shopBrand, shopMailFrom } from './store-branding.ts'
 
 export const NOTIFICATION_RETRY_WINDOW = 23 * 3600000
 type Notification = { id: string; kind: string; target_id: string; member_id: string | null; mail_body: string; status: string; attempts: number; first_attempt_at: number | null; lease_token: string | null; version: number }
@@ -11,12 +12,11 @@ export async function enqueueMemberNotification(env: Env, eventKey: string, kind
   if (await db.prepare('SELECT id FROM member_notifications WHERE id=?').bind(id).first()) return id
   const to = memberId ? (await db.prepare('SELECT email FROM member_s3_user WHERE id=? AND emailVerified=1').bind(memberId).first<{ email: string }>())?.email : env.ADMIN_EMAIL
   if (!to || !env.RESEND_FROM || !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(to)) return null
-  const shop = await ownerShop(env, 'store-3'), name = (shop.brandName || shop.name).replace(/[\r\n"\\]/g, '')
-  const address = env.RESEND_FROM.match(/<([^<>]+)>$/)?.[1] ?? env.RESEND_FROM
+  const shop = await ownerShop(env, 'store-3'), name = shopBrand(shop)
   const fallback = env.RECHARGE_NOTIFY_URL ? new URL(env.RECHARGE_NOTIFY_URL).origin : 'https://shop.example.invalid'
   const origin = ownerStorefrontLinks(env, fallback, 'store-3', '').storefront_url
-  const link = memberId ? new URL('/account', origin).href : new URL('/admin?view=members', fallback).href
-  const message = { from: `"${name}" <${address}>`, to: [to], subject: `${name} · ${subject}`, text: text + '\n\n查看详情：' + link,
+  const link = memberId ? new URL('/account', origin).href : new URL('/admin?view=members&store=store-3', origin).href
+  const message = { from: shopMailFrom(env.RESEND_FROM, shop), to: [to], subject: `${name} · ${subject}`, text: text + '\n\n查看详情：' + link,
     html: `<main style="font-family:Arial,sans-serif;line-height:1.8;max-width:560px;margin:40px auto"><h1>${escape(name)}</h1><h2>${escape(subject)}</h2><p>${escape(text).replaceAll('\n', '<br>')}</p><p><a href="${escape(link)}">查看详情</a></p></main>` }
   await db.prepare('INSERT INTO member_notifications(id,event_key,kind,target_id,member_id,mail_body,created_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(event_key) DO NOTHING')
     .bind(id, eventKey, kind, target, memberId, JSON.stringify(message), Date.now()).run()

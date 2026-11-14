@@ -9,6 +9,7 @@ import {
   TableCell,
 } from '@/components/ui/table'
 import { prepareLogo } from '@/lib/prepare-logo'
+import { synchronizeOwnerIdentity } from '../../shared/owner-identity'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Plus, Store, Ticket, Globe, ArrowUpRight } from 'lucide-react'
 import QRCode from 'qrcode'
@@ -366,6 +367,7 @@ export function StoresWorkspace({
               label: '商店概览',
               content: (
                 <div className="store-overview">
+                  {owner && storeContext}
                   <div className="store-overview-summary">
                     <div>
                       <span>营业中的商店</span>
@@ -1202,7 +1204,7 @@ function StoreEditor({
               version: shop?.version ?? 0,
               name,
               active,
-              settings,
+              settings: owner ? synchronizeOwnerIdentity({ ...shop?.settings, name: shop?.name }, { ...settings, name, brandName: name }) : settings,
             })
           }}
         >
@@ -1253,6 +1255,7 @@ function StoreEditor({
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
+            {owner && <p className="stores-hint">店名同步用于前台、管理后台和邮件发送人；页面标题可单独填写，留空时使用店名。</p>}
             {(
               [
                 [
@@ -1271,7 +1274,7 @@ function StoreEditor({
                 <div className="store-editor-fields">
                   {' '}
                   {fields
-                    .filter(([key]) => keys.includes(key))
+                    .filter(([key]) => keys.includes(key) && (!owner || key !== 'brandName'))
                     .map(([key, title, max]) => (
                       <label key={key}>
                         {title}

@@ -56,7 +56,7 @@
   "assets": {
     "binding": "ASSETS",
     "run_worker_first": [
-      "/api/*"
+      "/api/*", "/i/*"
     ],
     "directory": "./dist",
     "not_found_handling": "single-page-application"

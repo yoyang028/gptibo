@@ -2,6 +2,7 @@ import { ApiError, body, json, type Env } from './platform.ts'
 import { memberStore, membershipEnabled, verifiedMember } from './member-auth.ts'
 import { memberProfile, availableRewards, promotionFor, approvePromotion } from './member-promotions.ts'
 import { reconcileMemberRewards, revokeReward } from './member-rewards.ts'
+import { customizeInvitation, memberInvitation } from './member-invitations.ts'
 
 function pageOf(url: URL) {
   const page = Number(url.searchParams.get('page') || '1')
@@ -10,12 +11,21 @@ function pageOf(url: URL) {
 }
 export async function memberRoutes(request: Request, env: Env) {
   const url = new URL(request.url)
-  if (url.pathname !== '/api/member/session') throw new ApiError('未找到接口。', 404)
+  if (!['/api/member/session','/api/member/invitation'].includes(url.pathname)) throw new ApiError('未找到接口。', 404)
   if (!memberStore(request, env)) return json({ enabled: false, member: null })
-  if (request.method !== 'GET') throw new ApiError('请求方式不支持。', 405)
+  if (request.method !== (url.pathname.endsWith('/invitation') ? 'POST' : 'GET')) throw new ApiError('请求方式不支持。', 405)
   const member = await verifiedMember(request, env)
-  if (!member) return json({ enabled: true, member: null })
+  if (!member) {
+    if (request.method === 'POST') throw new ApiError('请先登录并验证邮箱。', 401)
+    return json({ enabled: true, member: null })
+  }
   const profile = await memberProfile(env, member.id), db = env.INTEREST_DB
+  if (request.method === 'POST') {
+    if (profile.frozen) throw new ApiError('账号权益正在审核，请联系支持。', 403)
+    const data = await body(request)
+    return json({ ok: true, ...await customizeInvitation(env, member.id, data.alias, url.origin) })
+  }
+  const invitation = await memberInvitation(env, member.id, url.origin)
   const { page, offset } = pageOf(url)
   const [available, totals, rewards, ledger, invitations, notifications] = await Promise.all([
     availableRewards(env, member.id),
@@ -27,7 +37,7 @@ export async function memberRoutes(request: Request, env: Env) {
   ])
   const used = await db.prepare("SELECT COALESCE(SUM(a.amount_cents-a.restored_cents),0) cents FROM member_reward_allocations a JOIN member_order_promotions p ON p.order_id=a.order_id WHERE p.member_id=? AND a.status='captured'").bind(member.id).first<{ cents: number }>()
   return json({ enabled: true, member: { id: member.id, email: member.email, frozen: !!profile.frozen,
-    inviteUrl: new URL('/?invite=' + profile.invite_code, url.origin).href },
+    inviteCode: profile.invite_code, ...invitation },
     balanceCents: profile.frozen ? 0 : available.reduce((s, g) => s + g.available, 0), totals, usedCents: used?.cents ?? 0,
     rewards: rewards.results, ledger: ledger.results, invitations, notifications: notifications.results, page })
 }

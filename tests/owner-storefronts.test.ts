@@ -103,7 +103,7 @@ test('bulk parameter sync copies only selected fields and price sync is a separa
     assert.equal((await f.request('/api/admin/my-shop/stores/bulk', payload, f.admin)).status, 200)
     const data = await f.stores()
     assert.ok(data.stores.every((s: any) => s.settings.headline === '统一标题'))
-    assert.equal(data.stores.find((s: any) => s.id === 'store-3').name, '通用商店')
+    assert.equal(data.stores.find((s: any) => s.id === 'store-3').name, 'AI星球')
     assert.deepEqual(data.prices.filter((p: any) => p.plan === 'plus').map((p: any) => p.price_cents), [2000,2500,3000])
     const copyPrices = await f.bulk('platform', ['store-2','store-3'], [], true)
     assert.equal((await f.request('/api/admin/my-shop/stores/bulk', copyPrices, f.admin)).status, 200)

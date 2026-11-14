@@ -28,6 +28,7 @@ PUBLIC_HOSTS = {
     'ai6666.com',  # User-requested public onepay API and documentation.
 }
 PUBLIC_DOC_REFERENCES = {
+    'docs/MEMBER_EXPERIENCE.md': {'scholai.vip', 'www.scholai.vip', 'better-auth.com'},
     'docs/MEMBER_OPERATIONS.md': {'dujiao-next.com', 'resend.com', 'developers.cloudflare.com'},
     'docs/GENERAL_STORE_DOMAIN.md': {'www.spaceship.com', 'scholai.vip', 'www.scholai.vip', 'shop.scholai.top'},
     'docs/OPCPAY.md': {'www.npmjs.com'},

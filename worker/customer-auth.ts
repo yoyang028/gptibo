@@ -1,4 +1,5 @@
 import { sendVerificationEmail } from './email.ts'
+import { storefrontHostStore } from './storefront-hosts.ts'
 import { ApiError, body, cookie, hash, json, LOGIN_SESSION_SECONDS, owner, randomToken, readCookie, type Env } from './platform.ts'
 import { emailValue, mailConfigured, partnerLimit } from './partner-auth.ts'
 
@@ -39,7 +40,7 @@ export async function recoveryRoutes(request: Request, env: Env, path: string) {
         db.prepare('INSERT INTO customer_login_codes(id,email,code_hash,expires_at) VALUES (?,?,?,?)').bind(id, email, await hash(env.PARTNER_AUTH_SECRET + ':customer:' + id + ':' + code), now + 600000),
       ])
       try {
-        await sendVerificationEmail(env, 'order-recovery', email, code, id)
+        await sendVerificationEmail(env, 'order-recovery', email, code, id, storefrontHostStore(request, env) || 'platform')
       } catch {
         await db.prepare('DELETE FROM customer_login_codes WHERE id=?').bind(id).run()
         throw new ApiError('验证码暂时发送失败，请稍后重试。', 503)

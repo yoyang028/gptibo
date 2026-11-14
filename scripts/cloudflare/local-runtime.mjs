@@ -112,7 +112,7 @@ const config = {
     API_LIMITER: { namespace_id: '2002', simple: { limit: 120, period: 60 } },
     EXPENSIVE_LIMITER: { namespace_id: '2003', simple: { limit: 90, period: 60 } },
   },
-  assets: { directory: path.join(root, 'dist'), binding: 'ASSETS', run_worker_first: ['/api/*'], routerConfig: { has_user_worker: true }, assetConfig: { not_found_handling: 'single-page-application', headers: { version: 2, rules } } },
+  assets: { directory: path.join(root, 'dist'), binding: 'ASSETS', run_worker_first: ['/api/*', '/i/*'], routerConfig: { has_user_worker: true }, assetConfig: { not_found_handling: 'single-page-application', headers: { version: 2, rules } } },
   bindings: {
     OWNER_STOREFRONT_HOSTS: process.env.GPTIBO_LOCAL_OWNER_STOREFRONT_HOSTS || '',
     ADMIN_USERNAME: 'dev-admin', ADMIN_EMAIL: 'admin@example.invalid', ADMIN_TOTP_SECRET: fs.readFileSync(authPath, 'utf8').trim(),

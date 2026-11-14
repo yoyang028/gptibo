@@ -2,9 +2,10 @@ import { emailProduct, type AdminDelivery, type DeliverySummary } from '../share
 import { ApiError, body, json, type Env } from './platform.ts'
 import { getOrder, type Order } from './order-state.ts'
 import { alipayConfigured } from './payments/providers.ts'
-import { membershipDeliveryMessage, sendMembershipPreviewEmail } from './email.ts'
+import { membershipDeliveryMessage, sendMembershipPreviewEmail, prepareShopEmail } from './email.ts'
 import { boundedResponseText } from './bounded-response.ts'
 import { adminLoginEmail } from './admin-auth.ts'
+import { storefrontHostStore } from './storefront-hosts.ts'
 
 type Delivery = { order_id: string; kind: 'link' | 'cdk'; value: string; instructions: string; mail_body: string; request_key: string; status: 'draft' | 'sending' | 'unknown' | 'sent'; version: number; first_attempt_at: number | null; sent_at: number | null; provider_id: string | null; lease_token: string | null; lease_until: number }
 const find = (env: Env, id: string) => env.INTEREST_DB.prepare('SELECT * FROM email_deliveries WHERE order_id=?').bind(id).first<Delivery>()
@@ -42,7 +43,8 @@ export async function membershipDeliveryPreview(request: Request, env: Env) {
   const value = data.plan === 'duolingo-12m' ? 'https://www.duolingo.com/claim/super?code=PREVIEW-ONLY-NOT-A-REAL-CODE' : 'https://example.com/claim/gemini-preview'
   const message = membershipDeliveryMessage(emailProduct(data.plan)!.kind, 'YMX-PREVIEW', value, plan.delivery_instructions, data.plan)
   try {
-    const providerId = await sendMembershipPreviewEmail(env, adminLoginEmail(env), message, data.key)
+    const storeId = ['platform','store-2','store-3'].includes(String(data.storeId)) ? String(data.storeId) : storefrontHostStore(request, env) || 'platform'
+    const providerId = await sendMembershipPreviewEmail(env, adminLoginEmail(env), message, data.key, storeId)
     return json({ ok: true, to: adminLoginEmail(env), providerId })
   } catch { throw new ApiError('预览邮件结果尚未确认，请用原请求编号核对。', 503) }
 }
@@ -85,7 +87,7 @@ export async function emailDeliveryRoute(request: Request, env: Env, order: Orde
     const value = validateValue(product.kind, data.value)
     if (typeof data.instructions !== 'string' || !data.instructions.trim() || data.instructions.length > 2000) throw new ApiError('请填写 1–2000 字的领取说明。')
     const instructions = data.instructions.trim()
-    const payload = JSON.stringify({ from: env.RESEND_FROM, to: [order.customer_email], ...membershipDeliveryMessage(product.kind, order.id, value, instructions, order.plan) })
+    const payload = JSON.stringify({ to: [order.customer_email], ...await prepareShopEmail(env, membershipDeliveryMessage(product.kind, order.id, value, instructions, order.plan), order.owner_store_id || 'platform') })
     const event = crypto.randomUUID()
     await env.INTEREST_DB.batch([
       env.INTEREST_DB.prepare(`UPDATE orders SET version=version+1,updated_at=?,last_event_id=? WHERE id=? AND version=? AND ${eligibilitySql} AND NOT EXISTS(SELECT 1 FROM email_deliveries WHERE order_id=orders.id AND (status<>'draft' OR version<>?))`).bind(now, event, order.id, order.version, row?.version ?? -1),

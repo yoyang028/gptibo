@@ -6,6 +6,7 @@ import { safeImage, hasControlCharacters } from '../shared/shop-products.ts'
 import { emailValue } from './partner-auth.ts'
 import { visitorSummary } from './visitors.ts'
 import { ownerStorefrontLinks } from './storefront-hosts.ts'
+import { synchronizeOwnerIdentity } from '../shared/owner-identity.ts'
 
 const fields: Record<string, number> = { name: 80, brandName: 32, logo: 400000, pageTitle: 120, headline: 120, description: 500, wechat: 64, qq: 20, email: 254, announcementTitle: 100, announcement: 2000 }
 const syncFields = new Set([...Object.keys(fields), 'active', 'announcementPlacement', 'productIds', 'hiddenProductIds', 'orderCompletedEmail'])
@@ -50,6 +51,13 @@ async function commitSettings(env: Env, expected: { id: string; version: number;
 
 export async function ownerStorefrontRoutes(request: Request, env: Env, url: URL): Promise<Response> {
   const suffix = url.pathname.slice('/api/admin/my-shop'.length), db = env.INTEREST_DB
+  if (suffix === '/identity' && request.method === 'GET') {
+    const storeId = url.searchParams.get('store') || 'platform'
+    const record = (await allStores(env)).find(s => s.id === storeId)
+    if (!record) throw new ApiError('店铺不存在。', 404)
+    const settings = await ownerShop(env, storeId)
+    return json({ shop: { id: storeId, name: settings.name, brandName: settings.brandName || settings.name, logo: settings.logo }, ...ownerStorefrontLinks(env, url.origin, storeId, record.slug) })
+  }
   if (/^\/prices\/[a-z0-9-]+$/.test(suffix) && request.method === 'POST' && url.searchParams.get('store') && url.searchParams.get('store') !== 'platform') {
     const storeId = url.searchParams.get('store')!, plan = suffix.split('/').at(-1)!
     await ownerShop(env, storeId)
@@ -125,9 +133,9 @@ export async function ownerStorefrontRoutes(request: Request, env: Env, url: URL
     if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings) || typeof data.active !== 'boolean') throw new ApiError('店铺设置无效。')
     if (data.version !== store.version) throw new ApiError('店铺已更新，请刷新。', 409)
     const raw = data.settings as Record<string, unknown>
-    const patch = { ...Object.fromEntries(Object.keys(fields).filter(k => k !== 'name').map(k => [k, raw[k] ?? ''])), name: data.name, active: data.active, announcementPlacement: raw.announcementPlacement ?? 'both' }
-    validate(patch)
     const current = await ownerShop(env, store.id), id = crypto.randomUUID()
+    const patch = synchronizeOwnerIdentity(current, { ...Object.fromEntries(Object.keys(fields).filter(k => k !== 'name').map(k => [k, raw[k] ?? ''])), name: data.name, active: data.active, announcementPlacement: raw.announcementPlacement ?? 'both' })
+    validate(patch)
     await commitSettings(env, [store], [db.prepare('UPDATE owner_shop_settings SET settings=?,version=version+1,change_id=?,updated_at=? WHERE id=?').bind(JSON.stringify({ ...current, ...patch, version: undefined }), id, Date.now(), store.id)], id)
     return json({ ok: true })
   }

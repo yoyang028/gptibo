@@ -4,7 +4,7 @@ import { reconcileMemberRewards } from '../worker/member-rewards.ts'
 
 export async function operationsFixture(t: Parameters<typeof memberFixture>[0]) {
   const f = await memberFixture(t), upstream = f.enableSupplier(), member = await f.identity('operations@example.test')
-  const code = new URL(member.info.member.inviteUrl).searchParams.get('invite')!
+  const code = member.info.member.inviteCode
   async function create(email = crypto.randomUUID() + '@example.test', rewardCents = 0, inviteCode = '', plan = 'plus', cookie = member.cookie) {
     const data = { plan, email, promotion: { inviteCode, newcomer: false, rewardCents } }
     const q = await f.call('/api/orders/promotion-quote', data, cookie)

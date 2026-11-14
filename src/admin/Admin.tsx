@@ -180,6 +180,14 @@ export default function Admin() {
   })
   const view = route.view, supplier = route.supplier
   const [revision, setRevision] = useState(0)
+  const [selectedStore, setSelectedStore] = useState(() => {
+    const value = new URLSearchParams(location.search).get('store') || ''
+    return ['platform','store-2','store-3'].includes(value) ? value : ''
+  })
+  function selectStore(id: string) {
+    setSelectedStore(id)
+    const url = new URL(location.href); url.searchParams.set('store', id); history.replaceState(null, '', url)
+  }
   const [detail, setDetail] = useState<string>()
   function navigate(nextView: string, nextSupplier: ProductSection = 'all') {
     const next = { view: nextView, supplier: nextView === 'products' ? nextSupplier : 'all' as ProductSection }
@@ -195,6 +203,8 @@ export default function Admin() {
     const restore = () => {
       const next = adminProductRoute(location.search)
       setRoute(views.some(v => v.id === next.view) ? next : { view: 'overview', supplier: 'all' })
+      const store = new URLSearchParams(location.search).get('store') || ''
+      setSelectedStore(['platform','store-2','store-3'].includes(store) ? store : '')
     }
     window.addEventListener('popstate', restore)
     return () => window.removeEventListener('popstate', restore)
@@ -207,8 +217,13 @@ export default function Admin() {
     history.replaceState(null, '', url)
   }, [view, supplier])
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
-  const {data: shopIdentity} = useResource<{shop:{brandName:string;logo:string}}>('/api/catalog?identity=1',revision)
-  const shopName = shopIdentity?.shop.brandName || 'GPTibo'
+  type Identity = { shop: { id: string; name: string; brandName: string; logo: string }; storefront_url?: string }
+  const {data: hostIdentity} = useResource<Identity>('/api/catalog?identity=1',revision)
+  const storeId = selectedStore || (view === 'members' ? 'store-3' : hostIdentity?.shop.id || 'platform')
+  const {data: selectedIdentity} = useResource<Identity>(session?.authenticated ? '/api/admin/my-shop/identity?store='+encodeURIComponent(storeId) : '/api/catalog?identity=1',revision)
+  const shopIdentity = selectedIdentity || hostIdentity
+  const shopName = shopIdentity?.shop.brandName || '商店'
+  const storefrontUrl = shopIdentity?.storefront_url || '/'
   useEffect(() => { document.title=shopName+' · 管理后台'; const icon=document.querySelector<HTMLLinkElement>('link[rel=icon]'); if(icon)icon.href=shopIdentity?.shop.logo||'/favicon.svg' }, [shopName,shopIdentity?.shop.logo])
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus() }, [view, supplier])
@@ -219,7 +234,7 @@ export default function Admin() {
     setSending(true); setSessionError(''); setMailNotice(''); setEmailCode(''); setChallenge(undefined)
     const requestedUsername = username.trim()
     try {
-      const result = await api<{ challenge: string; message: string; retryAfter: number }>('/api/admin/login/email-code', { username: requestedUsername, ...sendHuman.consume() })
+      const result = await api<{ challenge: string; message: string; retryAfter: number }>('/api/admin/login/email-code', { username: requestedUsername, storeId, ...sendHuman.consume() })
       setChallenge({ id: result.challenge, username: requestedUsername }); setMailNotice(result.message); setCooldown(result.retryAfter)
     } catch (e) { setSessionError(errorMessage(e)) } finally { setSending(false) }
   }
@@ -256,7 +271,7 @@ export default function Admin() {
       <div className="admin-sidebar-bottom"><span><ShieldCheck size={15} />{session.username}</span><Button variant="ghost" onClick={() => void logout()} disabled={busy}><LogOut size={15} />退出登录</Button></div>
     </aside>
     <div className="admin-workspace">
-      <header className="admin-topbar"><span>{shopName} / {current.label}{view === 'products' ? ' / ' + productLabel : ''}</span><div><a href="/" target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
+      <header className="admin-topbar"><span>{shopName} / {current.label}{view === 'products' ? ' / ' + productLabel : ''}</span><div><a href={storefrontUrl} target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
       <main className="admin-main">
         <div className="admin-page-heading"><div><span>WORKSPACE</span><h1 ref={heading} tabIndex={-1}>{current.label}</h1><p>{view === 'products' ? '按上游服务商统一管理商品、规格、定价与 API 配置。' : view === 'orders' ? '从创建到完成，查看订单与处理记录。' : view === 'accounting' ? '筛选订单查看净利润，按清账周期保存统计。' : view === 'invoices' ? '管理代理开票申请与手续费收款，登记平台提交进度。' : view === 'customers' ? '查看全部客户的会员账号、到期时间与续费记录。' : view === 'contacts' ? '设置平台商店向客户展示的联系方式。' : view === 'integrations' ? '管理收款方式、平台手续费与通知服务。' : '基于服务器记录，了解服务与订单进展。'}</p></div><Button variant="outline" onClick={() => { setRevision(v => v + 1); void checkSession() }}><RefreshCw size={15} />刷新</Button></div>
         <TicketAlerts onOpen={() => setView('tickets')} onRefunds={() => { setView('refunds'); setRevision(v => v + 1) }} />
@@ -265,7 +280,7 @@ export default function Admin() {
         {view === 'tickets' && <TicketWorkspace admin revision={revision} onOrder={setDetail} />}
         {view === 'security' && <SecurityPage revision={revision} />}
         {view === 'overview' && <OverviewPage revision={revision} onSelect={setDetail} onOrders={() => setView('orders')} onVisitors={() => setView('visitors')} />}
-        {view === 'my-shop' && <MyShop revision={revision} onManageProducts={() => navigate('products')} onSaved={() => setRevision(v => v + 1)} orders={<OrdersPage revision={revision} onSelect={setDetail} />} customers={<CustomerManagement admin revision={revision} />} accounting={<AccountingPage revision={revision} />} refunds={<RefundsPage revision={revision} />} />}
+        {view === 'my-shop' && <MyShop storeId={storeId} onStoreChange={selectStore} revision={revision} onManageProducts={() => navigate('products')} onSaved={() => setRevision(v => v + 1)} orders={<OrdersPage revision={revision} onSelect={setDetail} />} customers={<CustomerManagement admin revision={revision} />} accounting={<AccountingPage revision={revision} />} refunds={<RefundsPage revision={revision} />} />}
         {view === 'orders' && <OrdersPage revision={revision} onSelect={setDetail} />}
         {view === 'refunds' && <RefundsPage revision={revision} />}
         {view === 'interest' && <InterestPage revision={revision} />}

@@ -21,7 +21,7 @@ export async function memberFixture(t: TestContext) {
     }
     return statement
   }
-  const sent: { to: string[]; text: string; subject: string }[] = []
+  const sent: { to: string[]; text: string; subject: string; from: string; html: string }[] = []
   t.mock.method(globalThis, 'fetch', async (url: string, options: RequestInit) => {
     if (url !== 'https://api.resend.com/emails') throw new Error('Unexpected external request: ' + url)
     sent.push(JSON.parse(String(options.body)))
@@ -39,10 +39,10 @@ export async function memberFixture(t: TestContext) {
     if (r.status !== 200) throw new Error('signup: ' + r.status + ' ' + await r.text())
     const message = sent.findLast(m => m.to[0] === email)
     if (!message) throw new Error('No verification mail')
-    const link = message.text.match(/https:\/\/\S+/)?.[0]
-    if (!link) throw new Error('No verification link')
-    const response = await worker.fetch(new Request(link), f.env)
-    if (![200,302].includes(response.status)) throw new Error('verify: ' + response.status + ' ' + await response.text())
+    const otp = message.text.match(/验证码：(\d{6})/)?.[1]
+    if (!otp) throw new Error('No verification code')
+    const response = await call('/api/member/auth/email-otp/verify-email', { email, otp })
+    if (response.status !== 200) throw new Error('verify: ' + response.status + ' ' + await response.text())
     const cookie = cookieOf(response) + '; ' + await buyer()
     const info = await (await call('/api/member/session', undefined, cookie)).json()
     if (!info.member) throw new Error('No verified member session: ' + JSON.stringify(info))

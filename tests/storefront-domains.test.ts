@@ -27,7 +27,7 @@ test('domain home, identity and www use the general catalog while the original r
     const catalog = await f.read(f.send('/api/catalog'))
     assert.equal(catalog.ownerStoreId, 'store-3')
     assert.equal(catalog.shop.id, 'store-3')
-    assert.equal(catalog.shop.name, '通用商店')
+    assert.equal(catalog.shop.name, 'AI星球')
     assert.equal(catalog.plans.find((p: any) => p.id === 'plus').price_cents, 3100)
     assert.equal((await f.read(f.send('/api/catalog?identity=1'))).shop.id, 'store-3')
     assert.equal((await f.read(f.send('/api/catalog', undefined, '', {}, 'www.general.example.test'))).shop.id, 'store-3')

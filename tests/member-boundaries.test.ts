@@ -5,7 +5,7 @@ import { reconcileMemberRewards, checkRewardTarget } from '../worker/member-rewa
 
 async function setup(t:Parameters<typeof memberFixture>[0]){
   const f=await memberFixture(t),upstream=f.enableSupplier(),member=await f.identity('boundary@example.test')
-  const code=new URL(member.info.member.inviteUrl).searchParams.get('invite')!
+  const code=member.info.member.inviteCode
   async function create(email:string,rewardCents=0,inviteCode='',newcomer=false,plan='plus',cookie=member.cookie,key=crypto.randomUUID()){
     const data={plan,email,promotion:{inviteCode,newcomer,rewardCents}},q=await (await f.call('/api/orders/promotion-quote',data,cookie)).json()
     assert.equal(q.cashCents!==undefined,true,JSON.stringify(q))
@@ -105,7 +105,7 @@ test('local expiry keeps reservations until confirmed upstream closure; late pai
 
 test('concurrent different invitation selections cannot change one idempotent order source',async t=>{
   const f=await setup(t),other=await f.identity('other-inviter@example.test'),cookie=await f.buyer(),key=crypto.randomUUID()
-  const codes=[f.code,new URL(other.info.member.inviteUrl).searchParams.get('invite')!]
+  const codes=[f.code,other.info.member.inviteCode]
   const results=await Promise.all(codes.map(inviteCode=>f.call('/api/orders',{plan:'plus',email:'same-guest@example.test',key,expectedPrice:13800,promotion:{inviteCode,newcomer:false,rewardCents:0}},cookie)))
   assert.deepEqual(results.map(r=>r.status).sort(),[201,409])
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM member_order_promotions').get()!.n,1)
@@ -126,7 +126,7 @@ test('one target identity cannot create two referral rewards and raw credentials
 
 test('paid target anomalies can be reviewed without charging or consuming rewards again',async t=>{
   const f=await setup(t);await f.earn(1)
-  const other=await f.identity('independent-inviter@example.test'),otherCode=new URL(other.info.member.inviteUrl).searchParams.get('invite')!
+  const other=await f.identity('independent-inviter@example.test'),otherCode=other.info.member.inviteCode
   const previous=await f.create('previous-target@example.test',0,f.code,false,'plus',await f.buyer())
   const {order}=await f.create('boundary@example.test',1000,otherCode)
   f.db.prepare("UPDATE orders SET payment_status='paid' WHERE id=?").run(order.id)

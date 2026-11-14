@@ -2,6 +2,8 @@ import { emailTemplates } from './emails.generated.ts'
 import type { Env } from './platform.ts'
 import { membershipClaimUrl } from '../shared/membership-claim.ts'
 import { boundedResponseText } from './bounded-response.ts'
+import { shopBrand, shopMailFrom, escapeMail } from './store-branding.ts'
+import { ownerStorefrontLinks } from './storefront-hosts.ts'
 
 export type VerificationKind = Exclude<keyof typeof emailTemplates, 'partner-welcome' | 'recharge-reminder' | 'delivery-link' | 'delivery-cdk' | 'delivery-duolingo-link' | 'delivery-gmail'>
 
@@ -30,12 +32,12 @@ export function rechargeReminderMessage(details: RechargeReminderDetails) {
   return { subject: template.subject, html: template.html.replace(pattern, key => escape(values[key]).replaceAll('\n', '<br />')), text: template.text.replace(pattern, key => values[key]) }
 }
 
-export async function sendRechargeReminderEmail(env: Env, to: string, message: ReturnType<typeof rechargeReminderMessage>, id: string) {
-  await sendEmail(env, to, message, 'recharge-reminder/' + id)
+export async function sendRechargeReminderEmail(env: Env, to: string, message: ReturnType<typeof rechargeReminderMessage>, id: string, storeId = 'platform') {
+  await sendEmail(env, to, message, 'recharge-reminder/' + id, storeId)
 }
 
-export async function sendMembershipPreviewEmail(env: Env, to: string, message: ReturnType<typeof membershipDeliveryMessage>, id: string) {
-  const response = await sendEmail(env, to, message, 'membership-preview/' + id)
+export async function sendMembershipPreviewEmail(env: Env, to: string, message: ReturnType<typeof membershipDeliveryMessage>, id: string, storeId = 'platform') {
+  const response = await sendEmail(env, to, message, 'membership-preview/' + id, storeId)
   const result = JSON.parse(await boundedResponseText(response, 16384)) as { id?: unknown }
   if (typeof result.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(result.id)) throw new Error('Preview mail result not confirmed')
   return result.id
@@ -56,33 +58,41 @@ export function verificationMessage(kind: VerificationKind, code: string) {
   }
 }
 
-export async function sendVerificationEmail(env: Env, kind: VerificationKind, to: string, code: string, challenge: string) {
-  await sendEmail(env, to, verificationMessage(kind, code), kind + '/' + challenge)
+export async function sendVerificationEmail(env: Env, kind: VerificationKind, to: string, code: string, challenge: string, storeId = 'platform') {
+  await sendEmail(env, to, verificationMessage(kind, code), kind + '/' + challenge, storeId)
 }
 
 export async function sendPartnerInvitationEmail(env: Env, to: string, invitationId: string) {
   await sendEmail(env, to, partnerInvitationMessage(), 'partner-welcome/' + invitationId)
 }
 
-async function sendEmail(env: Env, to: string, message: { subject: string; html: string; text: string }, idempotencyKey: string) {
+export async function prepareShopEmail(env: Env, message: { subject: string; html: string; text: string }, storeId = 'platform') {
   const {ownerShop}=await import('./owner-shop.ts')
-  const shop=env.INTEREST_DB?await ownerShop(env):{brandName:'',name:'GPTibo',version:0},name=(shop.brandName||shop.name).replace(/[\r\n]/g,' ')
-  const address=(env.RESEND_FROM??'').match(/<([^<>]+)>$/)?.[1]??env.RESEND_FROM
-  const from=name!=='GPTibo'&&address&&/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(address)?`"${name.replace(/(["\\])/g,'\\$1')}" <${address}>`:env.RESEND_FROM
-  const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!))
-  // Only the first static brand header is changed, preserving customer delivery text.
-  message={subject:message.subject.replace(/^GPTibo(?=\s*[·・])/,()=>name),html:message.html.replace('>GPTibo<','>'+escape(name)+'<').replace('alt="GPTibo"','alt="'+escape(name)+'"'),text:message.text.replace('GPTibo',()=>name)}
+  const shop=env.INTEREST_DB?await ownerShop(env,storeId):{brandName:'',name:'GPTibo',version:0},name=shopBrand(shop)
+  const from=name==='GPTibo'?env.RESEND_FROM:shopMailFrom(env.RESEND_FROM,shop)
+  const escape=escapeMail
+  // Match template headers/footers, preserving customer delivery text. React's
+  // static text boundary distinguishes its footer from interpolated content.
+  message={subject:message.subject.replace(/^GPTibo(?=\s*[·・])/,()=>name),
+    html:message.html.replace('>GPTibo<','>'+escape(name)+'<').replaceAll('>GPTibo<!-- --> · ','>'+escape(name)+'<!-- --> · ').replace('alt="GPTibo"','alt="'+escape(name)+'"'),
+    text:message.text.replace(/^GPTibo/,()=>name).replace(/(\n)GPTibo(?= · (?:让工具回归简单|独立服务商)(?:\n|$))/g,(_,prefix:string)=>prefix+name)}
   if(env.RECHARGE_NOTIFY_URL) {
-    const base=new URL(env.RECHARGE_NOTIFY_URL)
+    const fallback=new URL(env.RECHARGE_NOTIFY_URL).origin
+    const base=new URL(ownerStorefrontLinks(env,fallback,storeId,'').storefront_url)
     if(base.protocol==='https:') {
       message={...message,html:message.html.replaceAll('https://shop.example.invalid/email-logo.png',escape(base.origin+'/api/catalog?brand-logo=1&v='+shop.version)).replaceAll('https://shop.example.invalid/',escape(base.origin+'/')),text:message.text.replaceAll('https://shop.example.invalid/',base.origin+'/')}
     }
   }
+  return { from, ...message }
+}
+
+async function sendEmail(env: Env, to: string, message: { subject: string; html: string; text: string }, idempotencyKey: string, storeId = 'platform') {
+  const prepared = await prepareShopEmail(env, message, storeId)
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     redirect: 'manual',
     headers: { Authorization: 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify({ from, to: [to], ...message }),
+    body: JSON.stringify({ to: [to], ...prepared }),
     signal: AbortSignal.timeout(10000),
   })
   if (!response.ok) throw new Error('delivery failed')

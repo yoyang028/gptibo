@@ -16,7 +16,7 @@ async function fixture(t: Parameters<typeof memberFixture>[0]) {
     assert.equal(response.status, 201, await response.clone().text())
     return { order: (await response.json()).order, payload, quote: q }
   }
-  const codeOf = (m: Awaited<ReturnType<typeof f.identity>>) => new URL(m.info.member.inviteUrl).searchParams.get('invite')!
+  const codeOf = (m: Awaited<ReturnType<typeof f.identity>>) => m.info.member.inviteCode
   async function earn(m: Awaited<ReturnType<typeof f.identity>>, count: number) {
     for (let i=0;i<count;i++) {
       const {order} = await create(crypto.randomUUID()+'@example.test',{inviteCode:codeOf(m)},await f.buyer())
