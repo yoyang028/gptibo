@@ -11,7 +11,7 @@ test('notification collector deduplicates reward and administrator events, expos
   f.db.prepare("UPDATE orders SET status='failed',created_at=? WHERE id=?").run(Date.now() - 2 * 86400000, delivered.id)
   const g = f.db.prepare('SELECT id FROM member_reward_grants').get()!
   f.db.prepare('UPDATE member_reward_grants SET expires_at=? WHERE id=?').run(Date.now() + 2 * 86400000, g.id)
-  await Promise.all([collectMemberNotifications(f.env), collectMemberNotifications(f.env)])
+  await Promise.all([collectMemberNotifications(f.env, 20), collectMemberNotifications(f.env, 20)])
   assert.equal(f.db.prepare('SELECT COUNT(*) n FROM member_notifications').get()!.n, 4)
   assert.equal((await (await f.call('/api/member/session', undefined, other.cookie)).json()).notifications.length, 0)
   assert.equal((await (await f.call('/api/member/session', undefined, f.member.cookie)).json()).notifications.length, 2)
@@ -21,6 +21,7 @@ test('notification collector deduplicates reward and administrator events, expos
     return Response.json({ id: 'provider_' + sends.length })
   })
   await Promise.all([maintainMemberNotifications(f.env), maintainMemberNotifications(f.env)])
+  for (let i = 0; i < 4; i++) await maintainMemberNotifications(f.env)
   assert.equal(sends.length, 4); assert.equal(new Set(sends.map(s => s.key)).size, 4)
   assert.equal(f.db.prepare("SELECT COUNT(*) n FROM member_notifications WHERE status='sent'").get()!.n, 4)
   assert.throws(() => f.db.exec("UPDATE member_notifications SET mail_body='{}'"), /immutable/)

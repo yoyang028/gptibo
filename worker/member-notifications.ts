@@ -22,7 +22,7 @@ export async function enqueueMemberNotification(env: Env, eventKey: string, kind
     .bind(id, eventKey, kind, target, memberId, JSON.stringify(message), Date.now()).run()
   return id
 }
-export async function collectMemberNotifications(env: Env) {
+export async function collectMemberNotifications(env: Env, limit = 1) {
   const db = env.INTEREST_DB, now = Date.now()
   const rows = (await db.prepare(`SELECT 'review:'||p.order_id event_key,'review' kind,p.order_id target_id,NULL member_id FROM member_order_promotions p JOIN orders o ON o.id=p.order_id
     WHERE p.review_status='required' AND o.status<>'cancelled' AND p.allocation_status NOT IN ('released','restored') AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='review:'||p.order_id) LIMIT 20`).all<{ event_key: string; kind: string; target_id: string; member_id: string | null }>()).results
@@ -42,7 +42,12 @@ export async function collectMemberNotifications(env: Env) {
     WHERE g.status='active' AND g.remaining_cents>g.reserved_cents AND g.expires_at>? AND g.expires_at<=?
       AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='expiring:'||g.id) ORDER BY g.expires_at LIMIT 20`).bind(now, now + 3 * 86400000).all<(typeof rows)[number]>()).results)
   const titles: Record<string, string> = { review: '活动订单待审核', procurement: '采购或交付失败待核对', reconciliation: '订单对账出现差异或查询失败', backlog: '订单积压超过24小时', reward_active: '邀请奖励已生效', reward_expiring: '邀请奖励即将到期' }
-  for (const r of rows) {
+  // Small batches must not let a sustained review queue starve reward reminders.
+  const kinds = ['review','procurement','reconciliation','backlog','reward_active','reward_expiring']
+  const cursor = Math.floor(now / 240000) % kinds.length
+  const rank = (kind: string) => (kinds.indexOf(kind) - cursor + kinds.length) % kinds.length
+  const selected = rows.sort((a, b) => rank(a.kind) - rank(b.kind)).slice(0, Math.max(1, Math.min(20, limit)))
+  for (const r of selected) {
     let text = `订单：${r.target_id}\n请在后台核对原订单后处理。`
     if (r.member_id) {
       const g = await db.prepare('SELECT remaining_cents,reserved_cents,expires_at FROM member_reward_grants WHERE id=?').bind(r.target_id).first<{ remaining_cents: number; reserved_cents: number; expires_at: number }>()
@@ -51,7 +56,7 @@ export async function collectMemberNotifications(env: Env) {
     }
     await enqueueMemberNotification(env, r.event_key, r.kind, r.target_id, r.member_id, titles[r.kind], text)
   }
-  return rows.length
+  return selected.length
 }
 async function stillRelevant(env: Env, row: Notification) {
   const db = env.INTEREST_DB
@@ -115,6 +120,6 @@ export async function maintainMemberNotifications(env: Env) {
   await collectMemberNotifications(env)
   const db = env.INTEREST_DB, now = Date.now()
   await db.prepare("UPDATE member_notifications SET status='unknown',last_error='超过安全重试时限，需核对邮件服务记录',version=version+1 WHERE status IN ('retry','sending') AND first_attempt_at<=? AND lease_until<=?").bind(now - NOTIFICATION_RETRY_WINDOW, now).run()
-  const rows = (await db.prepare("SELECT id FROM member_notifications WHERE status IN ('pending','retry','sending') AND next_attempt_at<=? AND lease_until<=? ORDER BY next_attempt_at,created_at,id LIMIT 5").bind(now, now).all<{ id: string }>()).results
+  const rows = (await db.prepare("SELECT id FROM member_notifications WHERE status IN ('pending','retry','sending') AND next_attempt_at<=? AND lease_until<=? ORDER BY next_attempt_at,created_at,id LIMIT 1").bind(now, now).all<{ id: string }>()).results
   for (const row of rows) await sendMemberNotification(env, row.id)
 }

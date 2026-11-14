@@ -77,12 +77,12 @@ export async function reconcilePilotOrder(env: Env, id: string, actor = 'system'
     return result
   } finally { await db.prepare('UPDATE member_order_reconciliations SET lease_token=NULL,lease_until=0 WHERE order_id=? AND lease_token=?').bind(id, token).run() }
 }
-export async function scanPilotOrders(env: Env) {
+export async function scanPilotOrders(env: Env, limit = 3) {
   if (env.MEMBERSHIP_ENABLED === undefined) return { checked: 0, failed: 0 }
   const rows = (await env.INTEREST_DB.prepare(`SELECT o.id FROM orders o LEFT JOIN member_order_reconciliations c ON c.order_id=o.id
     WHERE o.owner_store_id='store-3' AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0
       AND o.plan IN ('plus','pro-5x','pro-20x','pro-25x') AND COALESCE(c.lease_until,0)<=?
-      AND COALESCE(c.checked_at,0)<? ORDER BY COALESCE(c.checked_at,0),o.created_at,o.id LIMIT 10`).bind(Date.now(), Date.now() - 300000).all<{ id: string }>()).results
+      AND COALESCE(c.checked_at,0)<? ORDER BY COALESCE(c.checked_at,0),o.created_at,o.id LIMIT ?`).bind(Date.now(), Date.now() - 300000, Math.max(1, Math.min(3, limit))).all<{ id: string }>()).results
   let failed = 0
   for (let i = 0; i < rows.length; i += 2) {
     const results = await Promise.allSettled(rows.slice(i, i + 2).map(o => reconcilePilotOrder(env, o.id)))

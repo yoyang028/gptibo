@@ -36,21 +36,32 @@ async function hash(value: string) {
 export default {
   async scheduled(event: { scheduledTime?: number }, env: Env) {
     await rewardMaintenance(env)
-    await scanRewardAudits(env).catch(() => console.error('Member ledger audit requires retry'))
-    await scanMemberRisks(env).catch(() => console.error('Member risk inspection requires retry'))
-    await maintainMemberNotifications(env).catch(() => console.error('Member notification queue requires retry'))
-    // Telegram's durable queue is independent of supplier reconciliation failures.
-    await retryTelegramInvitations(env).catch(() => { console.error('Telegram invitation queue temporarily unavailable') })
-    await refreshHanfolkStock(env).catch(() => { console.error('Hanfolk stock refresh temporarily unavailable; see inventory monitor') })
-    // Reminders run every minute; preserve the existing five-minute reconciliation cadence.
-    if (event.scheduledTime === undefined || Math.floor(event.scheduledTime / 60_000) % 5 === 0) {
-      await scanPilotOrders(env).catch(() => console.error('Member order reconciliation requires retry'))
-      await Promise.all([reconcilePayments(env), reconcileRecharge(env), retryPayoutNotifications(env), reconcileInvoicePayments(env)])
-      await reconcileRechargeRefunds(env)
+    try {
+      // Telegram's durable queue is independent of supplier reconciliation failures.
+      await retryTelegramInvitations(env).catch(() => { console.error('Telegram invitation queue temporarily unavailable') })
+      await refreshHanfolkStock(env).catch(() => { console.error('Hanfolk stock refresh temporarily unavailable; see inventory monitor') })
+      // Reminders run every minute; preserve the existing five-minute reconciliation cadence.
+      if (event.scheduledTime === undefined || Math.floor(event.scheduledTime / 60_000) % 5 === 0) {
+        await Promise.all([reconcilePayments(env), reconcileRecharge(env), retryPayoutNotifications(env), reconcileInvoicePayments(env)])
+        await reconcileRechargeRefunds(env)
+      }
+      await Promise.all([sendDueRechargeReminders(env), reconcileGmail(env), reconcileDeliverySupplier(env), reconcileXGift(env), reconcileShopProducts(env)])
+      await reconcileSms(env)
+      await sendOwnerOrderNotifications(env)
+    } finally {
+      // Preserve the original payment jobs' budget. New operations take turns
+      // and still run when a supplier job throws. D1 Free has 50 calls per
+      // invocation; never run four full operational scans in the same tick.
+      if (env.MEMBERSHIP_ENABLED !== undefined) {
+        const slot = Math.floor((event.scheduledTime ?? Date.now()) / 60000) % 4
+        try {
+          if (slot === 0) await maintainMemberNotifications(env)
+          else if (slot === 1) await scanRewardAudits(env, 1)
+          else if (slot === 2) await scanMemberRisks(env, 1)
+          else await scanPilotOrders(env, 1)
+        } catch { console.error('Member operations maintenance requires retry') }
+      }
     }
-    await Promise.all([sendDueRechargeReminders(env), reconcileGmail(env), reconcileDeliverySupplier(env), reconcileXGift(env), reconcileShopProducts(env)])
-    await reconcileSms(env)
-    await sendOwnerOrderNotifications(env)
   },
   async fetch(request: Request, env: Env): Promise<Response> {
     try {

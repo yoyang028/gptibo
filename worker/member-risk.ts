@@ -36,12 +36,12 @@ export async function riskSignalStatements(request: Request, env: Env, id: strin
   }
   return statements
 }
-export async function scanMemberRisks(env: Env) {
+export async function scanMemberRisks(env: Env, limit = 3) {
   if (env.MEMBERSHIP_ENABLED === undefined) return { checked: 0 }
   const db = env.INTEREST_DB, now = Date.now()
   const subjects = (await db.prepare(`SELECT s.* FROM member_risk_subjects s WHERE s.checked_at<? AND (s.last_order_at>? OR EXISTS(
     SELECT 1 FROM member_risk_cases c WHERE c.kind=s.kind AND c.subject_key=s.subject_key AND c.status<>'resolved'))
-    ORDER BY s.checked_at,s.last_order_at DESC,s.kind,s.subject_key LIMIT 25`).bind(now - 60000, now - RISK_WINDOW_MS).all<{ kind: 'member' | 'customer' | 'browser'; subject_key: string; latest_order_id: string }>()).results
+    ORDER BY s.checked_at,s.last_order_at DESC,s.kind,s.subject_key LIMIT ?`).bind(now - 60000, now - RISK_WINDOW_MS, Math.max(1, Math.min(3, limit))).all<{ kind: 'member' | 'customer' | 'browser'; subject_key: string; latest_order_id: string }>()).results
   for (const subject of subjects) {
     const context = subject.kind === 'member' ? { memberId: subject.subject_key } : subject.kind === 'customer' ? { customerKey: subject.subject_key } : { browserKey: subject.subject_key }
     const signal = await db.prepare('SELECT ip_key FROM member_order_signals WHERE order_id=?').bind(subject.latest_order_id).first<{ ip_key: string | null }>()

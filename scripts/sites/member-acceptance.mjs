@@ -96,7 +96,7 @@ try{
    db.prepare("INSERT INTO order_events(id,order_id,actor,action,to_status,order_version,created_at) VALUES (?,?,'local-fixture','fixture-delivery','success',1,?)").bind(randomUUID(),id,at),
   ])
  }
- await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000})
+ for(let slot=0;slot<4;slot++)await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000+slot*60000})
  assert.equal((await call(memberContext,'/api/member/session')).balanceCents,14000)
  record('actual workerd scheduler activates fourteen delivered-order rewards once')
  await page.goto(origin+'/product/chatgpt')
@@ -138,8 +138,8 @@ try{
  const event='local_event_'+randomUUID().replaceAll('-',''),stamp=String(Math.floor(Date.now()/1000)),raw=JSON.stringify({event_id:event,type:'order.paid',data:{order_id:remote.order_id,merchant_order_no:guestOrder.id}})
  const headers={'Content-Type':'application/json','X-Quefa-Event':'order.paid','X-Quefa-Event-Id':event,'X-Quefa-Delivery':'delivery_'+event,'X-Quefa-Timestamp':stamp,'X-Quefa-Signature':`t=${stamp},v1=${createHmac('sha256',webhookSecret).update(stamp+'.'+raw).digest('hex')}`}
  for(let i=0;i<2;i++)assert.equal((await mf.dispatchFetch(academic+'/api/recharge/webhook',{method:'POST',headers,body:raw})).status,200)
- await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000})
- await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000})
+ for(let slot=0;slot<4;slot++)await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000+slot*60000})
+ for(let slot=0;slot<4;slot++)await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000+slot*60000})
  assert.equal((await call(guestContext,`/api/orders/${guestOrder.id}`)).order.status,'success')
  const after=await call(memberContext,'/api/member/session');assert.equal(after.totals.pending,1000);assert.equal(after.invitations.total,15)
  record('unregistered guest gets five off; discounted upstream payment and duplicate callback award once after delivery')
@@ -208,7 +208,7 @@ try{
  await adminPage.getByRole('button',{name:'账本核对',exact:true}).click()
  await adminPage.getByRole('heading',{name:'奖励账本核对',exact:true}).waitFor()
  const ledgerRowsBefore=await db.prepare('SELECT COUNT(*) count FROM member_reward_ledger').first()
- await call(adminContext,'/api/admin/member-ops/ledger',{action:'scan'})
+ for(let batch=0;batch<8;batch++)await call(adminContext,'/api/admin/member-ops/ledger',{action:'scan'})
  const auditRows=await call(adminContext,'/api/admin/member-ops/ledger')
  assert(auditRows.rows.length>=15);assert(auditRows.rows.every(r=>r.state==='matched'&&r.checked_version===r.grant_version))
  assert.deepEqual(await db.prepare('SELECT COUNT(*) count FROM member_reward_ledger').first(),ledgerRowsBefore)

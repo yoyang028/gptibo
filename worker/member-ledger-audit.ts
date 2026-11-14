@@ -82,11 +82,11 @@ export async function auditReward(env: Env, id: string, actor = 'system') {
     return { state, ...result }
   } finally { await db.prepare('UPDATE member_reward_audits SET lease_token=NULL,lease_until=0 WHERE grant_id=? AND lease_token=?').bind(id, token).run() }
 }
-export async function scanRewardAudits(env: Env) {
+export async function scanRewardAudits(env: Env, limit = 3) {
   if (env.MEMBERSHIP_ENABLED === undefined) return { checked: 0 }
   const rows = (await env.INTEREST_DB.prepare(`SELECT g.id FROM member_reward_grants g LEFT JOIN member_reward_audits a ON a.grant_id=g.id
     WHERE COALESCE(a.lease_until,0)<=? AND (COALESCE(a.checked_at,0)<? OR COALESCE(a.grant_version,-1)<>g.version)
-    ORDER BY COALESCE(a.checked_at,0),g.id LIMIT 20`).bind(Date.now(), Date.now() - 3600000).all<{ id: string }>()).results
+    ORDER BY COALESCE(a.checked_at,0),g.id LIMIT ?`).bind(Date.now(), Date.now() - 3600000, Math.max(1, Math.min(3, limit))).all<{ id: string }>()).results
   for (const g of rows) await auditReward(env, g.id).catch(() => console.error('Reward audit requires retry'))
   return { checked: rows.length }
 }
