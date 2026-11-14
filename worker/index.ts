@@ -23,6 +23,7 @@ import { memberAuthRoute } from './member-auth.ts'
 import { memberRoutes, rewardMaintenance } from './member-routes.ts'
 import { scanPilotOrders } from './member-reconciliation.ts'
 import { maintainMemberNotifications } from './member-notifications.ts'
+import { scanRewardAudits } from './member-ledger-audit.ts'
 const json = (value: unknown, status = 200) => Response.json(value, {
   status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 429 ? { 'Retry-After': '60' } : {}) },
 })
@@ -34,6 +35,7 @@ async function hash(value: string) {
 export default {
   async scheduled(event: { scheduledTime?: number }, env: Env) {
     await rewardMaintenance(env)
+    await scanRewardAudits(env).catch(() => console.error('Member ledger audit requires retry'))
     await maintainMemberNotifications(env).catch(() => console.error('Member notification queue requires retry'))
     // Telegram's durable queue is independent of supplier reconciliation failures.
     await retryTelegramInvitations(env).catch(() => { console.error('Telegram invitation queue temporarily unavailable') })

@@ -4,6 +4,7 @@ import { assertPilotOrder, operationEvent, reconcilePilotOrder, scanPilotOrders,
 import { retryMemberNotification } from './member-notifications.ts'
 import { memberStatistics } from './member-statistics.ts'
 import { simulatePromotion } from './member-simulation.ts'
+import { auditReward, scanRewardAudits } from './member-ledger-audit.ts'
 
 export function operationPage(url: URL) {
   const page = Number(url.searchParams.get('page') || 1)
@@ -17,6 +18,21 @@ export function operationNote(data: Record<string, unknown>) {
 export async function memberOperations(request: Request, env: Env, url: URL) {
   if (env.MEMBERSHIP_ENABLED === undefined) throw new ApiError('会员运营尚未启用。', 409)
   const db = env.INTEREST_DB, { page, offset } = operationPage(url)
+  if (url.pathname === '/api/admin/member-ops/ledger') {
+    if (request.method === 'GET') {
+      const id = url.searchParams.get('id')
+      if (id) return json({ history: (await db.prepare("SELECT * FROM member_operation_events WHERE category='ledger' AND target_id=? ORDER BY created_at DESC,id LIMIT 20 OFFSET ?").bind(id, offset).all()).results, page })
+      const rows = await db.prepare(`SELECT g.id,g.member_id,u.email,g.remaining_cents,g.reserved_cents,g.version grant_version,a.state,a.differences,a.snapshot,a.checked_at,a.grant_version checked_version
+        FROM member_reward_grants g JOIN member_s3_user u ON u.id=g.member_id LEFT JOIN member_reward_audits a ON a.grant_id=g.id
+        ORDER BY CASE WHEN a.state='difference' THEN 0 WHEN a.state IS NULL OR a.grant_version<>g.version THEN 1 ELSE 2 END,a.checked_at DESC,g.id LIMIT 20 OFFSET ?`).bind(offset).all()
+      return json({ rows: rows.results, page })
+    }
+    if (request.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
+    const data = await body(request)
+    if (data.action === 'scan') return json(await scanRewardAudits(env))
+    if (data.action === 'check' && typeof data.id === 'string' && data.id.length <= 160) return json(await auditReward(env, data.id, env.ADMIN_USERNAME ?? 'admin'))
+    throw new ApiError('账本操作无效。')
+  }
   if (url.pathname === '/api/admin/member-ops/simulation' && request.method === 'POST') return simulatePromotion(env, await body(request))
   if (url.pathname === '/api/admin/member-ops/statistics' && request.method === 'GET') return memberStatistics(env, url)
   if (url.pathname === '/api/admin/member-ops/notifications') {

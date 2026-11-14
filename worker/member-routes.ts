@@ -21,7 +21,7 @@ export async function memberRoutes(request: Request, env: Env) {
     availableRewards(env, member.id),
     db.prepare("SELECT COALESCE(SUM(amount_cents),0) earned,COALESCE(SUM(CASE WHEN status='pending' THEN remaining_cents ELSE 0 END),0) pending,COALESCE(SUM(reserved_cents),0) reserved FROM member_reward_grants WHERE member_id=?").bind(member.id).first(),
     db.prepare('SELECT id,source_order_id,amount_cents,remaining_cents,reserved_cents,status,eligible_at,expires_at,version FROM member_reward_grants WHERE member_id=? ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(member.id, offset).all(),
-    db.prepare('SELECT l.* FROM member_reward_ledger l JOIN member_reward_grants g ON g.id=l.grant_id WHERE g.member_id=? ORDER BY l.created_at DESC,l.id LIMIT 20 OFFSET ?').bind(member.id, offset).all(),
+    db.prepare('SELECT l.* FROM member_reward_ledger l JOIN member_reward_grants g ON g.id=l.grant_id LEFT JOIN member_ledger_sequence s ON s.ledger_id=l.id WHERE g.member_id=? ORDER BY s.sequence DESC,l.created_at DESC,l.id LIMIT 20 OFFSET ?').bind(member.id, offset).all(),
     db.prepare("SELECT COUNT(*) total,SUM(CASE WHEN status<>'cancelled' THEN 1 ELSE 0 END) effective FROM member_reward_grants WHERE member_id=?").bind(member.id).first(),
     db.prepare("SELECT id,json_extract(mail_body,'$.subject') subject,json_extract(mail_body,'$.text') text,created_at FROM member_notifications WHERE member_id=? AND status<>'cancelled' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?").bind(member.id, offset).all(),
   ])
@@ -42,7 +42,7 @@ export async function adminMemberRoutes(request: Request, env: Env, url: URL) {
       if (grantId.length > 160) throw new ApiError('奖励编号无效。')
       const grant = await db.prepare("SELECT id,source_order_id FROM member_reward_grants WHERE id=? AND store_id='store-3'").bind(grantId).first()
       if (!grant) throw new ApiError('未找到该奖励。', 404)
-      const ledger = await db.prepare('SELECT * FROM member_reward_ledger WHERE grant_id=? ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(grantId,offset).all()
+      const ledger = await db.prepare('SELECT l.* FROM member_reward_ledger l LEFT JOIN member_ledger_sequence s ON s.ledger_id=l.id WHERE l.grant_id=? ORDER BY s.sequence DESC,l.created_at DESC,l.id LIMIT 20 OFFSET ?').bind(grantId,offset).all()
       return json({ enabled: true, grant, ledger: ledger.results, page })
     }
     if (q.length > 254) throw new ApiError('查询内容过长。')

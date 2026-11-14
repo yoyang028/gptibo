@@ -16,7 +16,7 @@ const money = (n: number) => `¥${(n / 100).toFixed(2)}`
 const statuses: Record<string,string> = { pending:'待生效',active:'已生效',cancelled:'已撤销',expired:'已到期',frozen:'已冻结',reserved:'已占用',captured:'已核销',released:'已释放',restored:'已恢复',none:'无需人工审核',required:'待审核',approved:'已通过',rejected:'未通过' }
 const risks: Record<string,string> = { self_invitation:'疑似自邀',target_repeat:'充值目标重复',frequent_redemption:'短期频繁抵扣' }
 const ledgerLabels: Record<string,string> = { grant:'发放待生效奖励',activate:'奖励生效',reserve:'订单占用',captured:'订单抵扣',released:'取消释放',restored:'退款恢复',expire:'到期',cancelled:'撤销',frozen:'冻结' }
-function RewardLedger({id}: {id:string}){
+export function RewardLedger({id}: {id:string}){
   const [page,setPage]=useState(1)
   const {data,error,loading}=useResource<{ledger:{id:string;order_id:string|null;kind:string;amount_cents:number;remaining_after:number;reserved_after:number;created_at:number}[]}>(`/api/admin/members?grant=${encodeURIComponent(id)}&page=${page}`)
   return <><Feedback error={error} loading={loading} data={data}/>{data&&<><div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>时间／订单</th><th>事项</th><th>金额</th><th>剩余／占用</th></tr></thead><tbody>{data.ledger.map(l=><tr key={l.id}><td>{new Date(l.created_at).toLocaleString('zh-CN')}<small>{l.order_id}</small></td><td>{ledgerLabels[l.kind]??l.kind}</td><td>{money(l.amount_cents)}</td><td>{money(l.remaining_after)}／{money(l.reserved_after)}</td></tr>)}</tbody></table></div><div className="admin-pagination"><span>第 {page} 页</span><div><Button variant="outline" disabled={page===1} onClick={()=>setPage(v=>v-1)}>上一页</Button><Button variant="outline" disabled={data.ledger.length<20} onClick={()=>setPage(v=>v+1)}>下一页</Button></div></div></>}</>

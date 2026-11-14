@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Pager } from './MemberOperations'
 import { at } from './member-operation-format'
 
-const labels: Record<string, string> = { pending: '待发送', sending: '发送中', retry: '等待重试', sent: '邮件服务已接收', failed: '发送失败', unknown: '结果待人工核查', cancelled: '事项已处理，停止发送', reconciliation: '订单对账异常', review: '订单待审核', procurement: '采购／交付失败', backlog: '订单积压', reward_active: '奖励生效', reward_expiring: '奖励即将到期' }
+const labels: Record<string, string> = { pending: '待发送', sending: '发送中', retry: '等待重试', sent: '邮件服务已接收', failed: '发送失败', unknown: '结果待人工核查', cancelled: '事项已处理，停止发送', ledger: '奖励账本差异', reconciliation: '订单对账异常', review: '订单待审核', procurement: '采购／交付失败', backlog: '订单积压', reward_active: '奖励生效', reward_expiring: '奖励即将到期' }
 type Notification = { id: string; kind: string; target_id: string; recipient: string; subject: string; status: string; attempts: number; first_attempt_at: number | null; next_attempt_at: number; provider_id: string | null; last_error: string; created_at: number; sent_at: number | null; version: number }
 function SendingLog({ id, revision }: { id: string; revision: number }) {
   const [page, setPage] = useState(1)
