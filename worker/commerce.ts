@@ -48,6 +48,7 @@ import { concealRedemptionLinks } from '../shared/redemption-copy.ts'
 import { supplierManagement } from './supplier-management.ts'
 import { memberStore, verifiedMember } from './member-auth.ts'
 import { adminMemberRoutes } from './member-routes.ts'
+import { memberOperations } from './member-operations.ts'
 import { quotePromotion, promotionStatements, promotionView, promotionFor, promotionRequestHash, cancelPromotion } from './member-promotions.ts'
 
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
@@ -103,6 +104,7 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
     if (path.startsWith('/api/admin/')) {
       await requireAdmin(request, env)
       if (path === '/api/admin/members') return await adminMemberRoutes(request, env, url)
+      if (path.startsWith('/api/admin/member-ops/')) return await memberOperations(request, env, url)
       if (path === '/api/admin/sms') return await smsManagement(request,env,url)
       if (path === '/api/admin/hanfolk' || path === '/api/admin/hanfolk/monitor') return await hanfolkManagement(request,env)
       if (path.startsWith('/api/admin/my-shop/products')) return await shopProductRoutes(request,env,url)

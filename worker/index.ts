@@ -21,6 +21,7 @@ import { reconcileSms } from './grizzly/service.ts'
 import { refreshHanfolkStock } from './hanfolk/management.ts'
 import { memberAuthRoute } from './member-auth.ts'
 import { memberRoutes, rewardMaintenance } from './member-routes.ts'
+import { scanPilotOrders } from './member-reconciliation.ts'
 const json = (value: unknown, status = 200) => Response.json(value, {
   status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 429 ? { 'Retry-After': '60' } : {}) },
 })
@@ -37,6 +38,7 @@ export default {
     await refreshHanfolkStock(env).catch(() => { console.error('Hanfolk stock refresh temporarily unavailable; see inventory monitor') })
     // Reminders run every minute; preserve the existing five-minute reconciliation cadence.
     if (event.scheduledTime === undefined || Math.floor(event.scheduledTime / 60_000) % 5 === 0) {
+      await scanPilotOrders(env).catch(() => console.error('Member order reconciliation requires retry'))
       await Promise.all([reconcilePayments(env), reconcileRecharge(env), retryPayoutNotifications(env), reconcileInvoicePayments(env)])
       await reconcileRechargeRefunds(env)
     }

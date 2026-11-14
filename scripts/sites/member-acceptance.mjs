@@ -17,7 +17,8 @@ fs.mkdirSync(path.join(runtime,'tmp'),{recursive:true})
 Object.assign(process.env,{TEMP:path.join(runtime,'tmp'),TMP:path.join(runtime,'tmp'),XDG_CONFIG_HOME:path.join(runtime,'config'),WRANGLER_LOG_PATH:path.join(runtime,'wrangler.log'),WRANGLER_SEND_METRICS:'false'})
 const {unstable_splitSqlQuery}=await import('wrangler')
 const require=createRequire(import.meta.url),{chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH||'D:/ChatGPT/CodexCache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
-const origin='https://127.0.0.1:8823',academic='https://localhost:8823',upstream='https://supplier.example.invalid'
+const localPort=Number(process.env.MEMBER_ACCEPTANCE_PORT||8823)
+const origin=`https://127.0.0.1:${localPort}`,academic=`https://localhost:${localPort}`,upstream='https://supplier.example.invalid'
 const email='member-local-fixture@gmail.com',adminEmail='admin@example.invalid',totpSecret='GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'
 const webhookSecret='local-member-webhook-only',mail=[],orders=new Map(),writes=[]
 const result={localOnly:true,realPayments:0,realUpstreamRequests:0,checks:[],pageErrors:[],externalRequests:[]}
@@ -44,7 +45,7 @@ const outbound=async request=>{
 }
 await build({entryPoints:[path.join(root,'worker/index.ts')],bundle:true,format:'esm',target:'es2023',platform:'browser',external:['node:*'],outfile:path.join(runtime,'worker.mjs'),logLevel:'silent'})
 const tls=path.join(root,'artifacts/local/.secrets/quefa-cloudflare-mock')
-const mf=new Miniflare({...convertV4MiniflareOptions({host:'127.0.0.1',port:8823,https:true,httpsCert:fs.readFileSync(path.join(tls,'cert.pem'),'utf8'),httpsKey:fs.readFileSync(path.join(tls,'key.pem'),'utf8'),modules:true,scriptPath:path.join(runtime,'worker.mjs'),compatibilityDate:'2026-09-26',compatibilityFlags:['nodejs_compat'],cf:false,
+const mf=new Miniflare({...convertV4MiniflareOptions({host:'127.0.0.1',port:localPort,https:true,httpsCert:fs.readFileSync(path.join(tls,'cert.pem'),'utf8'),httpsKey:fs.readFileSync(path.join(tls,'key.pem'),'utf8'),modules:true,scriptPath:path.join(runtime,'worker.mjs'),compatibilityDate:'2026-09-26',compatibilityFlags:['nodejs_compat'],cf:false,
  d1Databases:{INTEREST_DB:'member-pilot-fixture'},
  ratelimits:{INTEREST_LIMITER:{namespace_id:'4101',simple:{limit:1000,period:60}},API_LIMITER:{namespace_id:'4102',simple:{limit:2000,period:60}},EXPENSIVE_LIMITER:{namespace_id:'4103',simple:{limit:1000,period:60}}},
  assets:{directory:path.join(root,'dist'),binding:'ASSETS',run_worker_first:['/api/*'],routerConfig:{has_user_worker:true},assetConfig:{not_found_handling:'single-page-application'}},
@@ -166,6 +167,17 @@ try{
  await adminPage.getByRole('cell',{name:'发放待生效奖励',exact:true}).waitFor()
  await adminPage.screenshot({path:path.join(evidence,'admin-ledger-desktop.png'),fullPage:true})
  record('authenticated administrator can inspect the immutable reward ledger in the browser')
+ await adminPage.keyboard.press('Escape')
+ await adminPage.getByRole('button',{name:'运营中心',exact:true}).click()
+ await adminPage.getByRole('heading',{name:'异常订单对账',exact:true}).waitFor()
+ const writesBeforeReconciliation=writes.length
+ await adminPage.getByLabel('核对订单号',{exact:true}).fill(guestOrder.id)
+ const [checked]=await Promise.all([adminPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/admin/member-ops/reconciliation'&&r.request().method()==='POST'),adminPage.getByRole('button',{name:'核对指定订单',exact:true}).click()])
+ assert.equal(checked.status(),200);assert.equal((await checked.json()).state,'matched');assert.equal(writes.length,writesBeforeReconciliation)
+ await adminPage.getByLabel('对账筛选',{exact:true}).selectOption('all')
+ await adminPage.getByRole('button',{name:'处理记录',exact:true}).first().waitFor()
+ await adminPage.screenshot({path:path.join(evidence,'admin-reconciliation-desktop.png'),fullPage:true})
+ record('administrator reconciles original order and delivery with zero new upstream writes')
  assert.deepEqual(result.pageErrors,[]);assert.deepEqual(result.externalRequests,[])
  result.passed=true
  fs.writeFileSync(path.join(evidence,'result.json'),JSON.stringify(result,null,2))

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useResource } from '@/lib/use-resource'
 import { api, errorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,7 @@ function RewardLedger({id}: {id:string}){
   const {data,error,loading}=useResource<{ledger:{id:string;order_id:string|null;kind:string;amount_cents:number;remaining_after:number;reserved_after:number;created_at:number}[]}>(`/api/admin/members?grant=${encodeURIComponent(id)}&page=${page}`)
   return <><Feedback error={error} loading={loading} data={data}/>{data&&<><div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>时间／订单</th><th>事项</th><th>金额</th><th>剩余／占用</th></tr></thead><tbody>{data.ledger.map(l=><tr key={l.id}><td>{new Date(l.created_at).toLocaleString('zh-CN')}<small>{l.order_id}</small></td><td>{ledgerLabels[l.kind]??l.kind}</td><td>{money(l.amount_cents)}</td><td>{money(l.remaining_after)}／{money(l.reserved_after)}</td></tr>)}</tbody></table></div><div className="admin-pagination"><span>第 {page} 页</span><div><Button variant="outline" disabled={page===1} onClick={()=>setPage(v=>v-1)}>上一页</Button><Button variant="outline" disabled={data.ledger.length<20} onClick={()=>setPage(v=>v+1)}>下一页</Button></div></div></>}</>
 }
-export default function MembersPage({revision}: {revision:number}){
+function MemberManagement({revision}: {revision:number}){
   const [tab,setTab]=useState<'members'|'orders'|'rewards'>('orders'),[search,setSearch]=useState(''),[q,setQ]=useState(''),[page,setPage]=useState(1),[localRevision,setRevision]=useState(0)
   const {data,error,loading}=useResource<Data>(`/api/admin/members?q=${encodeURIComponent(q)}&page=${page}`,revision+localRevision)
   const [decision,setDecision]=useState<Decision|null>(null),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[mutationError,setError]=useState('')
@@ -39,4 +39,9 @@ export default function MembersPage({revision}: {revision:number}){
     <Dialog open={!!decision} disablePointerDismissal onOpenChange={v=>{if(!v&&!busy)setDecision(null)}}><DialogContent><DialogHeader><DialogTitle>{decision?.label}</DialogTitle><DialogDescription>操作会保留审核记录。通过审核不会将待上游确认的订单标成已采购或已交付；使用过的异常奖励保留流水并冻结权益。</DialogDescription></DialogHeader><form onSubmit={e=>{e.preventDefault();void submit()}}><label htmlFor="member-review-note">处理说明</label><Textarea id="member-review-note" required maxLength={500} value={note} disabled={busy} onChange={e=>setNote(e.target.value)}/>{mutationError&&<p role="alert">{mutationError}</p>}<Button type="submit" disabled={busy||!note.trim()}>{busy?'正在保存…':'确认处理'}</Button></form></DialogContent></Dialog>
     <Dialog open={!!ledgerId} onOpenChange={v=>{if(!v)setLedgerId(null)}}><DialogContent style={{maxWidth:'min(900px, calc(100vw - 2rem))',maxHeight:'85dvh',overflowY:'auto'}}><DialogHeader><DialogTitle>奖励流水</DialogTitle><DialogDescription>保留该笔奖励的发放、占用、抵扣、恢复与异常处理记录。</DialogDescription></DialogHeader>{ledgerId&&<RewardLedger key={ledgerId} id={ledgerId}/>}</DialogContent></Dialog>
   </>
+}
+const Operations = lazy(() => import('./MemberOperations'))
+export default function MembersPage({revision}: {revision:number}) {
+  const [view,setView]=useState<'manage'|'operations'>('manage')
+  return <><div className="member-pagination"><Button variant={view==='manage'?'default':'outline'} onClick={()=>setView('manage')}>会员与奖励</Button><Button variant={view==='operations'?'default':'outline'} onClick={()=>setView('operations')}>运营中心</Button></div>{view==='manage'?<MemberManagement revision={revision}/>:<Suspense fallback={<p>正在加载运营中心…</p>}><Operations revision={revision}/></Suspense>}</>
 }

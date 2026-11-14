@@ -6,7 +6,7 @@ export class RequestError extends Error {
 }
 export async function api<T>(path: string, data?: unknown, signal?: AbortSignal): Promise<T> {
   const admin = path.startsWith('/api/admin/')
-  const supplierOperation = data !== undefined && (path === '/api/orders' || /^\/api\/partner\/domains\/[^/]+\/payment$/.test(path) || /^\/api\/admin\/orders\/[^/]+\/(platform-status|recharge-retry)$/.test(path) || /^\/api\/orders\/[^/]+\/fulfillment$/.test(path) || /^\/api\/admin\/refunds\/[^/]+$/.test(path))
+  const supplierOperation = data !== undefined && (path.startsWith('/api/admin/member-ops/') || path === '/api/orders' || /^\/api\/partner\/domains\/[^/]+\/payment$/.test(path) || /^\/api\/admin\/orders\/[^/]+\/(platform-status|recharge-retry)$/.test(path) || /^\/api\/orders\/[^/]+\/fulfillment$/.test(path) || /^\/api\/admin\/refunds\/[^/]+$/.test(path))
   const smsOperation = /\/api\/admin\/my-shop\/products\/verify-api$/.test(path) || /^\/api\/orders\/[^/]+\/(payment|custom-action)$/.test(path)
   const timeout = AbortSignal.timeout(path === '/api/admin/hanfolk' || /\/session-precheck$/.test(path) || /\/recharge-retry$/.test(path) ? 65000 : supplierOperation || smsOperation ? 50000 : path === '/api/orders/xgift/eligibility' ? 35000 : 15000)
   const headers: Record<string, string> = data === undefined ? {} : { 'Content-Type': 'application/json' }
