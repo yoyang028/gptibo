@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Feedback } from '@/components/workspace-loading'
 import { money, at } from './member-operation-format'
+import './member-operations.css'
 const labels: Record<string, string> = { unchecked: '待核对', matched: '一致', difference: '有差异', expected: '正常等待', error: '查询失败', cash_amount: '客户实付金额不符', supply_amount: '采购金额不符', refund_amount: '退款金额不符', payment_status: '支付状态不符', delivery_status: '交付结果不符', close_status: '关单状态不符', held_order_submitted: '待处理订单出现上游采购', local_paid_without_upstream: '本店有付款或交付但无上游订单', upstream_identity_unknown: '上游提交结果待确认', upstream_identity_mismatch: '上游订单身份不符', upstream_identity_invalid: '上游编号无效', supplier_account_changed: '上游账号变化', upstream_query_failed: '上游查询未完成', awaiting_supplier: '等待上游补差方案', awaiting_review: '等待审核', not_submitted: '尚未提交上游', paid: '已付款', unpaid: '未付款', pending: '待付款', success: '交付成功', succeeded: '交付成功', failed: '失败', processing: '交付中', session: '等待充值资料', cancelled: '已取消', closed: '已关闭', expired: '已过期', refunded: '已退款', partially_refunded: '部分退款', queued: '排队中', running: '处理中' }
 type Snapshot = { cashCents?: number; supplyCents?: number; refundCents?: number; payment?: string; delivery?: string; status?: string; idempotencyKey?: string; remoteId?: string }
 type Reconciliation = { order_id: string; state: string; differences: string; local_snapshot: string; upstream_snapshot: string; checked_at: number }
@@ -32,7 +33,7 @@ function ReconciliationPage({ revision }: { revision: number }) {
     try { await api('/api/admin/member-ops/reconciliation', { action, id: orderId, note }); setRefresh(v => v + 1); setMessage(action === 'scan' ? '已核对一批到期订单，其余由定时任务继续核对。' : '已完成，处理记录已保存。') }
     catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
   }
-  return <section className="admin-panel"><h2>异常订单对账</h2><p>核对通用店 ChatGPT 订单与原上游订单。自动核对只查询；状态同步沿用原订单，不新建采购、扣款或人工发券。等待补差或审核单单独展示。</p>
+  return <section className="admin-panel member-operations-panel"><h2>异常订单对账</h2><p>核对通用店 ChatGPT 订单与原上游订单。自动核对只查询；状态同步沿用原订单，不新建采购、扣款或人工发券。等待补差或审核单单独展示。</p>
     <div className="admin-metrics">{data?.counts.map(c => <div key={c.state}><span>{labels[c.state]}</span><strong>{c.count}</strong></div>)}</div>
     <form className="admin-filters" onSubmit={e => { e.preventDefault(); void act('check') }}><Input aria-label="核对订单号" value={id} onChange={e => setId(e.target.value)} placeholder="输入本店原订单号" /><Button disabled={busy || !id.trim()} type="submit">核对指定订单</Button><Button variant="outline" type="button" disabled={busy} onClick={() => void act('scan')}>核对一批订单</Button><label>显示 <select aria-label="对账筛选" value={state} onChange={e => { setState(e.target.value); setPage(1) }}>{[['issues','差异与失败'],['all','全部'],['expected','正常等待'],['matched','一致']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></form>
     {message && <p role="status">{message}</p>}<Feedback error={error} loading={loading} data={data} />
@@ -41,7 +42,8 @@ function ReconciliationPage({ revision }: { revision: number }) {
   </section>
 }
 const Notifications=lazy(()=>import('./MemberNotificationPage'))
+const Statistics=lazy(()=>import('./MemberStatisticsPage'))
 export default function MemberOperations({ revision }: { revision: number }) {
  const [tab,setTab]=useState('reconciliation')
- return <><nav className="member-pagination" aria-label="会员运营分类"><Button variant={tab==='reconciliation'?'default':'outline'} onClick={()=>setTab('reconciliation')}>订单对账</Button><Button variant={tab==='notifications'?'default':'outline'} onClick={()=>setTab('notifications')}>通知中心</Button></nav>{tab==='reconciliation'?<ReconciliationPage revision={revision}/>:<Suspense fallback={<p>正在加载通知…</p>}><Notifications revision={revision}/></Suspense>}</>
+ return <><nav className="member-operations-nav" aria-label="会员运营分类"><Button variant={tab==='reconciliation'?'default':'outline'} onClick={()=>setTab('reconciliation')}>订单对账</Button><Button variant={tab==='notifications'?'default':'outline'} onClick={()=>setTab('notifications')}>通知中心</Button><Button variant={tab==='statistics'?'default':'outline'} onClick={()=>setTab('statistics')}>邀请效果</Button></nav>{tab==='reconciliation'?<ReconciliationPage revision={revision}/>:<Suspense fallback={<p>正在加载通知…</p>}>{tab==='statistics'?<Statistics revision={revision}/>:<Notifications revision={revision}/>}</Suspense>}</>
 }

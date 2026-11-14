@@ -2,6 +2,7 @@ import { ApiError, body, json, type Env } from './platform.ts'
 import { getOrder } from './order-state.ts'
 import { assertPilotOrder, operationEvent, reconcilePilotOrder, scanPilotOrders, syncPilotOrder } from './member-reconciliation.ts'
 import { retryMemberNotification } from './member-notifications.ts'
+import { memberStatistics } from './member-statistics.ts'
 
 export function operationPage(url: URL) {
   const page = Number(url.searchParams.get('page') || 1)
@@ -15,6 +16,7 @@ export function operationNote(data: Record<string, unknown>) {
 export async function memberOperations(request: Request, env: Env, url: URL) {
   if (env.MEMBERSHIP_ENABLED === undefined) throw new ApiError('会员运营尚未启用。', 409)
   const db = env.INTEREST_DB, { page, offset } = operationPage(url)
+  if (url.pathname === '/api/admin/member-ops/statistics' && request.method === 'GET') return memberStatistics(env, url)
   if (url.pathname === '/api/admin/member-ops/notifications') {
     if (request.method === 'GET') {
       const id = url.searchParams.get('id')

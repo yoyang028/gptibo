@@ -185,6 +185,12 @@ try{
  await adminPage.getByRole('button',{name:'发送日志',exact:true}).first().waitFor()
  await adminPage.screenshot({path:path.join(evidence,'admin-notifications-desktop.png'),fullPage:true})
  record('administrator notification centre shows persistent deduplicated sends and provider results')
+ await adminPage.getByRole('button',{name:'邀请效果',exact:true}).click()
+ await adminPage.getByRole('heading',{name:'邀请效果统计',exact:true}).waitFor()
+ const statistics=await call(adminContext,'/api/admin/member-ops/statistics')
+ assert.equal(statistics.rows[0].paid_orders,15);assert.equal(statistics.rows[0].issued_cents,15000)
+ await adminPage.screenshot({path:path.join(evidence,'admin-invitation-statistics-desktop.png'),fullPage:true})
+ record('invitation statistics report actual paid orders and issued rewards without double counting')
  assert.deepEqual(result.pageErrors,[]);assert.deepEqual(result.externalRequests,[])
  result.passed=true
  fs.writeFileSync(path.join(evidence,'result.json'),JSON.stringify(result,null,2))
