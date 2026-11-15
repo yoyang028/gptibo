@@ -1,4 +1,4 @@
-import type { Ref } from 'react'
+import type { MouseEventHandler, Ref } from 'react'
 
 const steps = [
   ['分享你的邀请链接', '验证邮箱即可参与，无需先购买。'],
@@ -41,10 +41,17 @@ const rules = [
   },
 ]
 
+export function ParticipationGuide({ onShowRules }: { onShowRules: MouseEventHandler<HTMLAnchorElement> }) {
+  return <section className="member-card member-participation" aria-labelledby="member-participation-heading">
+    <div className="member-rules-heading"><div><span className="member-section-kicker">参与说明</span><h2 id="member-participation-heading">奖励这样拿</h2></div></div>
+    <ol className="member-invitation-steps">{steps.map(([title, text], i) => <li key={title}><span className="member-step-number">0{i + 1}</span><div><h3>{title}</h3><p>{text}</p></div></li>)}</ol>
+    <a className="member-participation-more" href="#member-invitation-rules" onClick={onShowRules}>查看完整活动规则</a>
+  </section>
+}
+
 export function InvitationRules({ detailsRef }: { detailsRef?: Ref<HTMLDetailsElement> }) {
   return <section id="member-invitation-rules" className="member-card member-rules" aria-labelledby="member-rules-heading">
-    <div className="member-rules-heading"><div><span className="member-section-kicker">参与说明</span><h2 id="member-rules-heading">奖励这样拿</h2></div><span>验证邮箱即可邀请，无需先购买</span></div>
-    <ol className="member-invitation-steps">{steps.map(([title, text], i) => <li key={title}><span className="member-step-number">0{i + 1}</span><div><h3>{title}</h3><p>{text}</p></div></li>)}</ol>
+    <div className="member-rules-heading"><div><span className="member-section-kicker">活动规则</span><h2 id="member-rules-heading">奖励与使用说明</h2></div><span>验证邮箱即可邀请，无需先购买</span></div>
     <div className="member-reward-example"><p><strong>140 元奖励抵扣 138 元订单，剩余 2 元继续留着用。</strong></p><p>每笔奖励有效期两个月，仅限本人账户使用。全额抵扣需审核及等待处理。</p></div>
     <p className="member-rules-eligibility"><strong>新客条件：</strong>此前没有本店有效实付购买记录。好友无需注册会员；活动限本店 ChatGPT 四个规格。</p>
     <details ref={detailsRef} className="member-rules-details"><summary><span>完整活动规则与使用说明</span><span className="member-rules-expand" aria-hidden="true">展开规则</span><span className="member-rules-collapse" aria-hidden="true">收起规则</span></summary>

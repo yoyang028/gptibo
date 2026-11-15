@@ -3,7 +3,7 @@ import { Button } from './ui/button'
 import { CopyButton } from './copy-button'
 import { MemberAuthForm } from './member-auth-form'
 import { MemberInviteCard } from './member-invite-card'
-import { InvitationRules } from './member-invitation-rules'
+import { InvitationRules, ParticipationGuide } from './member-invitation-rules'
 import { api, errorMessage } from '@/lib/api'
 import './member-center.css'
 
@@ -38,8 +38,8 @@ export default function MemberCenter({ onSessionChanged }: { onSessionChanged: (
   return <section className="member-page page-width"><div className="member-heading"><div><h1>会员中心</h1><p>查看邀请、奖励与使用记录。游客也可以直接购买商品。</p></div>{data?.member&&<div className="member-account"><div className="member-account-identity"><small>已验证邮箱</small><span>{data.member.email}</span></div><Button variant="outline" disabled={busy} onClick={()=>void logout()}>退出登录</Button></div>}</div>
     {error&&<p className="member-error" role="alert">{error}<Button variant="ghost" onClick={()=>{setError('');setRevision(v=>v+1)}}>重试</Button></p>}
     {data?.enabled&&<section className="member-invite-hero" aria-labelledby="member-invite-headline">
-      <div className="member-invite-message"><p className="member-invite-kicker">邀请新客 · 双向有礼</p><h2 id="member-invite-headline">每邀 1 位新客，<span>得 10 元购物奖励</span></h2>
-        <div className="member-invite-benefits"><div><span>你得购物奖励</span><p><small>¥</small><strong>10</strong><span>/ 位新客</span></p></div><div><span>好友首单可减</span><p><small>¥</small><strong>5</strong></p></div></div>
+      <div className="member-invite-message"><h2 id="member-invite-headline">每邀 1 位新客，<span>得 <strong>10</strong> 元购物奖励</span></h2>
+        <p className="member-invite-friend">好友首单可选减 <strong>5 元</strong></p>
         <p className="member-invite-perks">多邀多得 · 多张奖励叠加 · 用不完的额度继续保留</p>
         <p className="member-invite-condition">好友首次实付且充值成功，观察满 24 小时、无异常后奖励生效。每笔有效期两个月。</p>
       </div>
@@ -50,9 +50,11 @@ export default function MemberCenter({ onSessionChanged }: { onSessionChanged: (
     </section>}
     {!data&&!error&&<p role="status">正在读取会员信息…</p>}
     {data&&!data.enabled&&<p className="member-notice">当前商店尚未开放会员功能。</p>}
-    {data?.enabled&&!data.member&&<MemberAuthForm onAuthenticated={changed}/>}
+    {data?.enabled&&<div className="member-engagement-grid">
+      {data.member ? <MemberInviteCard member={data.member} onSaved={changed}/> : <MemberAuthForm onAuthenticated={changed}/>}
+      <ParticipationGuide onShowRules={showRules}/>
+    </div>}
     {data?.member&&<>
-      <MemberInviteCard member={data.member} onSaved={changed}/>
       <div className="member-metrics">{[['可用奖励',money(data.balanceCents)],['待生效',money(data.totals.pending)],['订单占用',money(data.totals.reserved)],['累计奖励',money(data.totals.earned)],['已使用',money(data.usedCents)],['有效邀请',data.invitations.effective??0]].map(([label,value])=><div className="member-card" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
       {data.member.frozen&&<p className="member-notice">账号权益正在审核。历史记录保留，请联系支持处理。</p>}
       <section className="member-card"><h2>通知中心</h2>{data.notifications?.length?<ul>{data.notifications.map(n=><li key={n.id}><strong>{n.subject}</strong><small>{date(n.created_at)}</small><p style={{whiteSpace:'pre-line'}}>{n.text.split('\n\n查看详情：')[0]}</p></li>)}</ul>:<p>奖励生效或即将到期时，提醒会显示在这里并发送到已验证邮箱。</p>}</section>
