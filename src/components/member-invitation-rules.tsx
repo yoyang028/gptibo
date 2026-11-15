@@ -48,8 +48,17 @@ function InvitationSteps() {
 export function ParticipationGuide({ onShowRules }: { onShowRules: MouseEventHandler<HTMLAnchorElement> }) {
   return <section className="member-card member-guest-guide" aria-labelledby="member-guest-guide-heading">
     <div className="member-rules-heading"><div><span className="member-section-kicker">参与说明</span><h2 id="member-guest-guide-heading">奖励这样拿</h2></div></div>
-    <InvitationSteps/>
-    <a className="member-guest-guide-more" href="#member-invitation-rules" onClick={onShowRules}>查看完整活动规则</a>
+    <div className="member-guest-guide-body">
+      <div><InvitationSteps/><a className="member-guest-guide-more" href="#member-invitation-rules" onClick={onShowRules}>查看完整活动规则</a></div>
+      <figure className="member-guide-rewards" aria-label="邀请人与好友的奖励">
+        <div className="member-guide-reward-stage">
+          <svg className="member-guide-sparkle" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg>
+          <div className="member-guide-coupon member-guide-coupon-friend"><div className="member-guide-coupon-heading"><span>好友首单优惠</span><small>首单可选</small></div><p className="member-guide-coupon-amount"><span>¥</span><strong>5</strong></p></div>
+          <div className="member-guide-coupon member-guide-coupon-inviter"><div className="member-guide-coupon-heading"><span>邀请奖励</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 11h16v10H4zM3 7h18v4H3zM12 7v14"/><path d="M12 7H8a3 3 0 1 1 3-3l1 3Zm0 0h4a3 3 0 1 0-3-3l-1 3Z"/></svg></div><p className="member-guide-coupon-amount"><span>¥</span><strong>10</strong></p><p className="member-guide-coupon-note">每成功邀请 1 位有效新客</p></div>
+        </div>
+        <figcaption>多邀多得 · 奖励可叠加</figcaption>
+      </figure>
+    </div>
   </section>
 }
 
