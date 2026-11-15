@@ -3,7 +3,7 @@ import { Button } from './ui/button'
 import { CopyButton } from './copy-button'
 import { MemberAuthForm } from './member-auth-form'
 import { MemberInviteCard } from './member-invite-card'
-import { InvitationRules } from './member-invitation-rules'
+import { InvitationRules, ParticipationGuide } from './member-invitation-rules'
 import { api, errorMessage } from '@/lib/api'
 import './member-center.css'
 
@@ -51,7 +51,6 @@ export default function MemberCenter({ onSessionChanged }: { onSessionChanged: (
       <div className="member-invite-message"><p className="member-invite-kicker">邀请新客 · 双向有礼</p><h2 id="member-invite-headline">每邀 1 位新客，<span>得 10 元购物奖励</span></h2>
         <div className="member-invite-benefits"><div><span>你得购物奖励</span><p><small>¥</small><strong>10</strong><span>/ 位新客</span></p></div><div><span>好友首单可减</span><p><small>¥</small><strong>5</strong></p></div></div>
         <p className="member-invite-perks">多邀多得 · 多张奖励叠加 · 可全额抵扣，免费兑换</p>
-        <p className="member-invite-condition">好友首次实付且充值成功，观察满 24 小时、无异常后奖励生效。每笔有效期两个月。</p>
       </div>
       <div className="member-invite-actions">
         {data.member ? <CopyButton className="member-invite-cta" size="lg" label="立即邀请好友" value={data.member.inviteUrl} disabled={busy||data.member.frozen}/> : <Button className="member-invite-cta" size="lg" onClick={beginInviting}>立即邀请好友</Button>}
@@ -60,7 +59,7 @@ export default function MemberCenter({ onSessionChanged }: { onSessionChanged: (
     </section>}
     {!data&&!error&&<p role="status">正在读取会员信息…</p>}
     {data&&!data.enabled&&<p className="member-notice">当前商店尚未开放会员功能。</p>}
-    {data?.enabled&&!data.member&&<MemberAuthForm onAuthenticated={changed}/>}
+    {data?.enabled&&!data.member&&<div className="member-guest-grid"><MemberAuthForm onAuthenticated={changed}/><ParticipationGuide onShowRules={showRules}/></div>}
     {data?.member&&<>
       <MemberInviteCard member={data.member} onSaved={changed}/>
       <div className="member-metrics">{[['可用奖励',money(data.balanceCents)],['待生效',money(data.totals.pending)],['订单占用',money(data.totals.reserved)],['累计奖励',money(data.totals.earned)],['已使用',money(data.usedCents)],['有效邀请',data.invitations.effective??0]].map(([label,value])=><div className="member-card" key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
@@ -69,6 +68,6 @@ export default function MemberCenter({ onSessionChanged }: { onSessionChanged: (
       <section className="member-card"><h2>奖励与有效期</h2>{data.rewards.length?<div className="member-table-scroll"><table><thead><tr><th>来源订单</th><th>状态</th><th>剩余额度／占用</th><th>生效／到期</th></tr></thead><tbody>{data.rewards.map(g=><tr key={g.id}><td>{g.source_order_id}</td><td>{statusLabel[g.status]??g.status}</td><td>{money(g.remaining_cents)}／{money(g.reserved_cents)}</td><td>{g.status==='pending'?date(g.eligible_at)+' 后生效':g.expires_at?date(g.expires_at)+' 到期':'—'}</td></tr>)}</tbody></table></div>:<p>还没有邀请奖励。分享链接后，可在这里查看进度。</p>}{pagination('rewards','奖励与有效期')}</section>
       <section className="member-card"><h2>额度变化与使用记录</h2>{data.ledger.length?<div className="member-table-scroll"><table><thead><tr><th>时间</th><th>事项</th><th>金额</th><th>该笔剩余／占用</th></tr></thead><tbody>{data.ledger.map(l=><tr key={l.id}><td>{date(l.created_at)}</td><td>{eventLabel[l.kind]??l.kind}<small>{l.order_id}</small></td><td>{money(l.amount_cents)}</td><td>{money(l.remaining_after)}／{money(l.reserved_after)}</td></tr>)}</tbody></table></div>:<p>暂无额度变化记录。</p>}{pagination('ledger','额度变化与使用记录')}</section>
     </>}
-    {data?.enabled&&<InvitationRules detailsRef={rulesRef}/>}
+    {data?.enabled&&<InvitationRules detailsRef={rulesRef} showSteps={!!data.member}/>}
   </section>
 }
