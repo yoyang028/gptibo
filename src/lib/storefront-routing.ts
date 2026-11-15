@@ -1,5 +1,6 @@
 import { referralCodePattern } from '../../shared/partner-link.ts'
 import { STOREFRONT_GUIDE_PATHS } from '../../shared/storefront-guides.ts'
+import { memberInvitationPath } from '../../shared/member-invitation-path.ts'
 type StorefrontLocation = { pathname: string; search: string; hash: string }
 
 export function storefrontShopSlug(pathname: string) {
@@ -8,13 +9,15 @@ export function storefrontShopSlug(pathname: string) {
 }
 
 function basePath(pathname: string) {
+  const invitation = memberInvitationPath(pathname)
+  if (invitation) return invitation.prefix
   const slug = storefrontShopSlug(pathname)
   return slug === undefined ? '' : `/${pathname.startsWith('/r/') ? 'r' : 's'}/${pathname.split('/')[2] ?? ''}`
 }
 
 export function storefrontHref(page: string, current: StorefrontLocation = location) {
   const suffix = page === 'store' ? '/' : page === 'orders' ? '/orders' : page === 'account' ? '/account' : page === 'check' ? '/check' : (STOREFRONT_GUIDE_PATHS as readonly string[]).includes('/' + page) ? '/' + page : `/product/${encodeURIComponent(page.slice('product/'.length))}`
-  const base = basePath(current.pathname)
+  const base = memberInvitationPath(current.pathname)?.canonicalBase ?? basePath(current.pathname)
   return (page === 'store' && base ? base : base + suffix) + current.search
 }
 

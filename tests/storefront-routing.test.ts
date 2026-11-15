@@ -64,3 +64,22 @@ test('buyer API selection stays with the referral shop through product and order
  for(const path of ['/','/orders','/join']) assert.deepEqual(storefrontScopeHeaders(current(path)), {})
  assert.deepEqual(storefrontScopeHeaders(current('/r/bad')), {'X-Storefront-Shop':'!'})
 })
+
+test('member invitation paths retain their alias through home, products, account and reloads without selecting a different shop', () => {
+  const base = '/ref/xingqiu'
+  for (const [suffix, page] of [['', 'store'], ['/', 'store'], ['/product/chatgpt', 'product/chatgpt'], ['/account', 'account'], ['/orders', 'orders'], ['/check', 'check'], ['/guides/muse-change-email', 'guides/muse-change-email']]) {
+    const location = current(base + suffix, '', '?source=friend')
+    assert.equal(readStorefrontPage(location), page)
+    assert.equal(storefrontHref('store', location), base + '?source=friend')
+    assert.equal(storefrontHref('product/chatgpt', location), base + '/product/chatgpt?source=friend')
+    assert.equal(storefrontHref('account', location), base + '/account?source=friend')
+    assert.equal(storefrontShopSlug(location.pathname), undefined)
+    assert.deepEqual(storefrontScopeHeaders(location), {})
+  }
+  assert.equal(storefrontHref('account', current(base + '/account')), base + '/account')
+  assert.equal(storefrontHref('store', current('/ref/XINGQIU/product/chatgpt')), base)
+  assert.equal(storefrontHref('store', current('/i/XINGQIU/product/chatgpt')), base)
+  assert.equal(canonicalStorefrontUrl(current(base, '#orders')), base + '/orders')
+  assert.equal(canonicalStorefrontUrl(current(base, '#product/chatgpt')), base + '/product/chatgpt')
+  assert.equal(canonicalStorefrontUrl(current(base, '#help')), base + '/product/chatgpt#help')
+})

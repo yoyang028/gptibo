@@ -20,7 +20,7 @@ import { checkAccount } from './account-check.ts'
 import { reconcileSms } from './grizzly/service.ts'
 import { refreshHanfolkStock } from './hanfolk/management.ts'
 import { memberAuthRoute } from './member-auth.ts'
-import { invitationRedirect } from './member-invitations.ts'
+import { invitationEntry } from './member-invitations.ts'
 import { memberRoutes, rewardMaintenance } from './member-routes.ts'
 import { scanPilotOrders } from './member-reconciliation.ts'
 import { maintainMemberNotifications } from './member-notifications.ts'
@@ -85,7 +85,7 @@ async function route(request: Request, env: Env): Promise<Response> {
     if (url.pathname === '/api/telegram/webhook') return telegramWebhook(request, env)
     if (url.pathname === '/api/tools/account-check') return checkAccount(request, env)
     if (url.pathname.startsWith('/ref/') || url.pathname.startsWith('/i/')) {
-      try { return await invitationRedirect(request, env) }
+      try { return await invitationEntry(request, env) }
       catch (caught) { return error(caught instanceof ApiError ? caught.message : '邀请链接暂不可用。', caught instanceof ApiError ? caught.status : 503) }
     }
     if (url.pathname.startsWith('/api/member/')) {

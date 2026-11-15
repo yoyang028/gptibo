@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, errorMessage } from '@/lib/api'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
+import { storefrontHref } from '@/lib/storefront-routing'
 
 type Mode = 'login' | 'register' | 'verify' | 'forgot' | 'reset' | 'reset-link'
 const titles: Record<Mode, string> = { login: '邮箱登录', register: '注册会员', verify: '验证注册邮箱', forgot: '找回密码', reset: '设置新密码', 'reset-link': '设置新密码' }
@@ -46,7 +47,7 @@ export function MemberAuthForm({ onAuthenticated }: { onAuthenticated: () => voi
       else if (mode === 'forgot') await sendCode(true)
       else {
         await api(mode === 'reset' ? '/api/member/auth/email-otp/reset-password' : '/api/member/auth/reset-password', mode === 'reset' ? { email, otp, password } : { token, newPassword: password })
-        switchMode('login'); history.replaceState(null, '', '/account'); setMessage('密码已重置，请用新密码登录。'); onAuthenticated()
+        switchMode('login'); history.replaceState(null, '', storefrontHref('account', { pathname: location.pathname, search: '', hash: '' })); setMessage('密码已重置，请用新密码登录。'); onAuthenticated()
       }
     } catch (e) { setError(authError(e)) } finally { setBusy(false) }
   }

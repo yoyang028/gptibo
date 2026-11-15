@@ -10,6 +10,7 @@ import { useStorefrontI18n } from '@/lib/storefront-i18n'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import type { PromotionSelection } from '../shared/member-promotions'
 import { readInvitation } from '@/lib/member-invitation'
+import { MemberInvitationNotice } from '@/components/member-invitation-notice'
 import { ArrowRight, Check, ChevronRight, Clock3, CreditCard, FileKey2, LifeBuoy, Monitor, Moon, Search, ShieldCheck, Sparkles, Sun, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -155,6 +156,7 @@ function App() {
       <div className="header-actions"><Button variant="ghost" className="language-button" lang={locale === 'en' ? 'zh-CN' : 'en'} aria-label={locale === 'en' ? '切换为简体中文' : 'Switch to English'} onClick={() => setLocale(locale === 'en' ? 'zh-CN' : 'en')}>{locale === 'en' ? '中文' : 'EN'}</Button><Button variant="ghost" size="icon" className="theme-button" aria-label={t(dark ? '切换亮色模式' : '切换暗色模式')} onClick={() => setDark(v => !v)}>{dark ? <Sun size={18} /> : <Moon size={18} />}</Button><span className="header-divider" /><Button variant="ghost" className="support-button" aria-label={t('联系支持')} aria-haspopup="dialog" aria-expanded={supportOpen} onClick={openSupport}><LifeBuoy data-icon="inline-start" /><span>{t('联系支持')}</span></Button></div>
     </div></header>
     <main id="main-content" tabIndex={-1}>
+      {store.membershipEnabled && <MemberInvitationNotice/>}
       {store.error && <div className="storage-warning" role="alert">{t(store.error)} <Button variant="ghost" onClick={() => void store.refresh()}>{t('重试')}</Button></div>}
       {page === 'account' && store.membershipEnabled ? <Suspense fallback={<p className="page-width" role="status">正在打开会员中心…</p>}><MemberCenter onSessionChanged={() => void store.refresh(true)} /></Suspense> : geminiGuideKind ? <GeminiGuidePage key={page} kind={geminiGuideKind} onSupport={openSupport}/> : appleIdGuide ? <AppleIdGuidePage onSupport={openSupport}/> : guideTitle ? <MuseGuidePage key={page} kind={page === 'guides/muse-change-email' ? 'email' : 'invitation'} onSupport={openSupport} /> : page === 'check' ? <AccountCheckPage onNavigate={navigate} /> : page === 'store' ? <><section className="store-intro page-width reveal-in">
         <div><h1>{shopIdentity?.headline || <>{t('商店。')}<span>{t('找到适合你的服务。')}</span></>}</h1><p>{description}</p></div>
