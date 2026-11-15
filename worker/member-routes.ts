@@ -4,10 +4,10 @@ import { memberProfile, availableRewards, promotionFor, approvePromotion } from 
 import { reconcileMemberRewards, revokeReward } from './member-rewards.ts'
 import { customizeInvitation, memberInvitation } from './member-invitations.ts'
 
-function pageOf(url: URL) {
-  const page = Number(url.searchParams.get('page') || '1')
+function pageOf(url: URL, key = 'page', size = 20) {
+  const page = Number(url.searchParams.get(key) || url.searchParams.get('page') || '1')
   if (!Number.isInteger(page) || page < 1 || page > 100000) throw new ApiError('页码无效。')
-  return { page, offset: (page - 1) * 20 }
+  return { page, offset: (page - 1) * size }
 }
 export async function memberRoutes(request: Request, env: Env) {
   const url = new URL(request.url)
@@ -26,20 +26,23 @@ export async function memberRoutes(request: Request, env: Env) {
     return json({ ok: true, ...await customizeInvitation(env, member.id, data.alias, url.origin) })
   }
   const invitation = await memberInvitation(env, member.id, url.origin)
-  const { page, offset } = pageOf(url)
+  const pageSize = 10
+  const rewardPage = pageOf(url, 'rewardsPage', pageSize), ledgerPage = pageOf(url, 'ledgerPage', pageSize), notificationPage = pageOf(url, 'notificationsPage', pageSize)
   const [available, totals, rewards, ledger, invitations, notifications] = await Promise.all([
     availableRewards(env, member.id),
     db.prepare("SELECT COALESCE(SUM(amount_cents),0) earned,COALESCE(SUM(CASE WHEN status='pending' THEN remaining_cents ELSE 0 END),0) pending,COALESCE(SUM(reserved_cents),0) reserved FROM member_reward_grants WHERE member_id=?").bind(member.id).first(),
-    db.prepare('SELECT id,source_order_id,amount_cents,remaining_cents,reserved_cents,status,eligible_at,expires_at,version FROM member_reward_grants WHERE member_id=? ORDER BY created_at DESC,id LIMIT 20 OFFSET ?').bind(member.id, offset).all(),
-    db.prepare('SELECT l.* FROM member_reward_ledger l JOIN member_reward_grants g ON g.id=l.grant_id LEFT JOIN member_ledger_sequence s ON s.ledger_id=l.id WHERE g.member_id=? ORDER BY s.sequence DESC,l.created_at DESC,l.id LIMIT 20 OFFSET ?').bind(member.id, offset).all(),
+    db.prepare('SELECT id,source_order_id,amount_cents,remaining_cents,reserved_cents,status,eligible_at,expires_at,version FROM member_reward_grants WHERE member_id=? ORDER BY created_at DESC,id LIMIT 11 OFFSET ?').bind(member.id, rewardPage.offset).all(),
+    db.prepare('SELECT l.* FROM member_reward_ledger l JOIN member_reward_grants g ON g.id=l.grant_id LEFT JOIN member_ledger_sequence s ON s.ledger_id=l.id WHERE g.member_id=? ORDER BY s.sequence DESC,l.created_at DESC,l.id LIMIT 11 OFFSET ?').bind(member.id, ledgerPage.offset).all(),
     db.prepare("SELECT COUNT(*) total,SUM(CASE WHEN status<>'cancelled' THEN 1 ELSE 0 END) effective FROM member_reward_grants WHERE member_id=?").bind(member.id).first(),
-    db.prepare("SELECT id,json_extract(mail_body,'$.subject') subject,json_extract(mail_body,'$.text') text,created_at FROM member_notifications WHERE member_id=? AND status<>'cancelled' ORDER BY created_at DESC,id LIMIT 20 OFFSET ?").bind(member.id, offset).all(),
+    db.prepare("SELECT id,json_extract(mail_body,'$.subject') subject,json_extract(mail_body,'$.text') text,created_at FROM member_notifications WHERE member_id=? AND status<>'cancelled' ORDER BY created_at DESC,id LIMIT 11 OFFSET ?").bind(member.id, notificationPage.offset).all(),
   ])
   const used = await db.prepare("SELECT COALESCE(SUM(a.amount_cents-a.restored_cents),0) cents FROM member_reward_allocations a JOIN member_order_promotions p ON p.order_id=a.order_id WHERE p.member_id=? AND a.status='captured'").bind(member.id).first<{ cents: number }>()
   return json({ enabled: true, member: { id: member.id, email: member.email, frozen: !!profile.frozen,
     inviteCode: profile.invite_code, ...invitation },
     balanceCents: profile.frozen ? 0 : available.reduce((s, g) => s + g.available, 0), totals, usedCents: used?.cents ?? 0,
-    rewards: rewards.results, ledger: ledger.results, invitations, notifications: notifications.results, page })
+    rewards: rewards.results.slice(0, pageSize), ledger: ledger.results.slice(0, pageSize), invitations, notifications: notifications.results.slice(0, pageSize), page: rewardPage.page,
+    pagination: { pageSize, rewards: { page: rewardPage.page, hasNext: rewards.results.length > pageSize },
+      ledger: { page: ledgerPage.page, hasNext: ledger.results.length > pageSize }, notifications: { page: notificationPage.page, hasNext: notifications.results.length > pageSize } } })
 }
 
 export async function adminMemberRoutes(request: Request, env: Env, url: URL) {
