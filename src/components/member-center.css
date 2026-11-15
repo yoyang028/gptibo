@@ -29,13 +29,51 @@
 
 .member-guest-grid{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:20px;align-items:stretch;margin-bottom:22px}.member-guest-grid>.member-card{min-width:0;margin-bottom:0}.member-guest-grid>.member-auth-form{max-width:none}.member-guest-guide h2{font-size:18px;margin:0}.member-guest-guide .member-invitation-steps{grid-template-columns:minmax(0,1fr);gap:18px}.member-guest-guide-more{display:inline-block;margin-top:22px;color:var(--primary);font-size:13px;text-decoration:underline;text-underline-offset:4px}
 @media(max-width:860px){.member-guest-grid{grid-template-columns:minmax(0,1fr)}}
-.member-guest-guide-body{display:grid;grid-template-columns:minmax(0,1fr) 206px;align-items:center;gap:20px}
-.member-guide-rewards{min-width:0;margin:0;align-self:center}.member-guide-reward-stage{position:relative;height:250px;isolation:isolate}.member-guide-reward-stage::before{content:"";position:absolute;width:174px;height:174px;border-radius:50%;top:44px;left:16px;background:color-mix(in oklab,var(--primary) 6%,var(--background))}
+.member-guest-guide-body{display:grid;grid-template-columns:minmax(0,1fr) 194px;align-items:center;gap:20px}
+.member-guide-rewards{min-width:0;margin:0;align-self:center}.member-guide-reward-stage{position:relative;height:238px;isolation:isolate}.member-guide-reward-stage::before{content:"";position:absolute;width:164px;height:164px;border-radius:50%;top:44px;left:15px;background:color-mix(in oklab,var(--primary) 6%,var(--background))}
 .member-guide-sparkle{position:absolute;top:11px;left:9px;width:20px;height:20px;color:color-mix(in oklab,var(--primary) 55%,var(--background));transform:rotate(-10deg)}
-.member-guide-coupon{position:absolute;box-sizing:border-box;border-radius:14px;padding:16px;border:1px solid color-mix(in oklab,var(--primary) 20%,var(--border))}.member-guide-coupon::after{content:"";display:block;margin-top:10px;border-top:1px dashed currentColor;opacity:.3}.member-guide-coupon-heading{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;font-weight:600;white-space:nowrap}.member-guide-coupon-heading small{font-size:10px;font-weight:400}.member-guide-coupon-heading svg{width:18px;height:18px;flex-shrink:0}
-.member-card .member-guide-coupon-amount{display:flex;align-items:baseline;gap:5px;margin:6px 0 0;color:inherit;line-height:1}.member-guide-coupon-amount>span{font-size:18px;font-weight:600}.member-guide-coupon-amount strong{font-size:52px;font-weight:750;letter-spacing:-.06em}
-.member-guide-coupon-friend{width:calc(100% - 36px);right:10px;top:8px;transform:rotate(7deg);color:var(--primary);background:color-mix(in oklab,var(--primary) 9%,var(--background))}.member-guide-coupon-friend .member-guide-coupon-amount strong{font-size:40px}.member-guide-coupon-friend .member-guide-coupon-heading{font-size:11px}
-.member-guide-coupon-inviter{width:calc(100% - 12px);left:6px;top:98px;transform:rotate(-5deg);color:var(--primary-foreground);background:var(--primary);box-shadow:0 12px 24px color-mix(in oklab,var(--primary) 16%,transparent)}.member-card .member-guide-coupon-note{font-size:10px;color:inherit;line-height:1.6;margin:8px 0 0;white-space:nowrap}
-.member-guide-rewards figcaption{font-size:12px;color:var(--primary);text-align:center;font-weight:550;line-height:1.8;margin-top:8px}
-@media(min-width:861px) and (max-width:1100px){.member-guest-guide-body{grid-template-columns:minmax(0,1fr) 176px;gap:14px}.member-guide-coupon{padding:12px}.member-guide-coupon-friend{width:calc(100% - 20px)}.member-guide-coupon-friend .member-guide-coupon-heading{font-size:10px}.member-guide-reward-stage::before{width:150px;height:150px;left:12px}}
-@media(max-width:640px){.member-guest-guide-body{grid-template-columns:minmax(0,1fr);gap:22px}.member-guide-rewards{width:220px;justify-self:center}.member-guide-reward-stage{height:252px}}
+.member-guide-coupon{position:absolute;box-sizing:border-box;border-radius:13px;padding:14px;border:1px solid color-mix(in oklab,var(--primary) 20%,var(--border))}.member-guide-coupon::after{content:"";display:block;margin-top:10px;border-top:1px dashed currentColor;opacity:.3}.member-guide-coupon-heading{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px;font-weight:600;white-space:nowrap}.member-guide-coupon-heading small{font-size:10px;font-weight:400}.member-guide-coupon-heading svg{width:18px;height:18px;flex-shrink:0}
+.member-card .member-guide-coupon-amount{display:flex;align-items:baseline;gap:5px;margin:6px 0 0;color:inherit;line-height:1}.member-guide-coupon-amount>span{font-size:18px;font-weight:600}.member-guide-coupon-amount strong{font-size:48px;font-weight:750;letter-spacing:-.06em}
+.member-guide-coupon-friend{width:calc(100% - 36px);right:10px;top:8px;transform:rotate(7deg);color:var(--primary);background:color-mix(in oklab,var(--primary) 9%,var(--background))}.member-guide-coupon-friend .member-guide-coupon-amount strong{font-size:36px}.member-guide-coupon-friend .member-guide-coupon-heading{font-size:11px}
+.member-guide-coupon-inviter{width:calc(100% - 12px);left:6px;top:91px;transform:rotate(-5deg);color:var(--primary-foreground);background:linear-gradient(135deg,color-mix(in oklab,var(--primary) 88%,var(--primary-foreground)),var(--primary));box-shadow:0 10px 22px color-mix(in oklab,var(--primary) 15%,transparent)}.member-card .member-guide-coupon-note{font-size:10px;color:inherit;line-height:1.6;margin:8px 0 0;white-space:nowrap}
+.member-guide-rewards figcaption{font-size:12px;color:var(--primary);text-align:center;font-weight:550;line-height:1.8;margin-top:6px}.member-guide-rewards figcaption>span{display:block;margin-top:3px;font-size:11px;font-weight:400;color:var(--muted-foreground)}
+.member-guide-reward-trigger{display:block;color:inherit;border-radius:18px;text-decoration:none}.member-guide-reward-trigger:focus-visible{outline:2px solid var(--primary);outline-offset:5px}
+@media(min-width:861px) and (max-width:1100px){.member-guest-guide-body{grid-template-columns:minmax(0,1fr) 166px;gap:14px}.member-guide-coupon{padding:11px}.member-guide-coupon-friend{width:calc(100% - 20px)}.member-guide-coupon-friend .member-guide-coupon-heading{font-size:10px}.member-guide-reward-stage::before{width:142px;height:142px;left:12px}}
+@media(max-width:640px){.member-guest-guide-body{grid-template-columns:minmax(0,1fr);gap:22px}.member-guide-rewards{width:206px;justify-self:center}}
+
+/* Subtle member-page depth and feedback; storefront and checkout keep their styles. */
+.member-page .member-card{border-color:color-mix(in oklab,var(--border) 94%,var(--primary));box-shadow:0 2px 12px color-mix(in oklab,var(--foreground) 3%,transparent)}
+.member-page .member-invite-hero{background:radial-gradient(ellipse at 100% 0%,color-mix(in oklab,var(--primary) 8%,transparent),transparent 65%),linear-gradient(120deg,color-mix(in oklab,var(--primary) 8%,var(--background)),color-mix(in oklab,var(--primary) 4%,var(--background)));box-shadow:0 8px 28px color-mix(in oklab,var(--primary) 5%,transparent)}
+.member-page .member-invite-cta{box-shadow:0 4px 12px color-mix(in oklab,var(--primary) 18%,transparent)}
+.member-page .member-auth-form:focus-within{border-color:color-mix(in oklab,var(--primary) 35%,var(--border));box-shadow:0 4px 20px color-mix(in oklab,var(--primary) 6%,transparent)}
+.member-page input:focus-visible{border-color:var(--primary);outline:2px solid color-mix(in oklab,var(--primary) 18%,transparent);outline-offset:2px}
+.member-page .member-metrics>.member-card:first-child{border-color:color-mix(in oklab,var(--primary) 22%,var(--border));background:linear-gradient(140deg,color-mix(in oklab,var(--primary) 6%,var(--background)),var(--background))}
+.member-page .member-metrics strong{font-variant-numeric:tabular-nums;letter-spacing:-.035em}.member-page .member-metrics>.member-card:first-child strong{color:var(--primary)}
+.member-page .member-step-number{border-radius:6px}.member-page .member-guest-guide .member-step-number{text-align:center;background:color-mix(in oklab,var(--primary) 7%,var(--background))}
+.member-page .member-table-scroll th{font-size:12px;font-weight:600;color:var(--muted-foreground);background:color-mix(in oklab,var(--primary) 3%,var(--background))}
+.member-page .member-table-scroll tbody tr:hover{background:color-mix(in oklab,var(--primary) 3%,var(--background))}
+.member-page>.member-card>ul{list-style:none;padding:0;margin:0}.member-page>.member-card>ul>li{padding:16px 0;border-bottom:1px solid var(--border)}.member-page>.member-card>ul>li:first-child{padding-top:0}.member-page>.member-card>ul>li:last-child{border-bottom:0;padding-bottom:0}.member-page>.member-card>ul>li>small{display:inline-block;margin-left:12px;color:var(--muted-foreground);font-size:12px}.member-page>.member-card>ul>li>p{font-size:13px;margin:8px 0 0}
+
+@media(prefers-reduced-motion:no-preference){
+  .member-page>.member-invite-hero,.member-page>.member-guest-grid,.member-page>.member-card,.member-page>.member-metrics{animation:member-page-arrive .42s ease-out both}
+  .member-page>.member-guest-grid,.member-page>.member-metrics{animation-delay:.06s}
+  .member-page .member-card{transition:border-color .2s ease,box-shadow .2s ease}
+  .member-page button{transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+  .member-page .member-guide-coupon{transition:transform .28s cubic-bezier(.2,.7,.2,1),box-shadow .28s ease}
+  .member-page .member-guide-sparkle{animation:member-coupon-sparkle .65s ease-out both}
+  .member-page .member-guide-reward-trigger:focus-visible .member-guide-coupon-friend{transform:translate(3px,-4px) rotate(10deg)}
+  .member-page .member-guide-reward-trigger:focus-visible .member-guide-coupon-inviter{transform:translate(-2px,1px) rotate(-7deg)}
+  .member-page .member-rules-details[open] .member-full-rules{animation:member-page-arrive .24s ease-out both}
+  .member-page button:not(:disabled):active{transform:translateY(1px)}
+}
+@media(hover:hover) and (pointer:fine){
+  .member-page .member-metrics>.member-card:hover{border-color:color-mix(in oklab,var(--primary) 24%,var(--border));box-shadow:0 6px 20px color-mix(in oklab,var(--primary) 6%,transparent)}
+  .member-page .member-guest-guide li:hover .member-step-number{background:color-mix(in oklab,var(--primary) 14%,var(--background))}
+}
+@media(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
+  .member-page .member-guide-reward-trigger:hover .member-guide-coupon-friend{transform:translate(3px,-4px) rotate(10deg)}
+  .member-page .member-guide-reward-trigger:hover .member-guide-coupon-inviter{transform:translate(-2px,1px) rotate(-7deg);box-shadow:0 14px 26px color-mix(in oklab,var(--primary) 20%,transparent)}
+  .member-page .member-invite-cta:not(:disabled):hover{transform:translateY(-2px);box-shadow:0 7px 18px color-mix(in oklab,var(--primary) 22%,transparent)}
+}
+@keyframes member-page-arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes member-coupon-sparkle{from{opacity:0;transform:rotate(-35deg) scale(.7)}to{opacity:1;transform:rotate(-10deg) scale(1)}}
