@@ -13,9 +13,9 @@ export function MemberInviteCard({ member, onSaved }: { member: { frozen: boolea
     setBusy(true); setError('')
     try { await api('/api/member/invitation', { alias }); setOpen(false); onSaved() } catch (e) { setError(errorMessage(e)) } finally { setBusy(false) }
   }
-  return <section className="member-card"><h2>我的邀请链接</h2><p>好友无需注册即可通过此链接购买。</p>
+  return <section className="member-card member-invite-card"><h2>我的邀请链接</h2><p>好友无需注册即可通过此链接购买。</p>
     <div className="member-invite"><Input aria-label="我的邀请链接" readOnly value={member.inviteUrl} /><CopyButton value={member.inviteUrl} label="复制邀请链接" /></div>
-    <p>{member.inviteCustomized ? '自定义地址已确定，不能再次修改。原来的邀请链接仍然有效。' : '可自定义一次邀请地址，保存成功后不能再改。'}</p>
+    {member.inviteCustomized && <p>自定义地址已确定，不能再次修改。原来的邀请链接仍然有效。</p>}
     {!member.inviteCustomized && <Button variant="outline" disabled={member.frozen} onClick={() => { setAlias(''); setError(''); setOpen(true) }}>自定义邀请链接</Button>}
     <Dialog open={open} onOpenChange={value => { if (!busy) setOpen(value) }}><DialogContent className="member-alias-dialog"><DialogHeader><DialogTitle>自定义邀请地址</DialogTitle><DialogDescription>仅有一次自定义机会，保存成功后永久确定。填写错误或地址被占用不会消耗机会。</DialogDescription></DialogHeader>
       <form className="member-alias-form" onSubmit={e => { e.preventDefault(); void save() }}>

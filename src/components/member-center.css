@@ -77,3 +77,4 @@
 }
 @keyframes member-page-arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes member-coupon-sparkle{from{opacity:0;transform:rotate(-35deg) scale(.7)}to{opacity:1;transform:rotate(-10deg) scale(1)}}
+.member-page .member-invite-card{padding-block:18px}.member-page .member-invite-card h2{margin-bottom:8px}.member-page .member-invite-card>.member-invite{margin-top:8px}.member-page .member-invite-card>.member-invite+button{margin-top:10px}.member-page .member-invite-card>.member-invite+p{margin-top:8px}
