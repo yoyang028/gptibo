@@ -53,7 +53,7 @@ export async function adminVisitorSummary(env: Env, url: URL) {
     FROM partners p LEFT JOIN visitor_days v ON v.shop_id=p.id AND v.day>=? GROUP BY p.id ORDER BY visitors DESC,pageViews DESC,p.created_at DESC`).bind(since).all<{ id: string; name: string; slug: string; active: number; pageViews: number; visitors: number }>()).results
   const stores = (await env.INTEREST_DB.prepare(`SELECT s.id,s.slug,COALESCE(NULLIF(json_extract(s.settings,'$.name'),''),'GPTibo') name,
     COALESCE(json_extract(s.settings,'$.active'),1) active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
-    FROM owner_shop_settings s LEFT JOIN visitor_days v ON v.shop_id=s.id AND v.day>=? GROUP BY s.id ORDER BY s.slot`)
+    FROM owner_shop_settings s LEFT JOIN visitor_days v ON v.shop_id=s.id AND v.day>=? GROUP BY s.id ORDER BY COALESCE(json_extract(s.settings,'$.displayOrder'),s.slot)`)
     .bind(since).all<{ id: string; slug: string; name: string; active: number; pageViews: number; visitors: number }>()).results
   const ownerStores = stores.map(store => ({ ...store, ...ownerStorefrontLinks(env, url.origin, store.id, store.slug) }))
   return { ...summary, platform: platform ?? { pageViews: 0, visitors: 0 }, ownerStores, partners }

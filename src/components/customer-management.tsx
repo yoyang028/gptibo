@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Users,
   Clock,
@@ -38,6 +38,7 @@ import { CopyButton } from '@/components/copy-button'
 import { Feedback } from '@/components/workspace-loading'
 import { api, errorMessage } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
+import { WorkspaceSelect } from '@/partner/workspace-ui'
 import {
   monthAfter,
   MEMBERSHIP_PLANS,
@@ -835,7 +836,7 @@ function CustomerInspector({
                     </div>
                     <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                       <Wallet className="size-4" />
-                      <span>累计实付 {money(data.subscriptions.reduce((total, s) => total + s.paid_cents, 0))}</span>
+                      <span>会员录入金额 {money(data.subscriptions.reduce((total, s) => total + s.paid_cents, 0))}</span>
                     </div>
                   </div>
                 </div>
@@ -849,6 +850,14 @@ function CustomerInspector({
                 )}
 
                 {/* Tabs: Accounts & History */}
+                {!!data.orderStats?.order_count && <section className="rounded-xl border p-4 mb-4 space-y-3" aria-label="客户订单记录">
+                  <h3 className="font-semibold">店铺订单 · {data.orderStats.order_count} 笔</h3>
+                  <p className="text-sm">实付 {money(data.orderStats.order_paid_cents)} · 退款 {money(data.orderStats.order_refunded_cents)} · 净消费 {money(data.orderStats.order_net_cents)}</p>
+                  <p className="text-xs text-muted-foreground">首次下单 {formatDateTime(data.orderStats.first_order_at)} · 最近下单 {formatDateTime(data.orderStats.last_order_at)} · 展示最近 50 笔，统计包含全部正式订单。</p>
+                  <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>订单 / 商品</TableHead><TableHead>店铺</TableHead><TableHead>下单时间</TableHead><TableHead>实付 / 退款</TableHead><TableHead>支付状态</TableHead></TableRow></TableHeader><TableBody>
+                    {(data.orders ?? []).map(order=><TableRow key={order.id}><TableCell><code>{order.id}</code><p>{order.plan_name}</p></TableCell><TableCell>{order.store_name}</TableCell><TableCell>{formatDateTime(order.created_at)}</TableCell><TableCell>{money(order.paid_cents)} / {money(order.refunded_cents)}</TableCell><TableCell>{order.payment_status==='paid'?'已支付':'未支付'}</TableCell></TableRow>)}
+                  </TableBody></Table></div>
+                </section>}
                 <Tabs defaultValue="accounts" className="w-full">
                   <div className="crm-inspector-toolbar flex items-center justify-between pb-2 border-b">
                     <TabsList variant="line" className="h-9" aria-label="客户详情导航">
@@ -1149,11 +1158,18 @@ function CustomerInspector({
 export default function CustomerManagement({
   admin = false,
   revision,
+  ownerStoreId,
+  ownerStores = [],
+  onOwnerStoreChange,
 }: {
   admin?: boolean
   revision: number
+  ownerStoreId?: string
+  ownerStores?: {id:string;name:string}[]
+  onOwnerStoreChange?: (id:string) => void
 }) {
   const endpoint = admin ? '/api/admin/customers' : '/api/partner/customers'
+  const [storeScope,setStoreScope] = useState(ownerStoreId ?? 'all')
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -1165,10 +1181,19 @@ export default function CustomerManagement({
   const [applied, setApplied] = useState('')
   const [page, setPage] = useState(1)
   const [localRevision, setLocalRevision] = useState(0)
+  useEffect(() => {
+    const refresh=() => { if(!document.hidden)setLocalRevision(value=>value+1) }
+    const timer=setInterval(refresh,30000)
+    window.addEventListener('focus',refresh)
+    return () => {clearInterval(timer);window.removeEventListener('focus',refresh)}
+  },[])
+  const query = new URLSearchParams(applied)
+  query.set('page',String(page))
+  if(ownerStoreId){query.set('scope','owner');if(storeScope!=='all')query.set('store',storeScope)}
 
   // Data resource
   const { data, error, loading } = useResource<CustomerList>(
-    `${endpoint}?${applied}&page=${page}`,
+    `${endpoint}?${query}`,
     revision + localRevision
   )
 
@@ -1215,7 +1240,7 @@ export default function CustomerManagement({
     setExporting(true)
     setExportError('')
     try {
-      const records = await api<CustomerExport>(`${endpoint}/export?${applied}`)
+      const records = await api<CustomerExport>(`${endpoint}/export?${query}`)
       const { downloadCustomers } = await import('@/lib/customer-export')
       await downloadCustomers(records)
     } catch (e) {
@@ -1236,10 +1261,10 @@ export default function CustomerManagement({
           <div>
             <CardTitle className="text-xl font-bold flex items-center gap-2">
               <Users className="size-5 text-primary" />
-              {admin ? '客户管理中心' : '我的客户管理'}
+              {ownerStoreId ? '我的客户' : admin ? '客户管理中心' : '我的客户管理'}
             </CardTitle>
             <CardDescription className="mt-1">
-              {admin
+              {ownerStoreId ? '店铺下单客户按邮箱自动归集，订单与消费统计每 30 秒更新；会员开通记录仍可手工补充。' : admin
                 ? '全站客户档案与会员账号集中管理，支持按渠道代理筛选、开通跟踪及多工作表 Excel 导出。'
                 : '自主管理所属客户的会员账号、开通续费记录与到期提醒，全流程清晰可查。'}
             </CardDescription>
@@ -1269,6 +1294,7 @@ export default function CustomerManagement({
       </Card>
 
       <Feedback error={error || exportError} loading={loading} data={data} />
+      {ownerStoreId && <WorkspaceSelect label="客户店铺范围" value={storeScope} options={[{value:'all',label:'全部自营店铺'},...ownerStores.map(s=>({value:s.id,label:s.name}))]} onValueChange={id=>{setStoreScope(id);setPage(1);if(id!=='all')onOwnerStoreChange?.(id)}} />}
 
       {data && (
         <>
@@ -1359,7 +1385,7 @@ export default function CustomerManagement({
             <Card className="crm-metric-card crm-metric-static">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
-                  <span className="text-xs text-muted-foreground block mb-1">累计实付收款</span>
+                  <span className="text-xs text-muted-foreground block mb-1">会员录入金额</span>
                   <strong className="text-xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 font-mono">
                     {money(data.stats.paid_cents)}
                   </strong>
@@ -1371,6 +1397,12 @@ export default function CustomerManagement({
             </Card>
           </div>
 
+          {admin && <Card><CardContent className="flex flex-wrap gap-6 p-4 text-sm">
+            <span>下单笔数 <strong>{data.stats.order_count ?? 0}</strong></span>
+            <span>订单实付 <strong>{money(data.stats.order_paid_cents ?? 0)}</strong></span>
+            <span>订单退款 <strong>{money(data.stats.order_refunded_cents ?? 0)}</strong></span>
+            <span>订单净消费 <strong>{money(data.stats.order_net_cents ?? 0)}</strong></span>
+          </CardContent></Card>}
           {/* Search & Filter Panel */}
           <Card className="crm-filter-card">
             <CardContent className="p-4">
@@ -1474,7 +1506,7 @@ export default function CustomerManagement({
                     </Select>
                   </div>
 
-                  {admin && (
+                  {admin && !ownerStoreId && (
                     <div className="crm-control-group">
                       <Label>所属渠道 / 代理</Label>
                       <Select
@@ -1534,7 +1566,8 @@ export default function CustomerManagement({
                   {admin && <TableHead className="w-[120px]">所属渠道</TableHead>}
                   <TableHead className="min-w-[170px]">绑定账号与套餐</TableHead>
                   <TableHead className="min-w-[180px]">到期状态与提醒</TableHead>
-                  <TableHead className="text-right w-[110px]">累计实付</TableHead>
+                  {admin && <TableHead className="min-w-[190px]">订单统计</TableHead>}
+                  <TableHead className="text-right w-[110px]">会员录入金额</TableHead>
                   <TableHead className="w-[110px]">客户来源</TableHead>
                   <TableHead className="text-right w-[100px]">操作</TableHead>
                 </TableRow>
@@ -1636,6 +1669,14 @@ export default function CustomerManagement({
                       </TableCell>
 
                       {/* Total Paid */}
+                      {admin && <TableCell className="text-xs">
+                        <strong>{c.order_count ?? 0} 笔订单 · {c.paid_order_count ?? 0} 笔已支付</strong>
+                        <p>实付 {money(c.order_paid_cents ?? 0)} · 净消费 {money(c.order_net_cents ?? 0)}</p>
+                        {!!c.order_refunded_cents && <p>已退款 {money(c.order_refunded_cents)}</p>}
+                        {c.order_stores && <p>{c.order_stores}</p>}
+                        {c.order_products && <p className="max-w-[220px] truncate" title={c.order_products}>{c.order_products}</p>}
+                        {c.last_order_at && <p>最近下单 {formatDateTime(c.last_order_at)}</p>}
+                      </TableCell>}
                       <TableCell className="text-right font-mono font-semibold text-foreground">
                         {money(c.paid_cents)}
                       </TableCell>

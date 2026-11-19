@@ -76,6 +76,7 @@ try{
     for(const days of [7,30,90])await period(store.id,days)
     record(store.id+' visitor statistics retain separate store and period parameters for 1/7/30/90 days')
   }
+  await choose(general)
   await period(general.id,1)
   assert.equal(await page.getByRole('link',{name:'预览当前店铺',exact:true}).getAttribute('href'),general.storefront_url)
   await page.screenshot({path:path.join(evidence,'general-visitors.png'),fullPage:true})

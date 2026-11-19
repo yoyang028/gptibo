@@ -69,7 +69,7 @@ test('three owner storefronts share a platform and template data while agent acc
   const f = await fixture()
   try {
     const data = await f.stores()
-    assert.deepEqual(data.stores.map((s: any) => s.id), ['platform','store-2','store-3'])
+    assert.deepEqual(data.stores.map((s: any) => s.id), ['platform','store-3','store-2'])
     assert.equal(f.db.prepare('SELECT COUNT(*) n FROM partners').get()!.n, 0)
     const catalogs = await Promise.all(['','store-2','store-3'].map(s => f.read('/api/catalog' + (s ? '?partner=' + s : ''), '')))
     assert.deepEqual(catalogs[0].plans.map((p: any) => p.id), catalogs[1].plans.map((p: any) => p.id))
@@ -104,7 +104,7 @@ test('bulk parameter sync copies only selected fields and price sync is a separa
     const data = await f.stores()
     assert.ok(data.stores.every((s: any) => s.settings.headline === '统一标题'))
     assert.equal(data.stores.find((s: any) => s.id === 'store-3').name, 'AI星球')
-    assert.deepEqual(data.prices.filter((p: any) => p.plan === 'plus').map((p: any) => p.price_cents), [2000,2500,3000])
+    assert.deepEqual(data.prices.filter((p: any) => p.plan === 'plus').map((p: any) => p.price_cents), [2000,3000,2500])
     const copyPrices = await f.bulk('platform', ['store-2','store-3'], [], true)
     assert.equal((await f.request('/api/admin/my-shop/stores/bulk', copyPrices, f.admin)).status, 200)
     assert.deepEqual((await f.stores()).prices.filter((p: any) => p.plan === 'plus').map((p: any) => p.price_cents), [2000,2000,2000])
@@ -176,10 +176,10 @@ test('management links and domain cards follow configured storefront hosts, with
     const stores = (await f.stores()).stores
     assert.deepEqual(stores.map((s: any) => [s.id, s.storefront_url]), [
       ['platform', 'https://shop.example.invalid/'],
-      ['store-2', 'https://shop.example.invalid/s/store-2'],
       ['store-3', 'https://general.example.test/'],
+      ['store-2', 'https://shop.example.invalid/s/store-2'],
     ])
-    assert.equal(stores[2].legacy_url, 'https://shop.example.invalid/s/store-3')
+    assert.equal(stores.find((s:any)=>s.id==='store-3').legacy_url, 'https://shop.example.invalid/s/store-3')
     const domains = (await f.read('/api/admin/my-shop/domain')).domains
     assert.deepEqual(domains.map((d: any) => [d.storeId, d.hostname, d.url]), [
       ['platform', 'shop.example.invalid', 'https://shop.example.invalid/'],
@@ -189,7 +189,7 @@ test('management links and domain cards follow configured storefront hosts, with
     assert(domains.every((d: any) => d.state === 'active'))
     assert.deepEqual(f.db.prepare('SELECT * FROM owner_shop_settings ORDER BY slot').all(), before)
     f.env.OWNER_STOREFRONT_HOSTS = undefined
-    assert.equal((await f.stores()).stores[2].storefront_url, 'https://shop.example.invalid/s/store-3')
+    assert.equal((await f.stores()).stores.find((s:any)=>s.id==='store-3').storefront_url, 'https://shop.example.invalid/s/store-3')
     assert.equal((await f.read('/api/admin/my-shop/domain')).domains.length, 1)
   } finally { f.db.close() }
 })
@@ -216,8 +216,8 @@ test('selected-store visitor periods retain store ownership across legacy links 
       }
     }
     const global = await f.read('/api/admin/visitors?days=1')
-    assert.deepEqual(global.ownerStores.map((s: any) => [s.id, s.pageViews]), [['platform', 1], ['store-2', 0], ['store-3', 2]])
-    assert.equal(global.ownerStores[2].storefront_url, 'https://general.example.test/')
+    assert.deepEqual(global.ownerStores.map((s: any) => [s.id, s.pageViews]), [['platform', 1], ['store-3', 2], ['store-2', 0]])
+    assert.equal(global.ownerStores.find((s:any)=>s.id==='store-3').storefront_url, 'https://general.example.test/')
     assert.equal(global.visitors, 1)
     assert.equal((await f.request('/api/admin/my-shop/visitors?store=store-3?days=7', undefined, f.admin)).status, 404)
   } finally { f.db.close() }

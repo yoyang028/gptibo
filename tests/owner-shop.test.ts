@@ -35,6 +35,8 @@ async function setup() {
     db.exec(
       readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8'),
     )
+  // Concurrency scenarios below start from revision zero after schema/data setup.
+  db.exec("UPDATE owner_shop_settings SET version=0 WHERE id='platform'")
   const bound = new WeakMap<Statement, { sql: string; values: Value[] }>()
   const env: Env = {
     ASSETS: { fetch: async () => new Response('asset') },

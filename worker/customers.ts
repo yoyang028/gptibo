@@ -1,5 +1,7 @@
 import { ApiError, body, json, type Env, type Value } from './platform.ts'
 import { requirePartner } from './partner-auth.ts'
+import { ownerShop } from './owner-shop.ts'
+import { customerOrderStatsQuery, customerOrderColumns, customerOrderHistory } from './order-customers.ts'
 import { MEMBERSHIP_PLANS,monthAfter,type Customer,type CustomerAccount,type CustomerSubscription } from '../shared/customers.ts'
 
 const uuid = (value: unknown): value is string => typeof value==='string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)
@@ -27,7 +29,14 @@ export async function customerRoutes(request:Request,env:Env,url:URL,admin=false
     const q=url.searchParams.get('q')?.trim()??''; const plan=url.searchParams.get('plan')??'all'; const expiry=url.searchParams.get('expiry')??'all'; const owner=url.searchParams.get('partner')??'all'; const page=Number(url.searchParams.get('page')??1)
     if (q.length>100 || !['all',...MEMBERSHIP_PLANS].includes(plan) || !['all','active','soon','expired','none'].includes(expiry) || !Number.isInteger(page) || page<1 || page>10000) throw new ApiError('筛选条件无效。')
     if (!admin && owner!=='all') throw new ApiError('不能筛选其他代理的客户。',403)
-    const clauses=[scope]; const values=[...ownerValues]
+    const ownerScope=url.searchParams.get('scope')==='owner'
+    const store=url.searchParams.get('store') || null
+    if ((ownerScope || store) && !admin) throw new ApiError('不能查看其他渠道客户。',403)
+    if (store) await ownerShop(env,store)
+    const orderStats=customerOrderStatsQuery(store)
+    const clauses=[scope]; const values=[...orderStats.values,...ownerValues]
+    if(ownerScope || store) clauses.push('c.partner_id IS NULL')
+    if(store){clauses.push('EXISTS(SELECT 1 FROM owner_customer_orders co WHERE co.customer_id=c.id AND co.store_id=?)');values.push(store)}
     if (owner!=='all') { if(owner==='direct') clauses.push('c.partner_id IS NULL'); else {if(!uuid(owner)) throw new ApiError('代理无效。');clauses.push('c.partner_id=?');values.push(owner)} }
     if(q) {clauses.push('(instr(lower(c.name||c.wechat||c.qq||c.email||c.note||c.source),lower(?))>0 OR EXISTS(SELECT 1 FROM crm_accounts a WHERE a.customer_id=c.id AND instr(lower(a.account||a.note),lower(?))>0))');values.push(q,q)}
     if(plan!=='all' || expiry!=='all') {
@@ -40,7 +49,7 @@ export async function customerRoutes(request:Request,env:Env,url:URL,admin=false
       clauses.push(`EXISTS(SELECT 1 FROM crm_accounts a LEFT JOIN crm_subscriptions s ON s.id=a.current_subscription_id WHERE ${parts.join(' AND ')})`)
       if(expiry==='none'&&plan==='all')clauses[clauses.length-1]=`(${clauses.at(-1)} OR NOT EXISTS(SELECT 1 FROM crm_accounts a WHERE a.customer_id=c.id))`
     }
-    const filtered=`SELECT c.*,p.name partner_name FROM crm_customers c LEFT JOIN partners p ON p.id=c.partner_id WHERE ${clauses.join(' AND ')}`
+    const filtered=`SELECT c.*,p.name partner_name,${customerOrderColumns} FROM crm_customers c LEFT JOIN partners p ON p.id=c.partner_id LEFT JOIN (${orderStats.sql}) oc ON oc.customer_id=c.id WHERE ${clauses.join(' AND ')}`
     if(path==='/export') {
       const count=await db.prepare(`SELECT COUNT(*) n,(SELECT COUNT(*) FROM crm_accounts a JOIN (${filtered}) f ON f.id=a.customer_id) accounts,(SELECT COUNT(*) FROM crm_subscriptions s JOIN crm_accounts a ON a.id=s.account_id JOIN (${filtered}) f ON f.id=a.customer_id) records FROM (${filtered})`).bind(...values,...values,...values).first<{n:number;accounts:number;records:number}>()
       if((count?.n??0)>5000||(count?.accounts??0)>10000||(count?.records??0)>50000)throw new ApiError('每次最多导出 5000 位客户、10000 个账号及 50000 条历史记录，请缩小筛选范围。',409)
@@ -57,10 +66,11 @@ export async function customerRoutes(request:Request,env:Env,url:URL,admin=false
       db.prepare(`SELECT f.*,(SELECT GROUP_CONCAT(DISTINCT s.plan_name) FROM crm_accounts a JOIN crm_subscriptions s ON s.id=a.current_subscription_id WHERE a.customer_id=f.id) plan_names,(SELECT MIN(s.expires_at) FROM crm_accounts a JOIN crm_subscriptions s ON s.id=a.current_subscription_id WHERE a.customer_id=f.id) next_expiry,(SELECT COUNT(*) FROM crm_accounts a WHERE a.customer_id=f.id) account_count,(SELECT COALESCE(SUM(s.paid_cents),0) FROM crm_subscriptions s JOIN crm_accounts a ON a.id=s.account_id WHERE a.customer_id=f.id) paid_cents,(SELECT COUNT(*) FROM crm_accounts a JOIN crm_subscriptions s ON s.id=a.current_subscription_id WHERE a.customer_id=f.id AND s.expires_at>? AND s.expires_at<=?) soon_count,(SELECT COUNT(*) FROM crm_accounts a JOIN crm_subscriptions s ON s.id=a.current_subscription_id WHERE a.customer_id=f.id AND s.expires_at<=?) expired_count FROM (${filtered}) f ORDER BY f.created_at DESC,f.id LIMIT 20 OFFSET ?`).bind(now,soon,now,...values,(page-1)*20),
       db.prepare(`SELECT COUNT(*) total FROM (${filtered})`).bind(...values),
       db.prepare(`SELECT COUNT(*) customers,(SELECT COUNT(*) FROM crm_accounts a JOIN (${filtered}) f ON f.id=a.customer_id) accounts,(SELECT COUNT(*) FROM crm_accounts a JOIN (${filtered}) f ON f.id=a.customer_id JOIN crm_subscriptions s ON s.id=a.current_subscription_id WHERE s.expires_at>? AND s.expires_at<=?) soon,(SELECT COUNT(*) FROM crm_accounts a JOIN (${filtered}) f ON f.id=a.customer_id JOIN crm_subscriptions s ON s.id=a.current_subscription_id WHERE s.expires_at<=?) expired,(SELECT COALESCE(SUM(s.paid_cents),0) FROM crm_subscriptions s JOIN crm_accounts a ON a.id=s.account_id JOIN (${filtered}) f ON f.id=a.customer_id) paid_cents FROM (${filtered})`).bind(...values,...values,now,soon,...values,now,...values,...values),
+      db.prepare(`SELECT COALESCE(SUM(order_count),0) order_count,COALESCE(SUM(paid_order_count),0) paid_order_count,COALESCE(SUM(order_paid_cents),0) order_paid_cents,COALESCE(SUM(order_refunded_cents),0) order_refunded_cents,COALESCE(SUM(order_net_cents),0) order_net_cents FROM (${filtered})`).bind(...values),
     ]) as {results:unknown[]}[]
     const plans=(await db.prepare("SELECT id,name FROM catalog_plans WHERE product_id='chatgpt' AND id IN ('plus','pro-5x','pro-20x','pro-25x') ORDER BY rowid").all()).results
     const partners=admin?(await db.prepare('SELECT id,name FROM partners ORDER BY name').all()).results:[]
-    return json({customers:result[0].results,total:(result[1].results[0] as {total:number}).total,stats:result[2].results[0],plans,partners,page,asOf:now})
+    return json({customers:result[0].results,total:(result[1].results[0] as {total:number}).total,stats:{...result[2].results[0] as object,...result[3].results[0] as object},plans,partners,page,asOf:now})
   }
   if(!path && request.method==='POST') {
     const data=await body(request,16384); if(!uuid(data.key))throw new ApiError('请求编号无效。')
@@ -83,7 +93,7 @@ export async function customerRoutes(request:Request,env:Env,url:URL,admin=false
     if(!match[2]&&request.method==='GET') {
       const accounts=(await db.prepare('SELECT a.*,s.plan,s.plan_name,s.opened_at,s.expires_at,s.paid_cents FROM crm_accounts a LEFT JOIN crm_subscriptions s ON s.id=a.current_subscription_id WHERE a.customer_id=? ORDER BY a.created_at').bind(c.id).all()).results
       const subscriptions=(await db.prepare('SELECT s.* FROM crm_subscriptions s JOIN crm_accounts a ON a.id=s.account_id WHERE a.customer_id=? ORDER BY s.created_at DESC,s.id DESC').bind(c.id).all()).results
-      return json({customer:c,accounts,subscriptions,asOf:now})
+      return json({customer:c,accounts,subscriptions,...await customerOrderHistory(env,c.id),asOf:now})
     }
     if(match[2]==='/edit'&&request.method==='POST') {
       const data=await body(request,16384);const name=textValue(data.name,100,true);const wechat=textValue(data.wechat,100);const qq=textValue(data.qq,30);const email=textValue(data.email,254).toLowerCase();const note=textValue(data.note,2000);const source=textValue(data.source,100)

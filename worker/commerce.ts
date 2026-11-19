@@ -57,7 +57,7 @@ type Plan = { purchase_note?: string; delivery_instructions: string; partner_ena
 type OrderPartnerSource = { id: string; slug: string; name: string; email: string; wechat: string; qq: string }
 const statuses: Status[] = ['pending', 'session', 'processing', 'success', 'failed', 'cancelled']
 const publicOrder = (o: Order) => ({ purchaseNote: o.purchase_note ?? '', isTest: Boolean(o.is_test), customerEmail: o.customer_email, refundedCents: o.refunded_cents, refundHold: Boolean(o.refund_hold), redemptionBlocked: Boolean(o.redemption_blocked), id: o.id, plan: o.plan, planName: o.plan_name, partnerName: o.partner_name ?? undefined, price: o.price_cents / 100, mode: o.mode, paymentStatus: o.payment_status, status: o.status, createdAt: o.created_at, updatedAt: o.updated_at, startedAt: o.started_at ?? undefined, smsPhone: o.sms_phone ?? undefined, version: o.version })
-type AdminOrder = Order & { settlement_status: 'pending' | 'paid' | null }
+type AdminOrder = Order & { settlement_status: 'pending' | 'paid' | null; owner_store_name?: string }
 const adminOrder = async (env: Env, o: AdminOrder) => {
   const view = await customerOrder(env, o)
   if (view.custom?.sms) Object.assign(view.custom.sms, await smsAdminInfo(env,o.id))
@@ -354,13 +354,17 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
     const { page, offset } = pageParams(url); const q = url.searchParams.get('q')?.trim() ?? ''; const status = url.searchParams.get('status') ?? ''; const plan = url.searchParams.get('plan') ?? ''
     if (q.length > 320 || (status && !statuses.includes(status as Status))) throw new ApiError('筛选条件无效。')
     const values: Value[] = []; const clauses: string[] = []
+    const storeId=url.searchParams.get('store') || null
+    if(storeId) await ownerShop(env,storeId)
+    if(url.searchParams.get('scope')==='owner' || storeId) clauses.push('partner_id IS NULL','is_test=0')
+    if(storeId){clauses.push('owner_store_id=?');values.push(storeId)}
     if (q) { clauses.push("(instr(id,?) > 0 OR instr(lower(COALESCE(customer_email,'')),?) > 0 OR EXISTS(SELECT 1 FROM recharge_orders t WHERE t.order_id=orders.id AND instr(lower(t.remote_id),?) > 0))"); values.push(q.toUpperCase(), q.toLowerCase(), q.toLowerCase()) }
     if (status) { clauses.push('status=?'); values.push(status) }
     if (plan) { clauses.push('plan=?'); values.push(plan) }
     const where = clauses.length ? ' WHERE ' + clauses.join(' AND ') : ''
     const count = await db.prepare('SELECT COUNT(*) total FROM orders' + where).bind(...values).first<{ total: number }>()
-    const rows = (await db.prepare('SELECT orders.*, (SELECT status FROM partner_payouts WHERE id=orders.payout_id) settlement_status FROM orders' + where + ' ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?').bind(...values, offset).all<AdminOrder>()).results
-    return json({ orders: await Promise.all(rows.map(o => adminOrder(env, o))), total: count?.total ?? 0, page })
+    const rows = (await db.prepare("SELECT orders.*, (SELECT json_extract(settings,'$.name') FROM owner_shop_settings WHERE id=orders.owner_store_id) owner_store_name,(SELECT status FROM partner_payouts WHERE id=orders.payout_id) settlement_status FROM orders" + where + ' ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?').bind(...values, offset).all<AdminOrder>()).results
+    return json({ orders: await Promise.all(rows.map(async o => ({...await adminOrder(env, o),ownerStoreId:o.partner_id?null:o.owner_store_id,ownerStoreName:o.partner_id?undefined:o.owner_store_name}))), total: count?.total ?? 0, page })
   }
   const orderMatch = path.match(/^\/api\/admin\/orders\/([A-Z0-9-]+)(\/actions|\/platform-status|\/delivery|\/account_supplier|\/delivery_supplier)?$/)
   if (orderMatch) {

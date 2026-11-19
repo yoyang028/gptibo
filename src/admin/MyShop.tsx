@@ -36,8 +36,8 @@ export default function MyShop({
   storeId: string
   onStoreChange: (id: string) => void
   onSaved: () => void
-  orders: ReactNode
-  customers: ReactNode
+  orders: (store: string, stores: {id:string;name:string}[]) => ReactNode
+  customers: (store: string, stores: {id:string;name:string}[]) => ReactNode
   accounting: ReactNode
   refunds: ReactNode
   onManageProducts: () => void
@@ -127,7 +127,7 @@ export default function MyShop({
               <WorkspaceTabs
                 label="订单与收益"
                 items={[
-                  { value: 'orders', label: '订单明细', content: orders },
+                  { value: 'orders', label: '订单明细', content: orders(storeId, data?.stores ?? []) },
                   {
                     value: 'accounting',
                     label: '清账与结算',
@@ -145,7 +145,7 @@ export default function MyShop({
               />
             ),
           },
-          { value: 'customers', label: '我的客户', content: customers },
+          { value: 'customers', label: '我的客户', content: customers(storeId, data?.stores ?? []) },
           {
             value: 'visitors',
             label: '访客统计',

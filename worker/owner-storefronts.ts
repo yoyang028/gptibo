@@ -23,7 +23,7 @@ function validate(patch: Record<string, unknown>) {
   if ('announcementPlacement' in patch && !['home','product','both'].includes(String(patch.announcementPlacement))) throw new ApiError('公告位置无效。')
 }
 async function allStores(env: Env) {
-  return (await env.INTEREST_DB.prepare('SELECT id,slug,slot,version FROM owner_shop_settings ORDER BY slot').all<{ id: string; slug: string; slot: number; version: number }>()).results
+  return (await env.INTEREST_DB.prepare("SELECT id,slug,COALESCE(json_extract(settings,'$.displayOrder'),slot) slot,version FROM owner_shop_settings ORDER BY COALESCE(json_extract(settings,'$.displayOrder'),slot)").all<{ id: string; slug: string; slot: number; version: number }>()).results
 }
 async function storedSettings(env: Env, id: string) {
   const settings = await ownerShop(env, id)
