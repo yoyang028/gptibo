@@ -17,14 +17,14 @@ import '@/styles/live-checkout.css'
 type SessionFormProps = {
   session: string; confirmed: boolean; touched: boolean; busy?: '' | 'query' | 'check' | 'submit'
   precheckRequired?: boolean; precheck?: SessionPrecheck | null
-  retryMode?: 'session' | 'access_token' | null; retryKey?: string | null; failed?: boolean
+  retryMode?: 'session' | 'access_token' | null; retryKey?: string | null; failed?: boolean; acceptsCompleteSession?: boolean
   onSessionChange: (value: string) => void; onConfirmChange: (value: boolean) => void
   onTouch: () => void; onSubmit: () => void
 }
 
 // Shared by the actual order and the isolated walkthrough, with no API side effects.
-export function LiveSessionForm({ session, confirmed, touched, busy = '', precheckRequired, precheck = null, retryMode = null, retryKey, failed, onSessionChange, onConfirmChange, onTouch, onSubmit }: SessionFormProps) {
-  const input = useMemo(() => checkoutSession(session, retryMode), [session, retryMode])
+export function LiveSessionForm({ session, confirmed, touched, busy = '', precheckRequired, precheck = null, retryMode = null, retryKey, failed, acceptsCompleteSession, onSessionChange, onConfirmChange, onTouch, onSubmit }: SessionFormProps) {
+  const input = useMemo(() => checkoutSession(session, retryMode, acceptsCompleteSession), [session, retryMode, acceptsCompleteSession])
   const invalid = Boolean(input.problem) && (touched || Boolean(session.trim()))
   // Submission clears the sensitive draft immediately; keep only its display email.
   const [lastEmail, setLastEmail] = useState(input.email)
@@ -33,7 +33,7 @@ export function LiveSessionForm({ session, confirmed, touched, busy = '', preche
   return <form onSubmit={e => { e.preventDefault(); onSubmit() }} className="live-session-form">
           <div className="live-session-heading"><Label htmlFor="live-session">ChatGPT Session <LockKeyhole size={14} /></Label><a href="https://chatgpt.com/api/auth/session" target="_blank" rel="noopener noreferrer">获取完整 Session <ExternalLink size={12} /></a></div>
           <p className="live-session-hint" id="live-session-hint">{retryKey ? '本次核对原提交，请使用第一次提交的原资料。先刷新查询，不要改用其他凭据或重新付款。' : '在已登录 ChatGPT 的同一浏览器打开获取入口，全选并复制完整 JSON。不要只截取其中的 accessToken。'}</p>
-          <details className="live-credential-help"><summary>充值凭据说明</summary><ol><li>在浏览器登录需要充值的 ChatGPT 账号，确认账号正确。</li><li>点击上方「获取完整 Session」，在同一浏览器打开获取页面。</li><li>全选并复制页面返回的完整 JSON，全部粘贴到下方；手机也应复制全部内容，而非只复制可见的几行。</li><li>本站会提取本次充值需要的会话字段，不会因附加信息较长而删掉 sessionToken。若提示页面已更新，请刷新整个网页后再操作。</li></ol><p>已有完整 sessionToken 值也可直接粘贴，无需另外寻找 Cookie。会话凭据可用于账号登录，请只在本订单授权提交，不要发到客服聊天。</p></details>
+          <details className="live-credential-help"><summary>充值凭据说明</summary><ol><li>在浏览器登录需要充值的 ChatGPT 账号，确认账号正确。</li><li>点击上方「获取完整 Session」，在同一浏览器打开获取页面。</li><li>全选并复制页面返回的完整 JSON，手机也要复制全部内容。</li><li>若提示页面已更新，请刷新整个网页并打开原订单。</li></ol><p>会话资料可用于账号登录，请只在本订单授权提交。</p></details>
           <Textarea id="live-session" value={session} onChange={e => onSessionChange(e.target.value)} onBlur={onTouch} rows={4} autoComplete="off" autoCorrect="off" spellCheck={false} disabled={Boolean(busy)} aria-invalid={invalid} aria-describedby="live-session-hint live-session-validation" placeholder="在这里粘贴完整 Session JSON" />
           <div className="live-session-validation" id="live-session-validation">{invalid ? <p role="alert"><TriangleAlert size={12} />{input.problem}</p> : <p><LockKeyhole size={12} />资料仅用于本订单充值，请勿向客服聊天发送凭据。</p>}</div>
           {input.credential && !input.email && !retryKey && <p className="live-session-hint">已读取会话凭据，暂无法在本地识别邮箱。请核对获取凭据时登录的账号，再勾选授权。</p>}

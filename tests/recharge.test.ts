@@ -61,10 +61,11 @@ function setup(t: Context) {
   let faceToFace = false; let qr: string | null = null
   let expiry = new Date(Date.now() + 900000).toISOString()
   let quotePatch: Record<string, unknown> = {}
+  let orderFields: Record<string, unknown> = {}, taskFields: Record<string, unknown> = {}
   const calls: { path: string; body: string; key: string; nonce: string }[] = []
   const products = [{ product_code: 'demo_plus', supply_price: '110.00', max_sale_price: '159.00', currency: 'CNY', max_quantity: 1, available: true, delivery_modes: ['auto_recharge', 'cdk'] }]
-  const remoteOrder = () => ({ order_id: 'ord_test', merchant_order_no: merchant, product_code: products[0].product_code, quantity: 1, sale_amount: retail, supply_amount: products[0].supply_price, merchant_margin: Math.max(0, Number(retail) - Number(products[0].supply_price) - (refundStatus === 'succeeded' ? Number(refundAmount) : 0)).toFixed(2), currency: 'CNY', collection_mode: 'platform_collect', payment_scope: 'retail', delivery_mode: 'auto_recharge', payment_status: payment, qr_payload: faceToFace ? 'https://recharge.example.invalid/payments/ord_test?token=public-test-token-123456' : 'https://recharge.example.invalid/pay/example', expires_at: expiry, refunded_amount: refundStatus === 'succeeded' ? refundAmount : '0.00' })
-  const redemption = () => ({ redemption_id: redemptionId, order_id: 'ord_test', attempt_no: Math.max(1, redemptionKeys.size), status: taskStatus, failure_code: taskStatus === 'failed' ? 'session_invalid' : null, fallback_recharge_available: fallback, retry_allowed: fallback, next_action: fallback ? 'resubmit' : ['queued','running'].includes(taskStatus) ? 'wait' : 'none', account_email_masked: 't***@example.test', finished_at: ['succeeded','failed'].includes(taskStatus) ? new Date().toISOString() : null, message: 'PRIVATE-TOKEN-NOT-FOR-STORAGE' })
+  const remoteOrder = () => ({ order_id: 'ord_test', merchant_order_no: merchant, product_code: products[0].product_code, quantity: 1, sale_amount: retail, supply_amount: products[0].supply_price, merchant_margin: Math.max(0, Number(retail) - Number(products[0].supply_price) - (refundStatus === 'succeeded' ? Number(refundAmount) : 0)).toFixed(2), currency: 'CNY', collection_mode: 'platform_collect', payment_scope: 'retail', delivery_mode: 'auto_recharge', payment_status: payment, qr_payload: faceToFace ? 'https://recharge.example.invalid/payments/ord_test?token=public-test-token-123456' : 'https://recharge.example.invalid/pay/example', expires_at: expiry, refunded_amount: refundStatus === 'succeeded' ? refundAmount : '0.00', ...orderFields })
+  const redemption = () => ({ redemption_id: redemptionId, order_id: 'ord_test', attempt_no: Math.max(1, redemptionKeys.size), status: taskStatus, failure_code: taskStatus === 'failed' ? 'session_invalid' : null, fallback_recharge_available: fallback, retry_allowed: fallback, next_action: fallback ? 'resubmit' : ['queued','running'].includes(taskStatus) ? 'wait' : 'none', account_email_masked: 't***@example.test', finished_at: ['succeeded','failed'].includes(taskStatus) ? new Date().toISOString() : null, message: 'PRIVATE-TOKEN-NOT-FOR-STORAGE', ...taskFields })
   const remoteRefund = () => ({ refund_id: 'rf_test', order_id: 'ord_test', merchant_refund_no: refundNo, amount: refundAmount, status: refundStatus })
   let override: ((path: string, raw: string) => Response | Promise<Response | undefined> | undefined) | undefined
   t.mock.method(globalThis, 'fetch', async (input: string, options: RequestInit) => {
@@ -109,8 +110,102 @@ function setup(t: Context) {
     const stamp = String(Math.floor(Date.now()/1000)); const raw = JSON.stringify({ event_id: id, type: 'refund.succeeded', data: { order_id: 'ord_test' } })
     return worker.fetch(new Request('https://shop.example.invalid/api/recharge/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Quefa-Event': 'refund.succeeded', 'X-Quefa-Event-Id': id, 'X-Quefa-Delivery': 'dlv_'+id, 'X-Quefa-Timestamp': stamp, 'X-Quefa-Signature': `t=${stamp},v1=${mac(stamp+'.'+raw,webhookSecret)}` }, body: raw }), env)
   }
-  return { db, env, call, buyer, create, query, submit, login, partner, notice, calls, products, remoteOrder, redemption, faceToFace: () => { faceToFace = true }, quote: (patch: Record<string, unknown>) => { quotePatch = patch }, setExpiry: (value: number) => { expiry = new Date(value).toISOString() }, setQr: (value: string | null) => { qr = value }, setPayment: (v: string) => { payment = v }, setTask: (v: string, retry = false) => { taskStatus = v; fallback = retry }, setRefund: (v: string) => { refundStatus = v }, override: (v: typeof override) => { override = v } }
+  return { db, env, call, buyer, create, query, submit, login, partner, notice, calls, products, remoteOrder, redemption, faceToFace: () => { faceToFace = true }, quote: (patch: Record<string, unknown>) => { quotePatch = patch }, setExpiry: (value: number) => { expiry = new Date(value).toISOString() }, setQr: (value: string | null) => { qr = value }, setPayment: (v: string) => { payment = v }, setTask: (v: string, retry = false) => { taskStatus = v; fallback = retry }, setRefund: (v: string) => { refundStatus = v }, setOrderFields: (fields: Record<string, unknown>) => { orderFields = fields }, setTaskFields: (fields: Record<string, unknown>) => { taskFields = fields }, override: (v: typeof override) => { override = v } }
 }
+
+test('the same SKU selects its signed original order mode, preserving a complete Session through fulfillment', async t => {
+  for (const mode of ['cdk', 'direct']) await t.test(mode, async t => {
+    const s = setup(t), buyer = await s.buyer(), order = await s.create(buyer)
+    s.setOrderFields({ fulfillment_mode: mode })
+    await s.query(order.id, buyer); s.setPayment('paid')
+    const paid = (await (await s.query(order.id, buyer)).json()).order
+    assert.equal(paid.fulfillment.acceptsCompleteSession, true)
+    const input = ' {\n "user":{"email":"target@example.test"},\n "accessToken":"COMPLETE-FIXTURE-PRIVATE", "region":"测试"' + (mode === 'cdk' ? ', "sessionToken":"LEGACY-FIXTURE-PRIVATE"' : '') + '\n}\n'
+    assert.equal(checkoutSession(input, null, paid.fulfillment.acceptsCompleteSession).credential?.mode, 'session')
+    s.setTaskFields({ fallback_recharge_available: mode === 'direct' ? undefined : false })
+    s.override((path, raw) => {
+      if (path !== '/v1/redemptions') return
+      const wire = JSON.parse(raw)
+      assert.equal(wire.order_id, 'ord_test'); assert.equal(wire.mode, 'auto_recharge')
+      assert.deepEqual(wire.credential, { mode: mode === 'direct' ? 'session_json' : 'session', session: input })
+    })
+    const submitted = await s.submit(order.id, buyer, crypto.randomUUID(), input)
+    assert.equal(submitted.status, 200, await submitted.clone().text())
+    assert.equal((await submitted.json()).order.status, 'processing')
+    s.setTask('succeeded')
+    const final = (await (await s.query(order.id, buyer)).json()).order
+    assert.equal(final.status, 'success'); assert.equal(final.paymentStatus, 'paid')
+    assert.equal(s.calls.filter(call => call.path === '/v1/orders').length, 1)
+    assert.equal(s.calls.filter(call => call.path === '/v1/redemptions').length, 1)
+    for (const table of ['recharge_redemptions', 'order_events']) assert.doesNotMatch(JSON.stringify(s.db.prepare(`SELECT * FROM ${table}`).all()), /(?:LEGACY|COMPLETE)-FIXTURE-PRIVATE/)
+  })
+})
+
+test('direct retry follows the latest signed permission without a CDK flag and shows the actual format error safely', async t => {
+  const s = setup(t), buyer = await s.buyer(), order = await s.create(buyer)
+  s.setOrderFields({ fulfillment_mode: 'direct' })
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  s.setTask('failed', true)
+  s.setTaskFields({ fallback_recharge_available: undefined, message: '充值服务反馈：Token JSON 格式不正确。（PRIVATE-FIXTURE-NEVER-DISPLAY）' })
+  const first = await s.submit(order.id, buyer)
+  assert.equal(first.status, 200)
+  const failed = (await first.json()).order
+  assert.equal(failed.fulfillment.canSubmit, true)
+  assert.equal(failed.fulfillment.failureCode, 'session_json_invalid')
+  assert.match(failed.fulfillment.message, /JSON 格式不正确/)
+  assert.doesNotMatch(JSON.stringify(failed), /NEVER-DISPLAY/)
+  s.setOrderFields({ fulfillment_mode: 'direct', fulfillment_status: 'running', retry_allowed: false })
+  assert.equal((await s.submit(order.id, buyer)).status, 409)
+  assert.equal(s.calls.filter(call => call.path === '/v1/redemptions').length, 1)
+  s.setOrderFields({ fulfillment_mode: 'direct', fulfillment_status: 'failed', retry_allowed: true })
+  s.override(path => { if (path === '/v1/redemptions') { s.setTask('queued'); s.setTaskFields({}) } })
+  assert.equal((await s.submit(order.id, buyer)).status, 200)
+  const [original, retry] = s.calls.filter(call => call.path === '/v1/redemptions')
+  assert.notEqual(original.key, retry.key)
+  assert.equal(JSON.parse(original.body).order_id, JSON.parse(retry.body).order_id)
+  assert.equal(s.calls.filter(call => call.path === '/v1/orders').length, 1)
+  assert.doesNotMatch(JSON.stringify(s.db.prepare('SELECT * FROM order_events').all()), /NEVER-DISPLAY/)
+})
+
+test('a direct attempt with an unknown result can only recover its original complete JSON and key', async t => {
+  const s = setup(t), buyer = await s.buyer(), order = await s.create(buyer)
+  s.setOrderFields({ fulfillment_mode: 'direct' })
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  const key = crypto.randomUUID(), input = ' {"accessToken":"DIRECT-RECOVERY-FIXTURE"} \n'
+  let lost = true
+  s.override(path => { if (path === '/v1/redemptions' && lost) { lost = false; throw new Error('fixture response lost') } })
+  assert.equal((await s.submit(order.id, buyer, key, input)).status, 503)
+  assert.equal((await s.submit(order.id, buyer, key, input.trim())).status, 409)
+  assert.equal((await s.submit(order.id, buyer, crypto.randomUUID(), input)).status, 409)
+  assert.equal((await s.submit(order.id, buyer, key, input)).status, 200)
+  const [first, second] = s.calls.filter(call => call.path === '/v1/redemptions')
+  assert.equal(first.body, second.body); assert.equal(first.key, second.key)
+  assert.equal(JSON.parse(first.body).credential.mode, 'session_json')
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions').get()!.n, 1)
+})
+
+test('direct checkout refuses old tabs and a legacy extraction before any upstream recharge request', async t => {
+  const s = setup(t), buyer = await s.buyer(), order = await s.create(buyer)
+  s.setOrderFields({ fulfillment_mode: 'direct' })
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  const route = `/api/orders/${order.id}/fulfillment`
+  const body = { action: 'submit', key: crypto.randomUUID(), customerConfirmedEmail: true, credential: { mode: 'session', session: 'LOCAL-EXTRACTED-TOKEN' } }
+  assert.equal((await s.call(route, body, buyer, undefined, 'session-token-2')).status, 426)
+  const response = await s.call(route, { ...body, legacyTokenOnly: true }, buyer)
+  assert.equal(response.status, 400); assert.match((await response.json()).error, /大小上限/)
+  assert.equal(s.db.prepare('SELECT COUNT(*) n FROM recharge_redemptions').get()!.n, 0)
+  assert.equal(s.calls.filter(call => call.path === '/v1/redemptions').length, 0)
+})
+
+test('an error response with task evidence cannot release a new recharge attempt even with a credential error code', async t => {
+  const s = setup(t), buyer = await s.buyer(), order = await s.create(buyer)
+  await s.query(order.id, buyer); s.setPayment('paid'); await s.query(order.id, buyer)
+  s.override(path => path === '/v1/redemptions' ? Response.json({ error: { code: 'session_invalid', retryable: false }, data: { redemption_id: 'ful_preserved' } }, { status: 400 }) : undefined)
+  assert.equal((await s.submit(order.id, buyer)).status, 503)
+  assert.equal((await s.submit(order.id, buyer)).status, 409)
+  assert.equal(s.db.prepare('SELECT status FROM recharge_redemptions').get()!.status, 'unknown')
+  assert.equal(s.calls.filter(call => call.path === '/v1/redemptions').length, 1)
+})
 
 test('general storefront checkout retains its own retail price and completes through signed callbacks and the repaired Session contract', async t => {
   const s = setup(t), buyer = await s.buyer()

@@ -1,13 +1,19 @@
 // Only documented public codes cross our API/storage boundary. Supplier prose
 // can contain credentials on older deployments and is deliberately not copied.
 export const failureMessages: Record<string, string> = {
-  session_invalid: '登录凭据已失效，请重新登录后提交。',
+  session_invalid: '充值渠道未接受这份登录资料。请核对登录账号，并完整复制当前的会话资料。',
+  session_json_invalid: '充值渠道反馈登录资料 JSON 格式不正确。请重新完整复制获取页面返回的全部内容。',
+  session_expired: '充值渠道反馈登录资料已失效或已刷新。请重新登录目标账号，获取新的完整资料。',
   mailbox_login_failed: '邮箱登录失败，请核对登录资料，或在允许重新提交后改用 Session。',
   account_has_subscription: '账号已有订阅，请核对账号或联系客服。',
   subscription_required: '该套餐要求账号已有有效订阅，请核对续费资格。',
   precheck_rejected: '充值资料或账号条件未通过上游检查，请联系客服核对具体原因，勿反复提交相同资料。',
   account_unavailable: '当前账号暂不可用，请核对账号或联系客服。',
+  account_risk_blocked: '充值渠道反馈该账号触发 OpenAI 风控。请核对账号状态，或联系支持处理原订单。',
+  upgrade_source_unsupported: '当前订阅来源不支持自动升级，请联系支持核对原订单。',
   product_unavailable: '该套餐暂不可用，请联系客服。',
+  out_of_stock: '充值渠道可用资源不足，请联系支持核对原订单。',
+  upstream_balance_insufficient: '充值渠道资金暂不足，请联系支持核对原订单。',
   order_rejected: '此次充值未被受理，请联系客服核对。',
   region_unsupported: '账号地区暂不支持，请联系客服。',
   payment_blocked: '充值付款受限，请联系客服核查，勿重复提交相同资料。',
@@ -15,7 +21,7 @@ export const failureMessages: Record<string, string> = {
   precharge_failed: '充值前校验未通过，请核对账号。',
   cancelled: '此次充值已取消。',
   verification_timeout: '充值结果尚未确认，请联系客服核对原任务，勿重复提交。',
-  service_unavailable: '充值服务暂不可用，平台正在重试，请继续查询原任务。',
+  service_unavailable: '充值服务暂不可用，请刷新查询原任务或联系支持。',
   other: '充值未完成，请联系客服。',
   request_rejected: '提交未被受理，请核对资料后重新提交。',
 }
@@ -48,6 +54,20 @@ export const requestMessages: Record<string, string> = {
 }
 export function publicCode(value: unknown, codes: Record<string, unknown>) {
   return typeof value === 'string' && Object.hasOwn(codes, value) ? value : null
+}
+
+// Translate known causes to fixed copy without retaining or showing supplier prose.
+export function specificRechargeFailure(code: unknown, message: unknown) {
+  if (typeof message !== 'string' || message.length > 2000) return null
+  if (code === 'session_invalid' || code === 'invalid_credential' || code === 'precheck_rejected') {
+    if (/Token\s*JSON\s*格式不正确|账号会话格式无效|账号资料缺少登录凭据/i.test(message)) return 'session_json_invalid'
+    if (/(?:AuthSession|Session|登录资料|登录状态)\s*(?:已失效|已过期|已刷新|失效)/i.test(message)) return 'session_expired'
+  }
+  if (code === 'precharge_failed' || code === 'precheck_rejected' || code === 'account_unavailable' || code === 'order_rejected') {
+    if (/unusual activity|OpenAI 风控拦截/i.test(message)) return 'account_risk_blocked'
+  }
+  if (code === 'order_rejected' && /当前订阅来源不支持|chatgpt_mobile_ios/i.test(message)) return 'upgrade_source_unsupported'
+  return null
 }
 
 export const resultStages = {

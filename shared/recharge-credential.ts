@@ -2,6 +2,7 @@ import { credentialExpiryProblem } from './credential-expiry.ts'
 
 export const RECHARGE_TOKEN_MAX_CHARS = 131072
 export const RECHARGE_BODY_MAX_BYTES = 256 * 1024
+export const RECHARGE_SESSION_SIZE_MESSAGE = '完整充值资料超过接口大小上限。请联系支持核对原订单，无需重新付款。'
 export type RechargeCredential = { mode: 'session'; session: string } | { mode: 'access_token'; access_token: string }
 const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 const emailOf = (source: Record<string, unknown>) => {

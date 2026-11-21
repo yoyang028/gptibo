@@ -3,6 +3,26 @@ import assert from 'node:assert/strict'
 import { checkoutSession } from '../src/lib/checkout-session.ts'
 import { legacyRechargeSession, readRechargeInput, RECHARGE_BODY_MAX_BYTES, RECHARGE_TOKEN_MAX_CHARS } from '../shared/recharge-credential.ts'
 
+test('orders accepting a complete Session preserve its text and do not require the legacy Session Token field', () => {
+  const raw = ' {\n  "user": {"email":"buyer@example.test"},\n  "accessToken":"local-fixture-only",\n  "account":{"id":"fixture", "region":"测试"}\n}\n'
+  const input = checkoutSession(raw, null, true)
+  assert.equal(input.email, 'buyer@example.test')
+  assert.equal(input.problem, '')
+  assert.deepEqual(input.credential, { mode: 'session', session: raw })
+  assert.equal(input.legacyTokenOnly, undefined)
+  assert.equal(checkoutSession(raw, 'session', true).credential?.mode, 'session')
+})
+
+test('oversize checkout input is marked as a legacy extraction and never treated as complete', () => {
+  const extra = '测'.repeat(100000)
+  const input = checkoutSession(JSON.stringify({ sessionToken: 'synthetic-session', extra }), null, true)
+  assert.equal(input.legacyTokenOnly, true)
+  assert.deepEqual(input.credential, { mode: 'session', session: 'synthetic-session' })
+  const unextractable = checkoutSession(JSON.stringify({ accessToken: 'fixture', extra }), null, true)
+  assert.equal(unextractable.credential, null)
+  assert.match(unextractable.problem, /大小上限/)
+})
+
 const token = 'SYNTHETIC-SESSION-TOKEN-ONLY'
 const json = (extra: Record<string, unknown> = {}) => JSON.stringify({ user: { email: 'buyer@example.test' }, sessionToken: token, accessToken: 'different-access-token', ...extra })
 

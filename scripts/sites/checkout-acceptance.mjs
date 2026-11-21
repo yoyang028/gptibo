@@ -27,6 +27,8 @@ const result={localOnly:true,realPayments:0,realUpstreamRequests:0,checks:[],pag
 const record=name=>{result.checks.push(name);console.log(JSON.stringify({name,passed:true}))}
 const response=(data,status=200)=>Response.json({data},{status})
 const sessionToken='LOCAL_ONLY_SESSION_'+randomUUID()
+const directSession=JSON.stringify({user:{email:'demo@example.invalid'},accessToken:'LOCAL_ONLY_COMPLETE_ACCESS_FIXTURE',account:{id:'local-account'},details:'测试资料'},null,2)+'\n'
+let nextFulfillmentMode='cdk'
 const outbound=async request=>{
  const url=new URL(request.url),raw=await request.text(),headers=request.headers
  assert.equal(url.origin,upstream,'All non-fixture network access is blocked')
@@ -40,7 +42,7 @@ const outbound=async request=>{
   assert.equal(body.notify_url,origin+'/api/recharge/webhook');assert.equal(body.payment_channel,'alipay')
   if(!orderKeys.has(key)){
    const id='ord_'+randomUUID().replaceAll('-','')
-   orders.set(id,{...body,order_id:id,payment_status:'pending',payment_scope:'retail',currency:'CNY',supply_amount:'110.00',merchant_margin:(Number(body.sale_amount)-110).toFixed(2),qr_payload:upstream+'/pay/local',expires_at:new Date(Date.now()+900000).toISOString()})
+   orders.set(id,{...body,order_id:id,fulfillment_mode:nextFulfillmentMode,payment_status:'pending',payment_scope:'retail',currency:'CNY',supply_amount:'110.00',merchant_margin:(Number(body.sale_amount)-110).toFixed(2),qr_payload:upstream+'/pay/local',expires_at:new Date(Date.now()+900000).toISOString()})
    orderKeys.set(key,id)
   }
   return response(orders.get(orderKeys.get(key)))
@@ -49,15 +51,17 @@ const outbound=async request=>{
  if(orderRoute){
   const order=orders.get(orderRoute[1]);assert(order)
   if(orderRoute[2]==='/payment-code')return response({order_id:order.order_id,merchant_order_no:order.merchant_order_no,amount:order.sale_amount,currency:'CNY',payment_status:order.payment_status,payment_code_type:'alipay_precreate',payment_code:'https://qr.alipay.com/MOCKONLY12345678',expires_at:order.expires_at})
-  if(orderRoute[2]==='/fulfillments')return response([...tasks.values()].filter(t=>t.order_id===order.order_id).map(t=>({fulfillment_id:t.redemption_id,order_id:t.order_id,attempt_no:1})))
+  if(orderRoute[2]==='/fulfillments')return response([...tasks.values()].filter(t=>t.order_id===order.order_id).map(t=>({fulfillment_id:t.redemption_id,order_id:t.order_id,attempt_no:t.attempt_no,fulfillment_mode:order.fulfillment_mode})))
   return response(order)
  }
  if(url.pathname==='/v1/redemptions'&&request.method==='POST'){
-  const body=JSON.parse(raw),key=headers.get('Idempotency-Key');assert.equal(body.credential.mode,'session');assert.equal(body.credential.session,sessionToken);assert.equal(body.credential.access_token,undefined)
-  assert.equal(orders.get(body.order_id)?.payment_status,'paid')
+  const body=JSON.parse(raw),key=headers.get('Idempotency-Key'),order=orders.get(body.order_id)
+  assert.equal(order?.payment_status,'paid');assert.equal(body.mode,'auto_recharge')
+  const direct=order.fulfillment_mode==='direct'
+  assert.deepEqual(body.credential,{mode:direct?'session_json':'session',session:direct?directSession:sessionToken})
   if(!taskKeys.has(key)){
    const id='ful_'+randomUUID().replaceAll('-','')
-   tasks.set(id,{redemption_id:id,order_id:body.order_id,attempt_no:1,status:'queued',failure_code:null,fallback_recharge_available:false,account_email_masked:'d***@example.invalid',finished_at:null})
+   tasks.set(id,{redemption_id:id,order_id:body.order_id,attempt_no:1,status:'queued',failure_code:null,...(!direct?{fallback_recharge_available:false}:{}),account_email_masked:'d***@example.invalid',finished_at:null})
    taskKeys.set(key,id)
   }
   return response(tasks.get(taskKeys.get(key)),202)
@@ -106,6 +110,8 @@ try{
  await page.screenshot({path:path.join(evidence,'reserved-store.png')})
  record('Reserved storefront shows a closed page and rejects direct order creation')
  for(const [slug,price] of [['store-3',14900],['',13900]]){
+  const direct=Boolean(slug)
+  nextFulfillmentMode=direct?'direct':'cdk'
   shopOrigin=slug?generalOrigin:origin
   const base=shopOrigin+(slug&&!domainMode?'/s/'+slug:'')
   await page.goto(base+'/product/chatgpt')
@@ -130,11 +136,9 @@ try{
   assert.equal((await db.prepare('SELECT notify_version FROM recharge_orders WHERE order_id=?').bind(order.id).first()).notify_version,notified)
   await call(route+'/fulfillment',{action:'poll'})
   await page.locator('#live-session').waitFor()
-  const stale=await context.request.post(new URL(route+'/fulfillment',shopOrigin).href,{maxRetries:2,headers:{Origin:shopOrigin,Connection:'close'},data:{action:'submit',key:randomUUID(),customerConfirmedEmail:true,credential:{mode:'session',session:sessionToken}}})
+  const stale=await context.request.post(new URL(route+'/fulfillment',shopOrigin).href,{maxRetries:2,headers:{Origin:shopOrigin,Connection:'close',[RECHARGE_INPUT_VERSION_HEADER]:'session-token-2'},data:{action:'submit',key:randomUUID(),customerConfirmedEmail:true,credential:{mode:'session',session:sessionToken}}})
   assert.equal(stale.status(),426)
-  const raw=JSON.stringify({user:{email:'demo@example.invalid'},accessToken:'LOCAL_ONLY_UNSUPPORTED_ACCESS_TOKEN',sessionToken,featureFlags:'x'.repeat(300000)})
-  await page.locator('#live-session').fill(JSON.stringify({accessToken:'LOCAL_ONLY_UNSUPPORTED_ACCESS_TOKEN'}))
-  assert(await page.getByRole('button',{name:'提交并充值',exact:true}).isDisabled())
+  const raw=direct?directSession:JSON.stringify({user:{email:'demo@example.invalid'},sessionToken,featureFlags:'x'.repeat(300000)})
   await page.locator('#live-session').fill(raw);assert.equal(await page.locator('#live-session').inputValue(),raw)
   await page.getByRole('checkbox',{name:'我已核对账号，并授权本次充值'}).check()
   const [submit]=await Promise.all([
@@ -142,7 +146,8 @@ try{
    page.getByRole('button',{name:'提交并充值',exact:true}).click()])
   assert.equal(submit.status(),200,await submit.text())
   assert.equal(submit.request().headers()[RECHARGE_INPUT_VERSION_HEADER.toLowerCase()],RECHARGE_INPUT_VERSION)
-  const requestBody=submit.request().postDataJSON();assert.equal(requestBody.credential.session,sessionToken)
+  const requestBody=submit.request().postDataJSON();assert.equal(requestBody.credential.session,direct?directSession:sessionToken)
+  assert.equal(requestBody.legacyTokenOnly,direct?undefined:true)
   await call(route+'/fulfillment',requestBody,200,true)
   const task=[...tasks.values()].find(t=>t.order_id===bound.order_id);assert(task);assert.equal([...tasks.values()].filter(t=>t.order_id===bound.order_id).length,1)
   task.status='succeeded';task.finished_at=new Date().toISOString();await notice(bound,'redemption.succeeded')
@@ -150,7 +155,7 @@ try{
   await page.getByRole('heading',{name:'充值已完成',exact:true}).waitFor()
   await page.screenshot({path:path.join(evidence,(slug?'general':'academic')+'-completed.png')})
   await page.goto(base+'/orders');await page.locator('.order-row').filter({hasText:order.id}).waitFor()
-  record((slug?'General':'Academic')+' shop: UI checkout, own price, signed payment and completion callbacks, repaired Session extraction, stale-page guard and duplicate prevention all pass')
+  record((direct?'Direct':'CDK')+' order: UI checkout, own price, signed payment and success, correct Session submission, stale-page guard and duplicate prevention')
  }
  await page.goto(generalOrigin+(domainMode?'/':'/s/store-3'));await page.getByRole('button',{name:'AI星球 首页',exact:true}).waitFor()
  await page.locator('.store-intro h1').filter({hasText:'按需选择，轻松下单。'}).waitFor()
@@ -165,7 +170,7 @@ try{
  const history=await db.prepare('SELECT owner_store_id,status,payment_status FROM orders ORDER BY owner_store_id').all()
  assert(history.results.every(o=>o.status==='success'&&o.payment_status==='paid'));assert.deepEqual(history.results.map(o=>o.owner_store_id),['platform','store-3'])
  const persisted=JSON.stringify((await db.prepare('SELECT * FROM recharge_redemptions').all()).results)+JSON.stringify((await db.prepare('SELECT * FROM order_events').all()).results)
- assert(!persisted.includes(sessionToken));assert(!persisted.includes('LOCAL_ONLY_UNSUPPORTED_ACCESS_TOKEN'))
+ assert(!persisted.includes(sessionToken));assert(!persisted.includes('LOCAL_ONLY_COMPLETE_ACCESS_FIXTURE'))
  assert.deepEqual(result.pageErrors,[]);assert.deepEqual(result.externalRequests,[])
  record('Real local D1 preserves both shop identities and success records without storing submitted credentials')
  result.passed=true

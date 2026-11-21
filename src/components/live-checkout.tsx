@@ -21,6 +21,7 @@ import { publicAlipayQr } from '../../shared/public-payment'
 import '@/styles/live-checkout.css'
 
 type Props = { order: ServerOrder; open: boolean; onUpdated?: () => void; onOrderUpdated?: (order: ServerOrder) => void; onOrders: () => void; error?: string; refreshTarget?: HTMLElement | null; refreshDisabled?: boolean; transport?: typeof api; initialSession?: string }
+const failureTitles: Record<string, string> = { account_has_subscription: '账号已有订阅', session_json_invalid: '登录资料格式不正确', session_expired: '登录资料已失效' }
 export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders, error, refreshTarget, refreshDisabled, transport = api, initialSession = '' }: Props) {
   const [session, setSession] = useState(initialSession)
   const [confirmed, setConfirmed] = useState(false)
@@ -48,10 +49,10 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
   const info = order.fulfillment!
   const product = productForPlan(order.plan)
   const paused = (order.redemptionBlocked && order.status !== 'success') || order.refundHold || (order.refundedCents ?? 0) >= Math.round(order.price * 100)
-  const input = useMemo(() => checkoutSession(session, info.retryMode), [session, info.retryMode])
+  const input = useMemo(() => checkoutSession(session, info.retryMode, info.acceptsCompleteSession), [session, info.retryMode, info.acceptsCompleteSession])
   const unknown = info.rechargeStatus === 'unknown'
   const failed = order.status === 'failed' || info.rechargeStatus === 'rejected'
-  const failureTitle = info.failureCode === 'account_has_subscription' ? '账号已有订阅' : info.message?.includes('登录凭据已失效') ? 'Session 已失效' : '充值未完成'
+  const failureTitle = failureTitles[info.failureCode ?? ''] ?? '充值未完成'
   const deadline = paymentDeadline(order.createdAt, info.expiresAt)
   const expired = order.paymentStatus === 'unpaid' && (info.paymentExpired || deadline <= clock)
   const qr = open && !paused && !expired && order.status === 'pending' && order.paymentStatus === 'unpaid' ? publicAlipayQr(info.paymentQr) : null
@@ -98,10 +99,9 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
 
   async function run(submit = false) {
     if (submitting.current || busy || (!submit && refreshDisabled)) return
-    const currentInput = checkoutSession(session, info.retryMode)
-    if (submit && (!currentInput.credential || !confirmed)) { setTouched(true); setSubmitFailure(currentInput.problem); return }
+    if (submit && (!input.credential || !confirmed)) { setTouched(true); setSubmitFailure(input.problem); return }
     submitting.current = true; setBusy(submit ? 'submit' : 'query'); setFailure('')
-    const credential = currentInput.credential
+    const credential = input.credential
     if (submit) { setSubmitFailure(''); setPrecheck(null); setTouched(false) }
     try {
       await lane.current.run(async () => {
@@ -125,7 +125,7 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
           }
           setBusy('submit'); setSession(''); setConfirmed(false)
           const submittedAt = performance.now()
-          const result = await transport<{ order: ServerOrder }>(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key: attemptKey.current, customerConfirmedEmail: true, credential, precheckReceipt })
+          const result = await transport<{ order: ServerOrder }>(`/api/orders/${order.id}/fulfillment`, { action: 'submit', key: attemptKey.current, customerConfirmedEmail: true, credential, precheckReceipt, legacyTokenOnly: input.legacyTokenOnly })
           // Dispatch immediately; only the visual handoff has a brief minimum dwell.
           if (precheckReceipt && !matchMedia('(prefers-reduced-motion: reduce)').matches) await new Promise(resolve => setTimeout(resolve, Math.max(0, 450 - (performance.now() - submittedAt))))
           callbacks.current.onOrderUpdated?.(result.order)
@@ -153,7 +153,7 @@ export function LiveCheckout({ order, open, onUpdated, onOrderUpdated, onOrders,
         {unknown && busy !== 'submit' ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>提交待确认</AlertTitle><AlertDescription>{submitFailure && <>{submitFailure}<br /></>}充值服务尚未确认收到本次提交，暂不能确认已开始充值。先刷新查询；仍未确认时，粘贴原充值资料核对同一次提交。请勿重新付款。</AlertDescription></Alert>
           : failed && busy !== 'submit' ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>{failureTitle}</AlertTitle><AlertDescription>{info.message ?? '请获取新的 Session 后重试。'} 本订单无需重复付款。</AlertDescription></Alert>
           : <PaymentConfirmed>付款已确认，请连接要充值的账号。</PaymentConfirmed>}
-        <LiveSessionForm session={session} confirmed={confirmed} touched={touched} busy={busy} precheckRequired={info.precheckRequired} precheck={precheck} retryMode={info.retryMode} retryKey={info.retryKey} failed={failed} onSessionChange={value => { setSession(value); setConfirmed(false); setTouched(false); setPrecheck(null) }} onConfirmChange={setConfirmed} onTouch={() => setTouched(true)} onSubmit={() => void run(true)} />
+        <LiveSessionForm session={session} confirmed={confirmed} touched={touched} busy={busy} precheckRequired={info.precheckRequired} precheck={precheck} retryMode={info.retryMode} retryKey={info.retryKey} acceptsCompleteSession={info.acceptsCompleteSession} failed={failed} onSessionChange={value => { setSession(value); setConfirmed(false); setTouched(false); setPrecheck(null) }} onConfirmChange={setConfirmed} onTouch={() => setTouched(true)} onSubmit={() => void run(true)} />
       </>}
 
       {stage === 'processing' && (info.paused ? <Alert className="live-notice" role="status"><TriangleAlert aria-hidden="true" /><AlertTitle>充值结果待核对</AlertTitle><AlertDescription>{info.message ?? '处理已暂停，请刷新查询原任务或联系支持，无需重新付款。'}</AlertDescription></Alert> : <LiveRechargeProcessing progressStage={info.progressStage} progressUpdatedAt={info.progressUpdatedAt} rechargeStatus={info.rechargeStatus} syncError={Boolean(info.syncError || failure || error)} />)}

@@ -1,5 +1,5 @@
-import { categoryMessages, failureMessages, publicCode, resultStages } from './errors.ts'
-import { legacyRechargeSession, normalizeRechargeCredential, RECHARGE_BODY_MAX_BYTES, type RechargeCredential } from '../../shared/recharge-credential.ts'
+import { categoryMessages, failureMessages, publicCode, resultStages, specificRechargeFailure } from './errors.ts'
+import { legacyRechargeSession, normalizeRechargeCredential, RECHARGE_BODY_MAX_BYTES, RECHARGE_SESSION_SIZE_MESSAGE, type RechargeCredential } from '../../shared/recharge-credential.ts'
 import { RECHARGE_INPUT_VERSION, RECHARGE_INPUT_VERSION_HEADER, RECHARGE_PAGE_UPGRADE_MESSAGE } from '../../shared/recharge-input-version.ts'
 import { ApiError, body, hash, json, type Env, type Statement } from '../platform.ts'
 import { change, getOrder, type Order } from '../order-state.ts'
@@ -9,10 +9,12 @@ import { publicAlipayQr } from '../../shared/public-payment.ts'
 import { rechargeStage, type RechargeStage } from '../../shared/recharge-progress.ts'
 import { assertPromotionReady } from '../member-promotions.ts'
 import { captureRewards, checkRewardTarget, promotionPaymentConfirmed } from '../member-rewards.ts'
-import { authorizedProduct, cashierLink, checkoutEnabled, config, notifyUrl, paymentLink, paymentQr, productMap, readRaw, request, hmac, marginCents, moneyCents as amountCents, RechargeError, type Product, type RemoteOrder, type Redemption, type RemoteRefund } from './client.ts'
+import { authorizedProduct, cashierLink, checkoutEnabled, config, notifyUrl, paymentLink, paymentQr, productMap, readRaw, request, hmac, marginCents, moneyCents as amountCents, RechargeError, type FulfillmentMode, type Product, type RemoteOrder, type Redemption, type RemoteRefund } from './client.ts'
 
 type SupplierOrder = { order_id: string; account: string; product_code: string; collection_mode: string; create_body: string; remote_id: string | null; payment_status: string; payment_url: string | null; payment_qr: string | null; expires_at: number | null; attempted_at: number | null; updated_at: number; lease_token: string | null; lease_until: number; supply_cents: number | null; merchant_margin_cents: number | null; refunded_cents: number; financial_hold: number; notify_version: number; checked_notify_version: number }
 type Attempt = { id: string; order_id: string; attempt_no: number; request_hash: string; credential_mode: 'session' | 'access_token'; remote_id: string | null; status: string; fallback: number; failure_code: string | null; error_category: string | null; result_code: string | null; account_email_masked: string | null; finished_at: number | null; created_at: number; progress_stage: RechargeStage | null; progress_version: number; progress_updated_at: number | null; paused: number; remote_attempt_no: number | null }
+type FulfillmentRef = { fulfillment_id: string; order_id: string; attempt_no: number; fulfillment_mode?: FulfillmentMode | null }
+type UpstreamCredential = RechargeCredential | { mode: 'session_json'; session: string }
 export const findRechargeOrder = (env: Env, id: string) => env.INTEREST_DB.prepare('SELECT * FROM recharge_orders WHERE order_id=?').bind(id).first<SupplierOrder>()
 export async function expireRechargeOrder(env: Env, order: Order) {
   if (order.mode !== 'live' || order.is_test || order.status !== 'pending' || order.payment_status !== 'unpaid') return order
@@ -76,6 +78,7 @@ async function locked<T>(env: Env, row: SupplierOrder, run: (fresh: SupplierOrde
 function validateOrder(row: SupplierOrder, order: Order, remote: RemoteOrder) {
   if (!remote || typeof remote.order_id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(remote.order_id) || (row.remote_id && row.remote_id !== remote.order_id) || remote.merchant_order_no !== order.id || remote.product_code !== row.product_code || remote.quantity !== 1 || remote.currency !== 'CNY' || remote.collection_mode !== 'platform_collect' || remote.payment_scope !== 'retail' || remote.delivery_mode !== 'auto_recharge' || amountCents(remote.sale_amount) !== order.price_cents || !['pending', 'paid', 'expired', 'closed', 'partially_refunded', 'refunded'].includes(remote.payment_status)) throw new Error('Supplier order mismatch')
   if (JSON.parse(row.create_body).payment_channel !== 'alipay' || (remote.payment_channel !== undefined && remote.payment_channel !== 'alipay')) throw new Error('Supplier payment channel mismatch')
+  if (remote.fulfillment_mode != null && !['cdk', 'direct'].includes(remote.fulfillment_mode)) throw new Error('Supplier fulfillment mode mismatch')
 }
 async function applyRemoteOrder(env: Env, row: SupplierOrder, remote: RemoteOrder, refreshCashier = true) {
   const order = await getOrder(env, row.order_id); validateOrder(row, order, remote)
@@ -145,8 +148,8 @@ async function ensureRemote(env: Env, row: SupplierOrder) {
 function failureMessage(failure: string | null, category: string | null) {
   return failure && failure !== 'other' && Object.hasOwn(failureMessages, failure) ? failureMessages[failure] : category && Object.hasOwn(categoryMessages, category) ? categoryMessages[category] : failureMessages.other
 }
-async function applyRedemption(env: Env, row: SupplierOrder, attempt: Attempt, remote: Redemption) {
-  if (!remote || !/^[A-Za-z0-9_-]{1,128}$/.test(remote.redemption_id) || remote.order_id !== row.remote_id || (attempt.remote_id && attempt.remote_id !== remote.redemption_id) || !['queued', 'running', 'succeeded', 'failed', 'cancelled'].includes(remote.status) || typeof remote.fallback_recharge_available !== 'boolean') throw new Error('Redemption mismatch')
+async function applyRedemption(env: Env, row: SupplierOrder, attempt: Attempt, remote: Redemption, mode?: FulfillmentMode | null, orderAllowsRetry = true) {
+  if (!remote || !/^[A-Za-z0-9_-]{1,128}$/.test(remote.redemption_id) || remote.order_id !== row.remote_id || (attempt.remote_id && attempt.remote_id !== remote.redemption_id) || !['queued', 'running', 'succeeded', 'failed', 'cancelled'].includes(remote.status) || (remote.fallback_recharge_available !== undefined && typeof remote.fallback_recharge_available !== 'boolean')) throw new Error('Redemption mismatch')
   if (remote.paused !== undefined && typeof remote.paused !== 'boolean') throw new Error('Invalid paused state')
   if (remote.attempt_no !== undefined && (!Number.isSafeInteger(remote.attempt_no) || remote.attempt_no < 1 || (attempt.remote_attempt_no !== null && remote.attempt_no !== attempt.remote_attempt_no))) throw new Error('Redemption attempt mismatch')
   const version = remote.progress_version ?? 0
@@ -169,11 +172,12 @@ async function applyRedemption(env: Env, row: SupplierOrder, attempt: Attempt, r
   const status = remote.status === 'succeeded' ? 'success' : ['failed', 'cancelled'].includes(remote.status) ? 'failed' : 'processing'
   const finished = remote.finished_at === null ? null : Date.parse(remote.finished_at)
   if (finished !== null && !Number.isFinite(finished)) throw new Error('Invalid completion time')
-  const failure = publicCode(remote.failure_code, failureMessages) ?? (remote.failure_code == null ? null : 'other')
+  const failure = specificRechargeFailure(remote.failure_code, remote.message) ?? publicCode(remote.failure_code, failureMessages) ?? (remote.failure_code == null ? null : 'other')
   const masked = typeof remote.account_email_masked === 'string' && /^[^@\s]*\*[^@\s]*@[^@\s]+$/.test(remote.account_email_masked) && remote.account_email_masked.length <= 320 ? remote.account_email_masked : null
+  const retryAllowed = orderAllowsRetry && remote.paused !== true && remote.retry_allowed === true && remote.next_action === 'resubmit' && remote.recovery_action !== 'refund' && ['failed', 'cancelled'].includes(remote.status) && (mode === 'direct' || remote.fallback_recharge_available === true)
   await env.INTEREST_DB.batch([
     env.INTEREST_DB.prepare("UPDATE recharge_redemptions SET remote_id=?,status=?,fallback=?,failure_code=?,error_category=?,result_code=?,account_email_masked=?,finished_at=?,progress_stage=?,progress_version=?,progress_updated_at=?,paused=?,remote_attempt_no=COALESCE(remote_attempt_no,?) WHERE id=? AND progress_version<=? AND (status IN ('unknown','queued','running') OR status=? OR (status IN ('failed','cancelled') AND ?='succeeded' AND progress_version<?))")
-      .bind(remote.redemption_id, remote.status, Number(remote.paused !== true && remote.fallback_recharge_available && remote.retry_allowed === true && remote.next_action === 'resubmit' && remote.recovery_action !== 'refund' && ['failed', 'cancelled'].includes(remote.status)), failure, category, resultCode, masked, finished, publicStage, version, publicTime, Number(remote.paused === true), remote.attempt_no ?? null, attempt.id, version, remote.status, remote.status, version),
+      .bind(remote.redemption_id, remote.status, Number(retryAllowed), failure, category, resultCode, masked, finished, publicStage, version, publicTime, Number(remote.paused === true), remote.attempt_no ?? null, attempt.id, version, remote.status, remote.status, version),
     env.INTEREST_DB.prepare("UPDATE orders SET status=?,started_at=COALESCE(started_at,?),updated_at=?,version=version+1,last_event_id=? WHERE id=? AND mode='live' AND payment_status='paid' AND redemption_blocked=0 AND refund_hold=0 AND refunded_cents<price_cents AND status<>? AND status<>'success' AND EXISTS(SELECT 1 FROM recharge_redemptions a WHERE a.id=? AND a.status=? AND a.attempt_no=(SELECT MAX(attempt_no) FROM recharge_redemptions WHERE order_id=orders.id))")
       .bind(status, now, now, event, row.order_id, status, attempt.id, remote.status),
     env.INTEREST_DB.prepare("INSERT INTO order_events(id,order_id,actor,action,from_status,to_status,note,order_version,created_at) SELECT ?,id,'system','recharge-status',?,status,?,version,? FROM orders WHERE id=? AND last_event_id=?")
@@ -182,23 +186,28 @@ async function applyRedemption(env: Env, row: SupplierOrder, attempt: Attempt, r
 }
 // Resolve the current task on the original order, including an accepted POST
 // whose response was lost and a newer attempt submitted from the vendor desk.
-async function syncLatest(env: Env, row: SupplierOrder, hasFulfillment: boolean) {
+async function syncLatest(env: Env, row: SupplierOrder, order: RemoteOrder | null) {
   if (!row.remote_id) return
   let attempt = await latestAttempt(env, row.order_id)
+  const hasFulfillment = Boolean(order?.fulfillment_status)
   if (!attempt && !hasFulfillment) return
-  const refs = await request<{ fulfillment_id: string; order_id: string; attempt_no: number }[]>(env, '/orders/' + row.remote_id + '/fulfillments')
+  const refs = await request<FulfillmentRef[]>(env, '/orders/' + row.remote_id + '/fulfillments')
   if (!Array.isArray(refs)) throw new Error('Invalid fulfillment list')
-  const byNumber = new Map<number, string>()
+  const byNumber = new Map<number, FulfillmentRef>()
   for (const ref of refs) {
-    if (!ref || ref.order_id !== row.remote_id || !/^[A-Za-z0-9_-]{1,128}$/.test(ref.fulfillment_id) || !Number.isSafeInteger(ref.attempt_no) || ref.attempt_no < 1 || (byNumber.has(ref.attempt_no) && byNumber.get(ref.attempt_no) !== ref.fulfillment_id)) throw new Error('Invalid fulfillment identity')
-    byNumber.set(ref.attempt_no, ref.fulfillment_id)
+    if (!ref || ref.order_id !== row.remote_id || !/^[A-Za-z0-9_-]{1,128}$/.test(ref.fulfillment_id) || !Number.isSafeInteger(ref.attempt_no) || ref.attempt_no < 1) throw new Error('Invalid fulfillment identity')
+    if (ref.fulfillment_mode != null && !['cdk', 'direct'].includes(ref.fulfillment_mode)) throw new Error('Invalid fulfillment mode')
+    const duplicate = byNumber.get(ref.attempt_no)
+    if (duplicate && (duplicate.fulfillment_id !== ref.fulfillment_id || duplicate.fulfillment_mode !== ref.fulfillment_mode)) throw new Error('Conflicting fulfillment identity')
+    byNumber.set(ref.attempt_no, ref)
   }
   const number = Math.max(0, ...byNumber.keys())
   if (!number) {
     if (attempt?.remote_id || hasFulfillment) throw new Error('Current fulfillment missing')
     return
   }
-  const id = byNumber.get(number)!
+  const ref = byNumber.get(number)!
+  const id = ref.fulfillment_id
   const mapped = await env.INTEREST_DB.prepare('SELECT * FROM recharge_redemptions WHERE order_id=? AND remote_id=?').bind(row.order_id, id).first<Attempt>()
   if (mapped && attempt && mapped.id !== attempt.id) {
     if (attempt.status === 'unknown' && !attempt.remote_id) return
@@ -206,14 +215,15 @@ async function syncLatest(env: Env, row: SupplierOrder, hasFulfillment: boolean)
   }
   if (attempt?.remote_attempt_no != null && number < attempt.remote_attempt_no) throw new Error('Stale fulfillment list')
   const remote = await request<Redemption>(env, '/redemptions/' + id)
-  if (remote.redemption_id !== id || remote.order_id !== row.remote_id || remote.attempt_no !== number || typeof remote.fallback_recharge_available !== 'boolean') throw new Error('Latest redemption identity mismatch')
+  if (remote.redemption_id !== id || remote.order_id !== row.remote_id || remote.attempt_no !== number) throw new Error('Latest redemption identity mismatch')
   if (mapped) attempt = mapped
   else if (!attempt || attempt.remote_id || attempt.status !== 'unknown') {
     const localId = crypto.randomUUID()
     await env.INTEREST_DB.prepare("INSERT INTO recharge_redemptions(id,order_id,attempt_no,request_hash,credential_mode,created_at,remote_attempt_no) VALUES(?,?,?,'','session',?,?)").bind(localId, row.order_id, (attempt?.attempt_no ?? 0) + 1, Date.now(), number).run()
     attempt = (await latestAttempt(env, row.order_id))!
   }
-  await applyRedemption(env, row, attempt, remote)
+  const orderAllowsRetry = order?.fulfillment_paused !== true && order?.retry_allowed !== false && !['queued', 'running', 'succeeded'].includes(order?.fulfillment_status ?? '')
+  await applyRedemption(env, row, attempt, remote, ref.fulfillment_mode ?? order?.fulfillment_mode, orderAllowsRetry)
 }
 async function syncUnlocked(env: Env, row: SupplierOrder) {
   const current = await expireRechargeOrder(env, await getOrder(env, row.order_id))
@@ -222,7 +232,7 @@ async function syncUnlocked(env: Env, row: SupplierOrder) {
   const remoteOrder = row.remote_id ? await request<RemoteOrder>(env, '/orders/' + ready.remote_id) : null
   if (remoteOrder) await applyRemoteOrder(env, ready, remoteOrder)
   const attempt = await latestAttempt(env, row.order_id)
-  if (remoteOrder?.fulfillment_status !== 'succeeded' || (attempt && !terminal(attempt.status))) await syncLatest(env, ready, !!remoteOrder?.fulfillment_status)
+  if (remoteOrder?.fulfillment_status !== 'succeeded' || (attempt && !terminal(attempt.status))) await syncLatest(env, ready, remoteOrder)
   await env.INTEREST_DB.prepare('UPDATE recharge_orders SET checked_notify_version=MAX(checked_notify_version,?) WHERE order_id=? AND lease_token=?').bind(row.notify_version, row.order_id, row.lease_token).run()
   return expireRechargeOrder(env, await getOrder(env, row.order_id))
 }
@@ -248,7 +258,7 @@ export async function queryPlatformOrder(env: Env, order: Order) {
     const remote = await request<RemoteOrder>(env, '/orders/' + fresh.remote_id)
     await applyRemoteOrder(env, fresh, remote, false)
     const attempt = await latestAttempt(env, order.id)
-    if ((remote.fulfillment_status !== 'succeeded' || (attempt && !terminal(attempt.status))) && (attempt || remote.fulfillment_status)) await syncLatest(env, fresh, !!remote.fulfillment_status)
+    if ((remote.fulfillment_status !== 'succeeded' || (attempt && !terminal(attempt.status))) && (attempt || remote.fulfillment_status)) await syncLatest(env, fresh, remote)
     // Leave notifications due: they may also require a recharge-task query.
   })
   return getOrder(env, order.id)
@@ -274,8 +284,28 @@ export async function rechargeSummary(env: Env, order: Order) {
   // Never publish the supplier cashier URL/token, including legacy link orders.
   const paymentKind = payable ? 'qr' : null
   const publicQr = payable ? publicAlipayQr(row.payment_qr) : null
-  return { financialHold: !!row.financial_hold && !!row.remote_id && order.payment_status === 'paid', paymentUrl: null, paymentQr: publicQr, paymentKind, expiresAt, paymentExpired, rechargeStatus: completed ? 'succeeded' : attempt?.status ?? null, paused: !!attempt?.paused, failureCode: attempt?.failure_code ?? null, errorCategory: attempt?.error_category ?? null, resultCode: attempt?.result_code ?? null, progressStage: completed ? 'completed' : attempt?.progress_stage ?? null, progressVersion: attempt?.progress_version ?? 0, progressUpdatedAt: attempt?.progress_updated_at ?? null, attemptNo: attempt?.attempt_no ?? null, retryKey: attempt?.status === 'unknown' ? attempt.id : null, retryMode: attempt?.status === 'unknown' ? attempt.credential_mode : null, canSubmit: available && order.status !== 'success' && (!attempt || (attempt.status === 'unknown' && !unknownExpired(attempt)) || attempt.status === 'rejected' || !!attempt.fallback), message: attempt?.paused ? '充值任务暂时暂停，请联系客服核对原任务，无需重新付款或提交新任务。' : row.financial_hold && order.payment_status === 'paid' ? '平台退款金额正在核对，充值与代理收益暂时冻结，请联系客服。' : attempt && unknownExpired(attempt) ? '提交结果长期未确认，请联系客服核对原任务，不要重新付款或提交新任务。' : attempt && (attempt.failure_code || (terminal(attempt.status) && attempt.status !== 'succeeded')) ? failureMessage(attempt.failure_code, attempt.error_category) : null, accountEmailMasked: attempt?.account_email_masked ?? null, finishedAt: attempt?.finished_at ?? null }
+  return { acceptsCompleteSession: true, financialHold: !!row.financial_hold && !!row.remote_id && order.payment_status === 'paid', paymentUrl: null, paymentQr: publicQr, paymentKind, expiresAt, paymentExpired, rechargeStatus: completed ? 'succeeded' : attempt?.status ?? null, paused: !!attempt?.paused, failureCode: attempt?.failure_code ?? null, errorCategory: attempt?.error_category ?? null, resultCode: attempt?.result_code ?? null, progressStage: completed ? 'completed' : attempt?.progress_stage ?? null, progressVersion: attempt?.progress_version ?? 0, progressUpdatedAt: attempt?.progress_updated_at ?? null, attemptNo: attempt?.attempt_no ?? null, retryKey: attempt?.status === 'unknown' ? attempt.id : null, retryMode: attempt?.status === 'unknown' ? attempt.credential_mode : null, canSubmit: available && order.status !== 'success' && (!attempt || (attempt.status === 'unknown' && !unknownExpired(attempt)) || attempt.status === 'rejected' || !!attempt.fallback), message: attempt?.paused ? '充值任务暂时暂停，请联系客服核对原任务，无需重新付款或提交新任务。' : row.financial_hold && order.payment_status === 'paid' ? '平台退款金额正在核对，充值与代理收益暂时冻结，请联系客服。' : attempt && unknownExpired(attempt) ? '提交结果长期未确认，请联系客服核对原任务，不要重新付款或提交新任务。' : attempt && (attempt.failure_code || (terminal(attempt.status) && attempt.status !== 'succeeded')) ? failureMessage(attempt.failure_code, attempt.error_category) : null, accountEmailMasked: attempt?.account_email_masked ?? null, finishedAt: attempt?.finished_at ?? null }
 }
+
+function assertRechargeReady(order: Order, row: SupplierOrder | null): asserts row is SupplierOrder & { remote_id: string } {
+  if (order.redemption_blocked) throw new ApiError('本订单已禁止再次兑换，请联系支持。', 409)
+  if (!row?.remote_id || row.financial_hold || row.payment_status !== 'paid' || order.payment_status !== 'paid' || order.refund_hold || order.refunded_cents || order.status === 'success') throw new ApiError('当前订单不能提交充值，请先刷新付款和售后状态。', 409)
+}
+
+function credentialForOrder(original: RechargeCredential, mode: FulfillmentMode | null | undefined, legacyTokenOnly: boolean): UpstreamCredential {
+  if (mode === 'direct') {
+    if (legacyTokenOnly) throw new ApiError(RECHARGE_SESSION_SIZE_MESSAGE)
+    if (original.mode !== 'session' || /^(?:Cookie:|__Secure-next-auth\.session-token)/i.test(original.session.trimStart())) throw new ApiError('请复制获取页面返回的完整登录资料。')
+    return { mode: 'session_json', session: original.session }
+  }
+  let normalized: RechargeCredential
+  try { normalized = normalizeRechargeCredential(original) }
+  catch (error) { throw new ApiError(error instanceof Error ? error.message : '充值会话凭据无效。') }
+  // The current CDK API can extract its token and retain the rest for its own
+  // same-order channel fallback. Older responses and raw tokens use the legacy format.
+  return mode === 'cdk' && original.mode === 'session' && original.session.trimStart().startsWith('{') ? original : normalized
+}
+
 export async function rechargeAction(requestMessage: Request, env: Env, order: Order) {
   if (requestMessage.method !== 'POST') throw new ApiError('请求方式不支持。', 405)
   const data = await body(requestMessage, RECHARGE_BODY_MAX_BYTES)
@@ -289,37 +319,53 @@ export async function rechargeAction(requestMessage: Request, env: Env, order: O
   if (credential?.mode === 'session' && typeof credential.session === 'string' && credential.session.trim()) original = { mode: 'session', session: credential.session }
   else if (credential?.mode === 'access_token' && typeof credential.access_token === 'string' && credential.access_token.trim()) original = { mode: 'access_token', access_token: credential.access_token }
   else throw new ApiError('请填写本次授权的充值会话凭据。')
-  await locked(env, row, async () => {
-    const current = await getOrder(env, order.id); const ready = await findRechargeOrder(env, order.id)
+  await locked(env, row, async ready => {
+    const [current, previousAttempt] = await Promise.all([getOrder(env, order.id), latestAttempt(env, order.id)])
+    let attempt = previousAttempt
     await assertPromotionReady(env, order.id)
-    if (current.redemption_blocked) throw new ApiError('本订单已禁止再次兑换，请联系支持。', 409)
-    if (!ready?.remote_id || ready.financial_hold || ready.payment_status !== 'paid' || current.payment_status !== 'paid' || current.refund_hold || current.refunded_cents || current.status === 'success') throw new ApiError('当前订单不能提交充值，请先刷新付款和售后状态。', 409)
-    await checkRewardTarget(env, order.id, original)
-    await captureRewards(env, order.id)
-    let attempt = await latestAttempt(env, order.id)
-    const number = attempt ? attempt.attempt_no + Number(attempt.id !== data.key) : 1
-    const payload = (value: RechargeCredential, oldRetry = false) => JSON.stringify({ mode: 'auto_recharge', order_id: ready.remote_id, credential: value, customer_confirmed_email: true, ...(oldRetry && number > 1 ? { retry_confirmation: true } : {}) })
-    let normalized: RechargeCredential | null = null
-    let problem = ''
-    try { normalized = normalizeRechargeCredential(original, attempt?.id !== data.key) } catch (error) { problem = error instanceof Error ? error.message : '充值会话凭据无效。' }
-    let raw = normalized ? payload(normalized) : ''
-    let digest = raw ? await hash(raw) : ''
+    assertRechargeReady(current, ready)
+    const payload = (value: UpstreamCredential, oldRetry = false) => JSON.stringify({ mode: 'auto_recharge', order_id: ready.remote_id, credential: value, customer_confirmed_email: true, ...(oldRetry ? { retry_confirmation: true } : {}) })
+    let raw = ''
+    let mode: FulfillmentMode | null | undefined
     if (attempt && attempt.id === data.key) {
       if (unknownExpired(attempt)) throw new ApiError('原提交已超过幂等保护期，请联系客服核对，不能再次提交。', 409)
-      const candidates = [payload(original), payload(original, true), ...(normalized ? [payload(normalized)] : [])]
-      const legacy = original.mode === 'session' ? legacyRechargeSession(original.session) : null
-      if (legacy) candidates.push(payload(legacy), payload(legacy, true))
-      let matched = false
-      for (const candidate of new Set(candidates)) { if (await hash(candidate) === attempt.request_hash) { raw = candidate; digest = attempt.request_hash; matched = true; break } }
-      if (!matched) throw new ApiError('该提交编号已用于其他资料。结果未知时请重交原资料。', 409)
+      const oldRetry = attempt.attempt_no > 1
+      const candidates = new Map<string, FulfillmentMode | undefined>([[payload(original), undefined], [payload(original, oldRetry), undefined]])
+      if (original.mode === 'session') {
+        candidates.set(payload({ mode: 'session_json', session: original.session }), 'direct')
+        const legacy = legacyRechargeSession(original.session)
+        if (legacy) { candidates.set(payload(legacy), undefined); candidates.set(payload(legacy, oldRetry), undefined) }
+      }
+      try { candidates.set(payload(normalizeRechargeCredential(original, false)), undefined) } catch { /* Only an exact recorded body is eligible for recovery. */ }
+      for (const [candidate, candidateMode] of candidates) {
+        if (await hash(candidate) === attempt.request_hash) { raw = candidate; mode = candidateMode; break }
+      }
+      if (!raw) throw new ApiError('该提交编号已用于其他资料。结果未知时请重交原资料。', 409)
       if (attempt.remote_id || terminal(attempt.status)) return
+      await checkRewardTarget(env, order.id, original)
+      await captureRewards(env, order.id)
     } else {
       if (requestMessage.headers.get(RECHARGE_INPUT_VERSION_HEADER) !== RECHARGE_INPUT_VERSION) throw new ApiError(RECHARGE_PAGE_UPGRADE_MESSAGE, 426)
+      if (attempt && !terminal(attempt.status)) throw new ApiError('原充值结果尚未确认，请查询原任务，勿重复提交。', 409)
+      // The product catalog can switch independently of an already paid order.
+      // Recheck this signed order and its latest task while holding the same lease.
+      const remote = await request<RemoteOrder>(env, '/orders/' + ready.remote_id)
+      await applyRemoteOrder(env, ready, remote, false)
+      if (remote.fulfillment_status !== 'succeeded') await syncLatest(env, ready, remote)
+      const [updated, latest, verified] = await Promise.all([getOrder(env, order.id), latestAttempt(env, order.id), findRechargeOrder(env, order.id)])
+      attempt = latest
+      assertRechargeReady(updated, verified)
+      if (remote.fulfillment_paused === true || ['queued', 'running'].includes(remote.fulfillment_status ?? '')) throw new ApiError('原充值结果尚未确认，请查询原任务，勿重复提交。', 409)
       if (attempt && attempt.status !== 'rejected' && !attempt.fallback) throw new ApiError('原充值结果尚未确认，请查询原任务，勿重复提交。', 409)
-      if (!normalized || problem) throw new ApiError(problem || '充值会话凭据无效。')
+      mode = remote.fulfillment_mode
+      raw = payload(credentialForOrder(original, mode, data.legacyTokenOnly === true))
+      if (new TextEncoder().encode(raw).length > RECHARGE_BODY_MAX_BYTES) throw new ApiError(RECHARGE_SESSION_SIZE_MESSAGE)
+      const digest = await hash(raw)
+      await checkRewardTarget(env, order.id, original)
+      await captureRewards(env, order.id)
       const now = Date.now(); const event = crypto.randomUUID()
       await env.INTEREST_DB.batch([
-        env.INTEREST_DB.prepare("INSERT INTO recharge_redemptions(id,order_id,attempt_no,request_hash,credential_mode,created_at) SELECT ?,id,?,?,?,? FROM orders WHERE id=? AND version=? AND redemption_blocked=0 AND refund_hold=0 AND refunded_cents=0 AND payment_status='paid'").bind(String(data.key), (attempt?.attempt_no ?? 0) + 1, digest, normalized.mode, now, order.id, current.version),
+        env.INTEREST_DB.prepare("INSERT INTO recharge_redemptions(id,order_id,attempt_no,request_hash,credential_mode,created_at) SELECT ?,id,?,?,?,? FROM orders WHERE id=? AND version=? AND redemption_blocked=0 AND refund_hold=0 AND refunded_cents=0 AND payment_status='paid' AND status<>'success' AND EXISTS(SELECT 1 FROM recharge_orders r WHERE r.order_id=orders.id AND r.lease_token=? AND r.lease_until>? AND r.payment_status='paid' AND r.financial_hold=0)").bind(String(data.key), (attempt?.attempt_no ?? 0) + 1, digest, 'session', now, order.id, updated.version, ready.lease_token, now),
         env.INTEREST_DB.prepare("UPDATE orders SET status='processing',started_at=?,updated_at=?,version=version+1,last_event_id=? WHERE id=? AND EXISTS(SELECT 1 FROM recharge_redemptions WHERE id=? AND order_id=?)").bind(now, now, event, order.id, String(data.key), order.id),
         env.INTEREST_DB.prepare("INSERT INTO order_events(id,order_id,actor,action,from_status,to_status,note,order_version,created_at) SELECT ?,id,'customer','recharge-submit',?,'processing','客户已授权提交充值资料',version,? FROM orders WHERE id=? AND last_event_id=?").bind(event, current.status, now, order.id, event),
       ])
@@ -327,14 +373,15 @@ export async function rechargeAction(requestMessage: Request, env: Env, order: O
       if (!attempt || attempt.id !== data.key) throw new ApiError('订单已更新，请刷新重试。', 409)
     }
     if (!attempt) throw new ApiError('未找到充值提交记录。', 409)
-    try { await applyRedemption(env, ready, attempt, await request<Redemption>(env, '/redemptions', raw, 'recharge:' + attempt.id)) }
+    try { await applyRedemption(env, ready, attempt, await request<Redemption>(env, '/redemptions', raw, 'recharge:' + attempt.id), mode) }
     catch (e) {
       // A definitive API rejection permits a new attempt. A transport error,
       // conflict, or malformed reply remains unknown and retains the original key.
-      if (e instanceof RechargeError && !e.retryable && ['invalid_request', 'session_invalid', 'invalid_credential'].includes(e.code)) {
-        await env.INTEREST_DB.prepare("UPDATE recharge_redemptions SET status='rejected',failure_code='request_rejected' WHERE id=? AND status='unknown'").bind(attempt.id).run()
+      if (e instanceof RechargeError && e.definiteCredentialRejection) {
+        const code = e.failureDetail ?? 'request_rejected'
+        await env.INTEREST_DB.prepare("UPDATE recharge_redemptions SET status='rejected',failure_code=? WHERE id=? AND status='unknown'").bind(code, attempt.id).run()
         const rejectedOrder = await getOrder(env, order.id)
-        if (!rejectedOrder.refund_hold && !rejectedOrder.refunded_cents && rejectedOrder.status === 'processing') await change(env, rejectedOrder, { status: 'failed' }, 'system', 'recharge-rejected', failureMessages.request_rejected)
+        if (!rejectedOrder.refund_hold && !rejectedOrder.refunded_cents && rejectedOrder.status === 'processing') await change(env, rejectedOrder, { status: 'failed' }, 'system', 'recharge-rejected', failureMessages[code])
       }
       throw e
     }

@@ -1,5 +1,5 @@
 import { ApiError, hash, type Env } from '../platform.ts'
-import { publicCode, requestMessages } from './errors.ts'
+import { failureMessages, publicCode, requestMessages, specificRechargeFailure } from './errors.ts'
 
 const encoder = new TextEncoder()
 const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, '0')).join('')
@@ -51,10 +51,14 @@ export class RechargeError extends ApiError {
   requestId: string | null
   retryAfter: number | null
   upstreamStatus: number | null
-  constructor(code: string, retryable: boolean, details: { requestId?: string | null; retryAfter?: number | null; upstreamStatus?: number } = {}) {
-    super(publicCode(code, requestMessages) ? requestMessages[code] : '充值服务暂未完成请求，请刷新订单核对后重试。', 503)
+  failureDetail: string | null
+  definiteCredentialRejection: boolean
+  constructor(code: string, retryable: boolean, details: { requestId?: string | null; retryAfter?: number | null; upstreamStatus?: number; failureDetail?: string | null; definiteCredentialRejection?: boolean } = {}) {
+    super((details.failureDetail ? failureMessages[details.failureDetail] : null) ?? (publicCode(code, requestMessages) ? requestMessages[code] : '充值服务暂未完成请求，请刷新订单核对后重试。'), 503)
     this.code = code; this.retryable = retryable
     this.requestId = details.requestId ?? null; this.retryAfter = details.retryAfter ?? null; this.upstreamStatus = details.upstreamStatus ?? null
+    this.failureDetail = details.failureDetail ?? null
+    this.definiteCredentialRejection = details.definiteCredentialRejection === true
   }
 }
 function retryDelay(value: string | null) {
@@ -80,9 +84,18 @@ export async function request<T>(env: Env, path: string, rawBody?: string, idemp
   catch { throw new RechargeError('transport_unknown', true) }
   if (response.status >= 300 && response.status < 400) throw new RechargeError('redirect_rejected', true)
   const details = { requestId: requestId(response.headers.get('X-Request-Id')), retryAfter: retryDelay(response.headers.get('Retry-After')), upstreamStatus: response.status }
-  let result: { data?: T; error?: { code?: unknown; retryable?: unknown; request_id?: unknown } }
+  let result: { data?: T; error?: { code?: unknown; retryable?: unknown; request_id?: unknown; message?: unknown } }
   try { result = JSON.parse(await readRaw(response, 256000)) } catch { throw new RechargeError('invalid_response', true, details) }
-  if (!response.ok) throw new RechargeError(publicCode(result?.error?.code, requestMessages) ?? 'request_rejected', result?.error?.retryable === true || [429, 502, 503, 504].includes(response.status), { ...details, requestId: details.requestId ?? requestId(result?.error?.request_id) })
+  if (!response.ok) {
+    const error = result?.error
+    const code = publicCode(error?.code, requestMessages) ?? 'request_rejected'
+    const definiteCredentialRejection = [400, 422].includes(response.status) && ['invalid_request', 'session_invalid', 'invalid_credential'].includes(code) && error?.retryable !== true && Object.keys(result).every(key => ['error', 'request_id'].includes(key)) && Object.keys(error ?? {}).every(key => ['code', 'message', 'request_id', 'retryable'].includes(key))
+    throw new RechargeError(code, error?.retryable === true || response.status === 429 || response.status >= 500, {
+      ...details, requestId: details.requestId ?? requestId(error?.request_id),
+      definiteCredentialRejection,
+      failureDetail: definiteCredentialRejection ? specificRechargeFailure(error?.code, error?.message) : null,
+    })
+  }
   if (!result || result.error || result.data == null) throw new RechargeError('invalid_response', true, details)
   return result.data
 }
@@ -137,8 +150,9 @@ export async function authorizedProduct(env: Env, code: string) {
   return Number(price)
 }
 export type Product = { product_code: string; supply_price: string; max_sale_price: string; currency: string; max_quantity: number; available: boolean; delivery_modes: string[] }
-export type RemoteOrder = { order_id: string; merchant_order_no: string; product_code: string; quantity: number; currency: string; collection_mode: string; payment_scope: string; delivery_mode: string; payment_channel?: string; sale_amount: string; supply_amount: string; merchant_margin: string; refunded_amount?: string; payment_status: string; fulfillment_status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | null; qr_payload: string | null; expires_at: string }
-export type Redemption = { redemption_id: string; order_id: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; failure_code: string | null; error_category?: string | null; result_code?: string | null; fallback_recharge_available: boolean; account_email_masked: string | null; finished_at: string | null; progress_stage?: string | null; progress_version?: number; progress_updated_at?: string | null; attempt_no?: number; retry_allowed?: boolean; next_action?: 'wait' | 'resubmit' | 'none'; recovery_action?: 'retry' | 'refund' | null; paused?: boolean }
+export type FulfillmentMode = 'cdk' | 'direct'
+export type RemoteOrder = { order_id: string; merchant_order_no: string; product_code: string; quantity: number; currency: string; collection_mode: string; payment_scope: string; delivery_mode: string; payment_channel?: string; sale_amount: string; supply_amount: string; merchant_margin: string; refunded_amount?: string; payment_status: string; fulfillment_mode?: FulfillmentMode | null; fulfillment_status?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | null; fulfillment_paused?: boolean; retry_allowed?: boolean; qr_payload: string | null; expires_at: string }
+export type Redemption = { redemption_id: string; order_id: string; status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'; failure_code: string | null; message?: string | null; error_category?: string | null; result_code?: string | null; fallback_recharge_available?: boolean; account_email_masked: string | null; finished_at: string | null; progress_stage?: string | null; progress_version?: number; progress_updated_at?: string | null; attempt_no?: number; retry_allowed?: boolean; next_action?: 'wait' | 'resubmit' | 'none'; recovery_action?: 'retry' | 'refund' | null; paused?: boolean }
 export type RemoteRefund = { refund_id: string; order_id: string; merchant_refund_no: string; amount: string; status: string }
 export function moneyCents(value: unknown) {
   if (typeof value !== 'string' || !/^(0|[1-9]\d{0,7})\.\d{2}$/.test(value)) throw new Error('Invalid supplier money')
