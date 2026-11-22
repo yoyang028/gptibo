@@ -23,6 +23,7 @@ const email='member-local-fixture@gmail.com',adminEmail='admin@example.invalid',
 const webhookSecret='local-member-webhook-only',mail=[],orders=new Map(),writes=[]
 const result={localOnly:true,realPayments:0,realUpstreamRequests:0,checks:[],pageErrors:[],externalRequests:[]}
 const record=name=>{result.checks.push(name);console.log(JSON.stringify({passed:true,name}))}
+const rightOnSameLine=(left,right)=>left&&right&&left.x+left.width<=right.x&&left.y<right.y+right.height&&right.y<left.y+left.height
 const wrapped=data=>Response.json({data})
 const outbound=async request=>{
  const u=new URL(request.url),raw=await request.text(),data=raw?JSON.parse(raw):{}
@@ -215,8 +216,13 @@ try{
  await campaign.getByText('每邀 1 位有效新客得 10 元，攒够奖励可全额抵扣 1 个月 Plus。',{exact:true}).waitFor()
  assert.equal(await campaign.getAttribute('href'),invitePath+'/account')
  assert.equal(await sourceNotice.count(),0)
+ const homeTitle=guest.locator('.store-intro h1'),homeSupport=guest.locator('.store-intro-support')
+ const [homeTitleBox,campaignBox,supportBox]=await Promise.all([homeTitle.boundingBox(),campaign.boundingBox(),homeSupport.boundingBox()])
+ assert(rightOnSameLine(homeTitleBox,campaignBox)&&rightOnSameLine(campaignBox,supportBox),'Homepage shows the activity next to the heading and just before support')
  await guest.screenshot({path:path.join(evidence,'storefront-invitation-home-desktop.png')})
  await guest.setViewportSize({width:390,height:844})
+ const [mobileTitle,mobileCampaign]=await Promise.all([homeTitle.boundingBox(),campaign.boundingBox()])
+ assert(mobileTitle&&mobileCampaign&&mobileCampaign.y>=mobileTitle.y+mobileTitle.height,'Narrow screens stack the activity under the homepage heading')
  assert(await guest.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
  await guest.screenshot({path:path.join(evidence,'storefront-invitation-home-mobile.png')})
  await guest.setViewportSize({width:1440,height:1000})
@@ -230,15 +236,18 @@ try{
  assert.equal(new URL(guest.url()).pathname,invitePath)
  await campaign.waitFor()
  assert.equal(await sourceNotice.count(),0)
- record('homepage shows a compact referral campaign on desktop and mobile, and its keyboard link preserves the referral address in the member center')
+ record('homepage activity sits between the heading and support on desktop, adapts on mobile and preserves referral attribution in the member center')
  await guest.goto(inviteUrl+'/product/chatgpt')
  await sourceNotice.getByText('已收到好友邀请',{exact:true}).waitFor()
  await sourceNotice.getByText('符合新客条件，首单可选减 5 元。',{exact:true}).waitFor()
- assert.equal(await guest.locator('.detail-intro .member-invitation-notice').count(),1)
+ assert.equal(await guest.locator('.detail-intro-title .member-invitation-notice').count(),1)
+ const gptTitle=guest.getByRole('heading',{name:'ChatGPT',level:1,exact:true})
+ assert(rightOnSameLine(await gptTitle.boundingBox(),await sourceNotice.boundingBox()),'ChatGPT invitation offer sits on the same line to the right of the title')
  assert.equal(await campaign.count(),0)
  assert.equal(new URL(guest.url()).pathname,invitePath+'/product/chatgpt')
  await guest.screenshot({path:path.join(evidence,'storefront-invitation-product-desktop.png')})
  await guest.setViewportSize({width:390,height:844})
+ assert(rightOnSameLine(await gptTitle.boundingBox(),await sourceNotice.boundingBox()),'The invitation offer stays beside ChatGPT and its text wraps on mobile')
  assert(await guest.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
  await guest.screenshot({path:path.join(evidence,'storefront-invitation-product-mobile.png')})
  await guest.setViewportSize({width:1440,height:1000})
@@ -247,7 +256,7 @@ try{
  await forwarded.getByRole('status',{name:'好友邀请优惠',exact:true}).waitFor()
  assert.equal(await forwarded.evaluate(()=>localStorage.getItem('scholai.invitation.v1:store-3')),code)
  await forwardedContext.close()
- record('only the referred ChatGPT product shows the compact ¥5 notice and forwarding retains the inviter')
+ record('only the referred ChatGPT product shows the compact ¥5 notice beside its title on desktop and mobile, and forwarding retains the inviter')
  const ordinaryContext=await context(),ordinary=await ordinaryContext.newPage()
  await ordinary.goto(origin+'/')
  const plainCampaign=ordinary.getByRole('link',{name:/邀请好友，Plus 免费用/})
