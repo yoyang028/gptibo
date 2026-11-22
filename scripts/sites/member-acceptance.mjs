@@ -213,6 +213,7 @@ try{
  const sourceNotice=guest.getByRole('status',{name:'好友邀请优惠',exact:true})
  const campaign=guest.getByRole('link',{name:/邀请好友，\s*Plus 免费用.*查看邀请活动/})
  await campaign.waitFor()
+ assert.equal(await campaign.locator('.invitation-campaign-action svg').count(),0)
  await campaign.getByText('每邀 1 位有效新客得 10 元，攒够奖励可全额抵扣 1 个月 Plus。',{exact:true}).waitFor()
  assert.equal(await campaign.getAttribute('href'),invitePath+'/account')
  assert.equal(await sourceNotice.count(),0)

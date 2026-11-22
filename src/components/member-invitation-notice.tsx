@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { cn } from 'cn'
-import { ArrowRight, CircleCheck, Gift } from 'lucide-react'
+import { CircleCheck, Gift } from 'lucide-react'
 import { INVITATION_REWARD_CENTS, NEWCOMER_DISCOUNT_CENTS } from '../../shared/member-promotions'
 import { invitationSnapshot, subscribeInvitation } from '@/lib/member-invitation'
 import { useStorefrontI18n } from '@/lib/storefront-i18n'
@@ -22,7 +22,7 @@ export function MemberInvitationCampaign({ onOpen }: { onOpen: () => void }) {
         <span>{t('每邀 1 位有效新客得 {reward} 元，', { reward: INVITATION_REWARD_CENTS / 100 })}</span><span>{t('攒够奖励可全额抵扣 1 个月 Plus。')}</span>
       </p>
     </div>
-    <span className={cn(buttonVariants({ variant: 'outline', size: 'sm', className: 'invitation-campaign-action' }))} id="invitation-campaign-action">{t('查看邀请活动')}<ArrowRight data-icon="inline-end" aria-hidden="true" /></span>
+    <span className={cn(buttonVariants({ variant: 'outline', size: 'sm', className: 'invitation-campaign-action' }))} id="invitation-campaign-action">{t('查看邀请活动')}</span>
   </a>
 }
 
