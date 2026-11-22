@@ -33,7 +33,7 @@ function ReconciliationPage({ revision, store }: { revision: number; store: stri
     try { await api(`/api/admin/member-ops/reconciliation?store=${encodeURIComponent(store)}`, { action, id: orderId, note }); setRefresh(v => v + 1); setMessage(action === 'scan' ? '已核对一批到期订单，其余由定时任务继续核对。' : '已完成，处理记录已保存。') }
     catch (e) { setMessage(errorMessage(e)) } finally { setBusy(false) }
   }
-  return <section className="admin-panel member-operations-panel"><h2>异常订单对账</h2><p>核对通用店 ChatGPT 订单与原上游订单。自动核对只查询；状态同步沿用原订单，不新建采购、扣款或人工发券。等待补差或审核单单独展示。</p>
+  return <section className="admin-panel member-operations-panel"><h2>异常订单对账</h2><p>核对当前店铺的 ChatGPT 订单与原上游订单。自动核对只查询，状态同步沿用原订单。等待补差和待审核的订单单独展示。</p>
     <div className="admin-metrics">{data?.counts.map(c => <div key={c.state}><span>{labels[c.state]}</span><strong>{c.count}</strong></div>)}</div>
     <form className="admin-filters" onSubmit={e => { e.preventDefault(); void act('check') }}><Input aria-label="核对订单号" value={id} onChange={e => setId(e.target.value)} placeholder="输入本店原订单号" /><Button disabled={busy || !id.trim()} type="submit">核对指定订单</Button><Button variant="outline" type="button" disabled={busy} onClick={() => void act('scan')}>核对一批订单</Button><label>显示 <select aria-label="对账筛选" value={state} onChange={e => { setState(e.target.value); setPage(1) }}>{[['issues','差异与失败'],['all','全部'],['expected','正常等待'],['matched','一致']].map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></form>
     {message && <p role="status">{message}</p>}<Feedback error={error} loading={loading} data={data} />
