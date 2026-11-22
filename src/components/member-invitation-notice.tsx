@@ -1,9 +1,11 @@
 import { useSyncExternalStore } from 'react'
-import { ArrowRight, Gift, TicketPercent } from 'lucide-react'
+import { cn } from 'cn'
+import { ArrowRight, CircleCheck, Gift } from 'lucide-react'
 import { INVITATION_REWARD_CENTS, NEWCOMER_DISCOUNT_CENTS } from '../../shared/member-promotions'
 import { invitationSnapshot, subscribeInvitation } from '@/lib/member-invitation'
 import { useStorefrontI18n } from '@/lib/storefront-i18n'
 import { storefrontHref } from '@/lib/storefront-routing'
+import { buttonVariants } from '@/components/ui/button'
 import './member-invitation-notice.css'
 
 export function MemberInvitationCampaign({ onOpen }: { onOpen: () => void }) {
@@ -13,14 +15,14 @@ export function MemberInvitationCampaign({ onOpen }: { onOpen: () => void }) {
     event.preventDefault()
     onOpen()
   }}>
-    <span className="invitation-campaign-icon" aria-hidden="true"><Gift size={18} strokeWidth={1.75} /></span>
+    <Gift size={18} aria-hidden="true" />
     <div className="invitation-campaign-copy">
-      <h2 id="invitation-campaign-title">{t('邀请好友，')}<strong>{t('Plus 免费用')}</strong></h2>
+      <h2 id="invitation-campaign-title">{t('邀请好友，Plus 免费用')}</h2>
       <p id="invitation-campaign-description">
         <span>{t('每邀 1 位有效新客得 {reward} 元，', { reward: INVITATION_REWARD_CENTS / 100 })}</span><span>{t('攒够奖励可全额抵扣 1 个月 Plus。')}</span>
       </p>
     </div>
-    <span className="invitation-campaign-action" id="invitation-campaign-action">{t('查看邀请活动')}<ArrowRight size={15} aria-hidden="true" /></span>
+    <span className={cn(buttonVariants({ variant: 'outline', size: 'sm', className: 'invitation-campaign-action' }))} id="invitation-campaign-action">{t('查看邀请活动')}<ArrowRight data-icon="inline-end" aria-hidden="true" /></span>
   </a>
 }
 
@@ -29,7 +31,7 @@ export function MemberInvitationNotice() {
   const snapshot = useSyncExternalStore(subscribeInvitation, invitationSnapshot, () => '')
   if (!snapshot) return null
   return <div className="member-invitation-notice" role="status" aria-label={t('好友邀请优惠')}>
-    <span className="invitation-notice-icon" aria-hidden="true"><TicketPercent size={13} strokeWidth={1.8} /></span>
+    <CircleCheck size={15} aria-hidden="true" />
     <div className="member-invitation-notice-message">
       <strong>{t('已收到好友邀请')}</strong>
       <span>{t('符合新客条件，首单可选减 {discount} 元。', { discount: NEWCOMER_DISCOUNT_CENTS / 100 })}</span>
