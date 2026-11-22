@@ -64,7 +64,7 @@ const views = [
   { id: 'interest', label: '上线提醒', icon: Mail },
   { id: 'contacts', label: '联系方式', icon: MessageCircle }, { id: 'integrations', label: '服务接入', icon: Plug }, { id: 'partners', label: '代理管理', icon: Users }, { id: 'visitors', label: '访客统计', icon: ChartNoAxesCombined },
 ]
-type Session = { membershipEnabled?: boolean; authenticated: boolean; configured: boolean; mailReady: boolean; username?: string }
+type Session = { membershipEnabled?: boolean; membershipStores?: { id: string; name: string }[]; authenticated: boolean; configured: boolean; mailReady: boolean; username?: string }
 type Overview = { stats: { total: number; pending: number; active: number; completed: number; refund_amount: number; paid_amount: number }; interest: { total: number }; recent: ServerOrder[] }
 type Detail = { order: ServerOrder & { platformStatus: PlatformOrderStatus | null; rechargeCredential?: RechargeCredential }; events: { id: string; actor: string; action: string; note: string; to_status: string; created_at: number }[] }
 function SettlementBadge({ status }: { status?: 'pending' | 'paid' | null }) {
@@ -222,7 +222,7 @@ export default function Admin() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   type Identity = { shop: { id: string; name: string; brandName: string; logo: string }; storefront_url?: string }
   const {data: hostIdentity} = useResource<Identity>('/api/catalog?identity=1',revision)
-  const storeId = selectedStore || (view === 'members' ? 'store-3' : hostIdentity?.shop.id || 'platform')
+  const storeId = selectedStore || hostIdentity?.shop.id || 'platform'
   const {data: selectedIdentity} = useResource<Identity>(session?.authenticated ? '/api/admin/my-shop/identity?store='+encodeURIComponent(storeId) : '/api/catalog?identity=1',revision)
   const shopIdentity = selectedIdentity || hostIdentity
   const shopName = shopIdentity?.shop.brandName || '商店'
@@ -294,7 +294,7 @@ export default function Admin() {
         {view === 'accounting' && <AccountingPage revision={revision} />}
         {view === 'invoices' && <InvoiceWorkspace admin revision={revision} />}
         {view === 'customers' && <CustomerManagement admin revision={revision} />}
-        {view === 'members' && <MembersPage revision={revision} />}
+        {view === 'members' && (selectedStore || hostIdentity ? <MembersPage revision={revision} store={storeId} stores={session.membershipStores ?? (session.membershipEnabled ? [{ id: 'store-3', name: 'AI星球' }] : [])} onStoreChange={selectStore} /> : <p role="status">正在读取当前店铺…</p>)}
         <footer className="admin-footer"><Check size={13} />订单与操作记录可追溯</footer>
       </main>
     </div>

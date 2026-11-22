@@ -3,19 +3,22 @@ import { ownerShop } from './owner-shop.ts'
 import { ownerStorefrontLinks } from './storefront-hosts.ts'
 import { operationEvent } from './member-reconciliation.ts'
 import { shopBrand, shopMailFrom } from './store-branding.ts'
+import { memberScope, membershipConfigured, platformMemberHost } from './member-scope.ts'
 
 export const NOTIFICATION_RETRY_WINDOW = 23 * 3600000
 type Notification = { id: string; kind: string; target_id: string; member_id: string | null; mail_body: string; status: string; attempts: number; first_attempt_at: number | null; lease_token: string | null; version: number }
 const escape = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 export async function enqueueMemberNotification(env: Env, eventKey: string, kind: string, target: string, memberId: string | null, subject: string, text: string) {
-  const db = env.INTEREST_DB, id = 'mn_' + await hash(eventKey)
+  const store = memberScope(env), db = env.INTEREST_DB
+  const id = 'mn_' + await hash(store === 'platform' ? `${store}:${eventKey}` : eventKey)
   if (await db.prepare('SELECT id FROM member_notifications WHERE id=?').bind(id).first()) return id
   const to = memberId ? (await db.prepare('SELECT email FROM member_s3_user WHERE id=? AND emailVerified=1').bind(memberId).first<{ email: string }>())?.email : env.ADMIN_EMAIL
   if (!to || !env.RESEND_FROM || !/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(to)) return null
-  const shop = await ownerShop(env, 'store-3'), name = shopBrand(shop)
+  const shop = await ownerShop(env, store), name = shopBrand(shop)
   const fallback = env.RECHARGE_NOTIFY_URL ? new URL(env.RECHARGE_NOTIFY_URL).origin : 'https://shop.example.invalid'
-  const origin = ownerStorefrontLinks(env, fallback, 'store-3', '').storefront_url
-  const link = memberId ? new URL('/account', origin).href : new URL('/admin?view=members&store=store-3', origin).href
+  const host = store === 'platform' ? platformMemberHost(env) : undefined
+  const origin = ownerStorefrontLinks(env, host ? `https://${host}` : fallback, store, '').storefront_url
+  const link = memberId ? new URL('/account', origin).href : new URL(`/admin?view=members&store=${store}`, origin).href
   const message = { from: shopMailFrom(env.RESEND_FROM, shop), to: [to], subject: `${name} · ${subject}`, text: text + '\n\n查看详情：' + link,
     html: `<main style="font-family:Arial,sans-serif;line-height:1.8;max-width:560px;margin:40px auto"><h1>${escape(name)}</h1><h2>${escape(subject)}</h2><p>${escape(text).replaceAll('\n', '<br>')}</p><p><a href="${escape(link)}">查看详情</a></p></main>` }
   await db.prepare('INSERT INTO member_notifications(id,event_key,kind,target_id,member_id,mail_body,created_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(event_key) DO NOTHING')
@@ -23,18 +26,20 @@ export async function enqueueMemberNotification(env: Env, eventKey: string, kind
   return id
 }
 export async function collectMemberNotifications(env: Env, limit = 1) {
-  const db = env.INTEREST_DB, now = Date.now()
+  const db = env.INTEREST_DB, now = Date.now(), store = memberScope(env)
   const rows = (await db.prepare(`SELECT 'review:'||p.order_id event_key,'review' kind,p.order_id target_id,NULL member_id FROM member_order_promotions p JOIN orders o ON o.id=p.order_id
     WHERE p.review_status='required' AND o.status<>'cancelled' AND p.allocation_status NOT IN ('released','restored') AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='review:'||p.order_id) LIMIT 20`).all<{ event_key: string; kind: string; target_id: string; member_id: string | null }>()).results
   rows.push(...(await db.prepare(`SELECT 'procurement:'||o.id event_key,'procurement' kind,o.id target_id,NULL member_id FROM orders o JOIN recharge_orders r ON r.order_id=o.id
-    WHERE o.owner_store_id='store-3' AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0 AND o.status='failed'
-      AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='procurement:'||o.id) LIMIT 20`).all<(typeof rows)[number]>()).results)
+    WHERE o.owner_store_id=? AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0 AND o.status='failed'
+      AND (?<>'platform' OR o.created_at>=(SELECT enabled_since FROM member_notification_settings WHERE id=1))
+      AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='procurement:'||o.id) LIMIT 20`).bind(store, store).all<(typeof rows)[number]>()).results)
   rows.push(...(await db.prepare(`SELECT 'reconciliation:'||c.order_id||':'||c.fingerprint event_key,'reconciliation' kind,c.order_id target_id,NULL member_id FROM member_order_reconciliations c
     WHERE c.state IN ('difference','error') AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='reconciliation:'||c.order_id||':'||c.fingerprint) LIMIT 20`).all<(typeof rows)[number]>()).results)
   rows.push(...(await db.prepare(`SELECT 'backlog:'||o.id event_key,'backlog' kind,o.id target_id,NULL member_id FROM orders o
-    WHERE o.owner_store_id='store-3' AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0 AND o.status NOT IN ('success','cancelled','failed')
+    WHERE o.owner_store_id=? AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0 AND o.status NOT IN ('success','cancelled','failed')
+      AND (?<>'platform' OR o.created_at>=(SELECT enabled_since FROM member_notification_settings WHERE id=1))
       AND o.created_at<? AND (o.payment_status='paid' OR EXISTS(SELECT 1 FROM member_order_promotions p WHERE p.order_id=o.id AND (p.reward_cents>0 OR p.procurement_status='awaiting_supplier')))
-      AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='backlog:'||o.id) LIMIT 20`).bind(now - 24 * 3600000).all<(typeof rows)[number]>()).results)
+      AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='backlog:'||o.id) LIMIT 20`).bind(store, store, now - 24 * 3600000).all<(typeof rows)[number]>()).results)
   rows.push(...(await db.prepare(`SELECT 'active:'||g.id event_key,'reward_active' kind,g.id target_id,g.member_id FROM member_reward_grants g JOIN member_reward_ledger l ON l.grant_id=g.id AND l.kind='activate'
     WHERE g.status='active' AND g.expires_at>? AND l.created_at>=(SELECT enabled_since FROM member_notification_settings WHERE id=1)
       AND NOT EXISTS(SELECT 1 FROM member_notifications n WHERE n.event_key='active:'||g.id) ORDER BY l.created_at LIMIT 20`).bind(now).all<(typeof rows)[number]>()).results)
@@ -116,7 +121,7 @@ export async function retryMemberNotification(env: Env, id: string, version: num
   if (!await db.prepare('SELECT id FROM member_operation_events WHERE id=?').bind(event).first()) throw new ApiError('通知已更新，请刷新。', 409)
 }
 export async function maintainMemberNotifications(env: Env) {
-  if (env.MEMBERSHIP_ENABLED === undefined) return
+  if (!membershipConfigured(env)) return
   await collectMemberNotifications(env)
   const db = env.INTEREST_DB, now = Date.now()
   await db.prepare("UPDATE member_notifications SET status='unknown',last_error='超过安全重试时限，需核对邮件服务记录',version=version+1 WHERE status IN ('retry','sending') AND first_attempt_at<=? AND lease_until<=?").bind(now - NOTIFICATION_RETRY_WINDOW, now).run()

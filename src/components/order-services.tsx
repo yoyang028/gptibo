@@ -1,4 +1,4 @@
-import type { PromotionSelection } from '../../shared/member-promotions'
+import { INVITATION_PLANS, type MemberStoreId, type PromotionSelection } from '../../shared/member-promotions'
 import { PromotionChooser, type PromotionState } from './member-promotion'
 import { storefrontShopSlug } from '@/lib/storefront-routing'
 import { useAuthVerification } from './use-auth-verification'
@@ -25,7 +25,7 @@ import '@/styles/order-services.css'
 
 import { refundCaseLabel, refundLabel, type RefundCase, type RefundEvent } from '@/lib/refunds'
 
-export function PurchaseEmail({ membershipEnabled = false, couponAvailable = false, shopSlug, purchasePlan, plan, price, paymentMethods, initialEmail, busy, error, inputRef, onSubmit }: { membershipEnabled?: boolean; couponAvailable?: boolean; shopSlug?: string; purchasePlan?: string; plan?: string; price: number; paymentMethods?: PaymentMethodOption[]; initialEmail?: string | null; busy: boolean; error: string; inputRef: RefObject<HTMLInputElement | null>; onSubmit: (email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, couponCode?: string, couponPrice?: number, promotion?: PromotionSelection) => Promise<void> }) {
+export function PurchaseEmail({ memberStore, couponAvailable = false, shopSlug, purchasePlan, plan, price, paymentMethods, initialEmail, busy, error, inputRef, onSubmit }: { memberStore?: MemberStoreId; couponAvailable?: boolean; shopSlug?: string; purchasePlan?: string; plan?: string; price: number; paymentMethods?: PaymentMethodOption[]; initialEmail?: string | null; busy: boolean; error: string; inputRef: RefObject<HTMLInputElement | null>; onSubmit: (email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, couponCode?: string, couponPrice?: number, promotion?: PromotionSelection) => Promise<void> }) {
   const [verification, setVerification] = useState({ ready: false, token: '' })
   const [verificationRevision, setVerificationRevision] = useState(0)
   const [email, setEmail] = useState(initialEmail ?? '')
@@ -35,13 +35,13 @@ export function PurchaseEmail({ membershipEnabled = false, couponAvailable = fal
   const [couponBusy, setCouponBusy] = useState(false)
   const [couponError, setCouponError] = useState('')
   const appliedCoupon = showCoupon && coupon && coupon.code === couponCode.trim().toUpperCase() && coupon.email === email.trim().toLowerCase() && coupon.listPriceCents === Math.round(price * 100) ? coupon : null
-  const activityEnabled = membershipEnabled && ['plus','pro-5x','pro-20x','pro-25x'].includes(purchasePlan ?? '')
+  const activityStore = (INVITATION_PLANS as readonly string[]).includes(purchasePlan ?? '') ? memberStore : undefined
   const [activity,setActivity] = useState<PromotionState>({key:'',quote:null})
   const activityKey = JSON.stringify([email.trim().toLowerCase(), purchasePlan, price, appliedCoupon?.code ?? ''])
-  const currentActivity = activityEnabled && activity.key === activityKey ? activity : null
+  const currentActivity = activityStore && activity.key === activityKey ? activity : null
   const activityQuote = currentActivity?.quote
   const fallbackPromotion = currentActivity?.fallback
-  const activityBlocked = activityEnabled && !activityQuote && fallbackPromotion === undefined
+  const activityBlocked = !!activityStore && !activityQuote && fallbackPromotion === undefined
   const payablePrice = activityQuote ? activityQuote.cashCents / 100 : appliedCoupon ? appliedCoupon.priceCents / 100 : price
   const activityHeld = activityQuote && (activityQuote.reviewStatus === 'required' || activityQuote.procurementStatus === 'awaiting_supplier')
   const purchaseLabel = activityHeld ? '确认优惠订单' : fallbackPromotion !== undefined ? '按原价继续付款' : '继续付款'
@@ -100,7 +100,7 @@ export function PurchaseEmail({ membershipEnabled = false, couponAvailable = fal
     <EmailAutocomplete onPointerDown={event => event.currentTarget.focus({ preventScroll: true })} ref={inputRef} id="purchase-email" required maxLength={254} aria-invalid={Boolean(validation)} aria-describedby="purchase-email-hint" onBlur={() => setTouched(true)} value={email} onValueChange={setEmail} disabled={busy} placeholder="you@qq.com" />
     <div className="email-validation" id="purchase-email-hint">{validation ? <p role="alert">{validation}</p> : <p>{plan ? '用于接收通知、找回订单。' : '换设备后，可用这个邮箱验证并找回订单。'}</p>}</div>
     {showCoupon && <div className="purchase-coupon"><label htmlFor="purchase-coupon">优惠码 <span>选填</span></label><div className="purchase-coupon-controls"><Input id="purchase-coupon" value={couponCode} maxLength={32} disabled={busy || couponBusy} onChange={e => {setCouponCode(e.target.value);setCoupon(null);setCouponError('')}} placeholder="输入本店商品优惠码" /><Button type="button" variant="outline" disabled={busy || couponBusy || !couponCode.trim() || Boolean(problem)} onClick={() => void applyCoupon()}>{couponBusy ? '校验中…' : '应用'}</Button></div>{couponError && <p role="alert">{couponError}</p>}{appliedCoupon && <p role="status">已优惠 {money(appliedCoupon.discountCents)}，商品应付 {money(appliedCoupon.priceCents)}</p>}</div>}
-    {activityEnabled && <PromotionChooser email={email} plan={purchasePlan!} price={price} couponCode={appliedCoupon?.code ?? ''} quoteKey={activityKey} onChange={setActivity} />}
+    {activityStore && <PromotionChooser store={activityStore} email={email} plan={purchasePlan!} price={price} couponCode={appliedCoupon?.code ?? ''} quoteKey={activityKey} onChange={setActivity} />}
     {paymentMethods !== undefined && <PaymentMethodSelector methods={paymentMethods} value={method} busy={busy || checking} onChange={setSelectedMethod} />}
     {paymentMethods !== undefined && method && <dl className="purchase-fee-summary" aria-live="polite"><div><dt>商品金额</dt><dd>¥{payablePrice.toFixed(2)}</dd></div><div><dt>平台手续费（{feeBps / 100}%）</dt><dd>¥{(feeCents / 100).toFixed(2)}</dd></div><div><dt>实付金额</dt><dd>¥{((Math.round(payablePrice * 100) + feeCents) / 100).toFixed(2)}</dd></div></dl>}
     <OrderVerification key={verificationRevision} onChange={setVerification} />

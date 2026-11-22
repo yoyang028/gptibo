@@ -32,19 +32,19 @@ export async function memberFixture(t: TestContext) {
     body: data === undefined ? undefined : JSON.stringify(data),
   }), f.env)
   const cookieOf = (r: Response) => r.headers.getSetCookie().map(c => c.split(';')[0]).join('; ')
-  const buyer = async () => cookieOf(await call('/api/orders/client', {}))
+  const buyer = async (at = origin) => cookieOf(await call('/api/orders/client', {}, '', at))
   const password = 'Safe-fixture-password-123!'
-  async function register(email: string) {
-    const r = await call('/api/member/auth/sign-up/email', { email, password, callbackURL: origin + '/account' })
+  async function register(email: string, at = origin, selectedPassword = password) {
+    const r = await call('/api/member/auth/sign-up/email', { email, password: selectedPassword, callbackURL: at + '/account' }, '', at)
     if (r.status !== 200) throw new Error('signup: ' + r.status + ' ' + await r.text())
     const message = sent.findLast(m => m.to[0] === email)
     if (!message) throw new Error('No verification mail')
     const otp = message.text.match(/验证码：(\d{6})/)?.[1]
     if (!otp) throw new Error('No verification code')
-    const response = await call('/api/member/auth/email-otp/verify-email', { email, otp })
+    const response = await call('/api/member/auth/email-otp/verify-email', { email, otp }, '', at)
     if (response.status !== 200) throw new Error('verify: ' + response.status + ' ' + await response.text())
-    const cookie = cookieOf(response) + '; ' + await buyer()
-    const info = await (await call('/api/member/session', undefined, cookie)).json()
+    const cookie = cookieOf(response) + '; ' + await buyer(at)
+    const info = await (await call('/api/member/session', undefined, cookie, at)).json()
     if (!info.member) throw new Error('No verified member session: ' + JSON.stringify(info))
     return { cookie, info, id: info.member.id as string }
   }

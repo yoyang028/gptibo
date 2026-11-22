@@ -133,8 +133,9 @@ async function applyRemoteOrder(env: Env, row: SupplierOrder, remote: RemoteOrde
 }
 async function ensureRemote(env: Env, row: SupplierOrder) {
   if (row.remote_id) return row
-  await assertPromotionReady(env, row.order_id)
-  const order = await expireRechargeOrder(env, await getOrder(env, row.order_id))
+  const current = await getOrder(env, row.order_id)
+  await assertPromotionReady(env, row.order_id, current)
+  const order = await expireRechargeOrder(env, current)
   // Recover only an already attempted idempotent write after timeout; no new payment entrance.
   const recovering = !!row.attempted_at && order.status === 'cancelled' && paymentDeadline(order.created_at, row.expires_at) <= Date.now()
   if (order.mode !== 'live' || order.redemption_blocked || order.refund_hold || order.refunded_cents || (order.status !== 'pending' && !recovering)) throw new ApiError('当前订单不能创建支付。', 409)
@@ -322,7 +323,7 @@ export async function rechargeAction(requestMessage: Request, env: Env, order: O
   await locked(env, row, async ready => {
     const [current, previousAttempt] = await Promise.all([getOrder(env, order.id), latestAttempt(env, order.id)])
     let attempt = previousAttempt
-    await assertPromotionReady(env, order.id)
+    await assertPromotionReady(env, order.id, current)
     assertRechargeReady(current, ready)
     const payload = (value: UpstreamCredential, oldRetry = false) => JSON.stringify({ mode: 'auto_recharge', order_id: ready.remote_id, credential: value, customer_confirmed_email: true, ...(oldRetry ? { retry_confirmation: true } : {}) })
     let raw = ''

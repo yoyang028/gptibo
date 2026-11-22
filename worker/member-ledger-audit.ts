@@ -1,6 +1,7 @@
 import { ApiError, hash, type Env } from './platform.ts'
 import { twoCalendarMonths } from '../shared/member-promotions.ts'
 import { enqueueMemberNotification } from './member-notifications.ts'
+import { memberScope, membershipConfigured } from './member-scope.ts'
 
 type Grant = { id: string; member_id: string; amount_cents: number; remaining_cents: number; reserved_cents: number; status: string; eligible_at: number; delivered_at: number; expires_at: number | null; version: number; source_valid: number }
 type Ledger = { id: string; sequence: number | null; kind: string; order_id: string | null; amount_cents: number; remaining_after: number; reserved_after: number }
@@ -52,7 +53,7 @@ function verify(g: Grant, ledger: Ledger[], allocations: Allocation[]) {
 }
 export async function auditReward(env: Env, id: string, actor = 'system') {
   const db = env.INTEREST_DB, now = Date.now(), token = crypto.randomUUID()
-  const exists = await db.prepare("SELECT id FROM member_reward_grants WHERE id=? AND store_id='store-3'").bind(id).first()
+  const exists = await db.prepare('SELECT id FROM member_reward_grants WHERE id=? AND store_id=?').bind(id, memberScope(env)).first()
   if (!exists) throw new ApiError('未找到奖励。', 404)
   await db.prepare('INSERT INTO member_reward_audits(grant_id) VALUES (?) ON CONFLICT(grant_id) DO NOTHING').bind(id).run()
   await db.prepare('UPDATE member_reward_audits SET lease_token=?,lease_until=? WHERE grant_id=? AND lease_until<=?').bind(token, now + 60000, id, now).run()
@@ -83,7 +84,7 @@ export async function auditReward(env: Env, id: string, actor = 'system') {
   } finally { await db.prepare('UPDATE member_reward_audits SET lease_token=NULL,lease_until=0 WHERE grant_id=? AND lease_token=?').bind(id, token).run() }
 }
 export async function scanRewardAudits(env: Env, limit = 3) {
-  if (env.MEMBERSHIP_ENABLED === undefined) return { checked: 0 }
+  if (!membershipConfigured(env)) return { checked: 0 }
   const rows = (await env.INTEREST_DB.prepare(`SELECT g.id FROM member_reward_grants g LEFT JOIN member_reward_audits a ON a.grant_id=g.id
     WHERE COALESCE(a.lease_until,0)<=? AND (COALESCE(a.checked_at,0)<? OR COALESCE(a.grant_version,-1)<>g.version)
     ORDER BY COALESCE(a.checked_at,0),g.id LIMIT ?`).bind(Date.now(), Date.now() - 3600000, Math.max(1, Math.min(3, limit))).all<{ id: string }>()).results

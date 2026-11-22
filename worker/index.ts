@@ -26,6 +26,7 @@ import { scanPilotOrders } from './member-reconciliation.ts'
 import { maintainMemberNotifications } from './member-notifications.ts'
 import { scanRewardAudits } from './member-ledger-audit.ts'
 import { scanMemberRisks } from './member-risk.ts'
+import { configuredMemberStores, memberEnvironment } from './member-scope.ts'
 const json = (value: unknown, status = 200) => Response.json(value, {
   status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', ...(status === 429 ? { 'Retry-After': '60' } : {}) },
 })
@@ -36,7 +37,11 @@ async function hash(value: string) {
 
 export default {
   async scheduled(event: { scheduledTime?: number }, env: Env) {
-    await rewardMaintenance(env)
+    const minute = Math.floor((event.scheduledTime ?? Date.now()) / 60_000)
+    const memberStores = configuredMemberStores(env)
+    const store = memberStores[minute % memberStores.length]
+    const activity = store ? memberEnvironment(env, store) : null
+    if (activity) await rewardMaintenance(activity)
     try {
       // Telegram's durable queue is independent of supplier reconciliation failures.
       await retryTelegramInvitations(env).catch(() => { console.error('Telegram invitation queue temporarily unavailable') })
@@ -53,13 +58,13 @@ export default {
       // Preserve the original payment jobs' budget. New operations take turns
       // and still run when a supplier job throws. D1 Free has 50 calls per
       // invocation; never run four full operational scans in the same tick.
-      if (env.MEMBERSHIP_ENABLED !== undefined) {
-        const slot = Math.floor((event.scheduledTime ?? Date.now()) / 60000) % 4
+      if (activity) {
+        const slot = Math.floor(minute / memberStores.length) % 4
         try {
-          if (slot === 0) await maintainMemberNotifications(env)
-          else if (slot === 1) await scanRewardAudits(env, 1)
-          else if (slot === 2) await scanMemberRisks(env, 1)
-          else await scanPilotOrders(env, 1)
+          if (slot === 0) await maintainMemberNotifications(activity)
+          else if (slot === 1) await scanRewardAudits(activity, 1)
+          else if (slot === 2) await scanMemberRisks(activity, 1)
+          else await scanPilotOrders(activity, 1)
         } catch { console.error('Member operations maintenance requires retry') }
       }
     }

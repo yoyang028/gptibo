@@ -6,6 +6,7 @@ import { memberStatistics } from './member-statistics.ts'
 import { simulatePromotion } from './member-simulation.ts'
 import { auditReward, scanRewardAudits } from './member-ledger-audit.ts'
 import { acknowledgeRisk, scanMemberRisks } from './member-risk.ts'
+import { adminMemberEnvironment, membershipConfigured } from './member-scope.ts'
 
 export function operationPage(url: URL) {
   const page = Number(url.searchParams.get('page') || 1)
@@ -17,7 +18,8 @@ export function operationNote(data: Record<string, unknown>) {
   return data.note.trim()
 }
 export async function memberOperations(request: Request, env: Env, url: URL) {
-  if (env.MEMBERSHIP_ENABLED === undefined) throw new ApiError('会员运营尚未启用。', 409)
+  env = adminMemberEnvironment(request, env, url)
+  if (!membershipConfigured(env)) throw new ApiError('当前店铺的会员运营尚未启用。', 409)
   const db = env.INTEREST_DB, { page, offset } = operationPage(url)
   if (url.pathname === '/api/admin/member-ops/risk') {
     if (request.method === 'GET') {
@@ -67,7 +69,7 @@ export async function memberOperations(request: Request, env: Env, url: URL) {
   if (request.method === 'GET') {
     const id = url.searchParams.get('id')
     if (id) {
-      assertPilotOrder(await getOrder(env, id))
+      assertPilotOrder(await getOrder(env, id), env)
       return json({ history: (await db.prepare("SELECT * FROM member_operation_events WHERE category='reconciliation' AND target_id=? ORDER BY created_at DESC,id LIMIT 20 OFFSET ?").bind(id, offset).all()).results, page })
     }
     const state = url.searchParams.get('state') || 'issues'
@@ -81,7 +83,7 @@ export async function memberOperations(request: Request, env: Env, url: URL) {
   const data = await body(request)
   if (data.action === 'scan') return json(await scanPilotOrders(env))
   if (typeof data.id !== 'string' || data.id.length > 100) throw new ApiError('订单号无效。')
-  assertPilotOrder(await getOrder(env, data.id))
+  assertPilotOrder(await getOrder(env, data.id), env)
   if (data.action === 'check') return json(await reconcilePilotOrder(env, data.id, env.ADMIN_USERNAME ?? 'admin'))
   if (data.action === 'sync') return json(await syncPilotOrder(env, data.id, operationNote(data)))
   if (data.action === 'note') { await operationEvent(env, 'reconciliation', data.id, 'note', operationNote(data), {}, env.ADMIN_USERNAME ?? 'admin'); return json({ ok: true }) }

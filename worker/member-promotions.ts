@@ -1,5 +1,6 @@
 import { ApiError, hash, json, body, owner, type Env, type Statement } from './platform.ts'
-import { memberStore, membershipEnabled, verifiedMember, MEMBER_STORE } from './member-auth.ts'
+import { verifiedMember } from './member-auth.ts'
+import { memberEnvironment, memberScope, memberStore, scopedMemberStore } from './member-scope.ts'
 import { ownerStoreOffer, ownerCheckoutGuard } from './owner-store-prices.ts'
 import { supplierSnapshot, snapshotStatement } from './recharge/service.ts'
 import { emailValue } from './partner-auth.ts'
@@ -9,22 +10,23 @@ import { identityKey } from './member-identity.ts'
 import { riskFlags, riskMetrics, riskIpKey } from './member-risk.ts'
 export { identityKey } from './member-identity.ts'
 import type { Order } from './order-state.ts'
-import { INVITATION_PLANS, NEWCOMER_DISCOUNT_CENTS, type PromotionQuote, type PromotionView } from '../shared/member-promotions.ts'
+import { INVITATION_PLANS, NEWCOMER_DISCOUNT_CENTS, isMemberStoreId, type MemberStoreId, type PromotionQuote, type PromotionView } from '../shared/member-promotions.ts'
 
 export type Profile = { id: string; invite_code: string; frozen: number }
 export type Promotion = {
-  order_id: string; store_id: string; member_id: string | null; referrer_id: string | null; invite_code: string
+  order_id: string; store_id: MemberStoreId; member_id: string | null; referrer_id: string | null; invite_code: string
   customer_key: string; original_cents: number; newcomer_cents: number; reward_cents: number; other_cents: number; cash_cents: number
   supply_cents: number; supplier_snapshot: string; request_hash: string; review_status: PromotionView['reviewStatus']
   review_note: string; risk_flags: string; procurement_status: PromotionView['procurementStatus']; allocation_status: string
   created_at: number; updated_at: number
 }
-export async function promotionFor(env: Env, id: string) {
-  // The rollout switch blocks new activity, never protections on existing
-  // orders. SELECT * remains compatible with pre-migration deployments.
-  if (!membershipEnabled(env)) {
-    const o = await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE id = ?').bind(id).first<{ member_promotion?: number }>()
-    if (!o?.member_promotion) return null
+export async function promotionFor(env: Env, id: string, order?: Order) {
+  // Old orders stay protected even if their store stops accepting new rewards.
+  // A shared order's immutable store chooses the corresponding promotion table.
+  if (!scopedMemberStore(env)) {
+    const row = order ?? await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE id=?').bind(id).first<Order>()
+    if (!row?.member_promotion || row.partner_id || !isMemberStoreId(row.owner_store_id)) return null
+    env = memberEnvironment(env, row.owner_store_id)
   }
   return env.INTEREST_DB.prepare('SELECT * FROM member_order_promotions WHERE order_id=?').bind(id).first<Promotion>()
 }
@@ -38,25 +40,27 @@ export async function memberProfile(env: Env, id: string) {
 }
 export async function availableRewards(env: Env, member: string) {
   return (await env.INTEREST_DB.prepare("SELECT id,remaining_cents-reserved_cents available FROM member_reward_grants WHERE store_id=? AND member_id=? AND status='active' AND expires_at>? AND remaining_cents>reserved_cents ORDER BY expires_at,created_at,id")
-    .bind(MEMBER_STORE, member, Date.now()).all<{ id: string; available: number }>()).results
+    .bind(memberScope(env), member, Date.now()).all<{ id: string; available: number }>()).results
 }
 export async function promotionRequestHash(data: Record<string, unknown>) {
   const p = data.promotion as Record<string, unknown> | undefined
   return hash(JSON.stringify({ plan: data.plan, invite: typeof p?.inviteCode === 'string' ? p.inviteCode.trim().toUpperCase() : '', newcomer: p?.newcomer === true, reward: p?.rewardCents ?? 0, coupon: data.couponCode ?? '' }))
 }
 export async function quotePromotion(request: Request, env: Env, data: Record<string, unknown>) {
-  if (!memberStore(request, env) || !(INVITATION_PLANS as readonly unknown[]).includes(data.plan)) throw new ApiError('此商店或商品不参与邀新活动。', 409)
-  const email = emailValue(data.email), offer = await ownerStoreOffer(env, MEMBER_STORE, String(data.plan))
+  const store = memberStore(request, env)
+  if (!store || (data.partner && data.partner !== store) || !(INVITATION_PLANS as readonly unknown[]).includes(data.plan)) throw new ApiError('此商店或商品不参与邀新活动。', 409)
+  env = memberEnvironment(env, store)
+  const email = emailValue(data.email), offer = await ownerStoreOffer(env, store, String(data.plan))
   if (!offer.enabled) throw new ApiError('该套餐暂不可购买。', 409)
   const input = (data.promotion ?? {}) as Record<string, unknown>
   if (input === null || typeof input !== 'object' || Array.isArray(input)) throw new ApiError('优惠选择无效。')
   const code = typeof input.inviteCode === 'string' ? input.inviteCode.trim().toUpperCase() : ''
   if (code && !/^[A-Z0-9]{32}$/.test(code)) throw new ApiError('邀请链接无效。')
   const member = await verifiedMember(request, env), profile = member ? await memberProfile(env, member.id) : null
-  const referrer = code ? await env.INTEREST_DB.prepare('SELECT p.id,p.frozen,u.email FROM member_profiles p JOIN member_s3_user u ON u.id=p.id WHERE p.store_id=? AND p.invite_code=? AND p.frozen=0 AND u.emailVerified=1').bind(MEMBER_STORE, code).first<{ id: string; email: string; frozen: number }>() : null
+  const referrer = code ? await env.INTEREST_DB.prepare('SELECT p.id,p.frozen,u.email FROM member_profiles p JOIN member_s3_user u ON u.id=p.id WHERE p.store_id=? AND p.invite_code=? AND p.frozen=0 AND u.emailVerified=1').bind(store, code).first<{ id: string; email: string; frozen: number }>() : null
   const customerKey = await identityKey(env, 'email', email)
-  const old = await env.INTEREST_DB.prepare("SELECT 1 FROM orders WHERE owner_store_id=? AND partner_id IS NULL AND mode='live' AND is_test=0 AND lower(customer_email)=? AND payment_status='paid' AND refunded_cents<price_cents LIMIT 1").bind(MEMBER_STORE, email).first()
-  const claim = await env.INTEREST_DB.prepare('SELECT order_id FROM member_first_purchases WHERE store_id=? AND customer_key=?').bind(MEMBER_STORE, customerKey).first()
+  const old = await env.INTEREST_DB.prepare("SELECT 1 FROM orders WHERE owner_store_id=? AND partner_id IS NULL AND mode='live' AND is_test=0 AND lower(trim(customer_email))=? AND payment_status='paid' AND refunded_cents<price_cents LIMIT 1").bind(store, email).first()
+  const claim = await env.INTEREST_DB.prepare('SELECT order_id FROM member_first_purchases WHERE store_id=? AND customer_key=?').bind(store, customerKey).first()
   const newcomerEligible = !!referrer && !old && !claim
   if (input.newcomer !== undefined && typeof input.newcomer !== 'boolean') throw new ApiError('新人优惠选择无效。')
   const newcomer = input.newcomer === true ? NEWCOMER_DISCOUNT_CENTS : 0
@@ -67,7 +71,7 @@ export async function quotePromotion(request: Request, env: Env, data: Record<st
   if (requested && (!member || profile?.frozen)) throw new ApiError(profile?.frozen ? '账号权益正在审核，请联系支持。' : '请登录并验证邮箱后使用奖励。', 403)
   const rewards = member ? await availableRewards(env, member.id) : []
   const availableCents = profile?.frozen ? 0 : rewards.reduce((s, g) => s + g.available, 0)
-  const ordinary = data.couponCode ? await couponQuote(env, String(data.plan), email, data.couponCode, MEMBER_STORE) : null
+  const ordinary = data.couponCode ? await couponQuote(env, String(data.plan), email, data.couponCode, store) : null
   let amounts: ReturnType<typeof promotionAmounts>
   try { amounts = promotionAmounts(offer.price_cents, availableCents, requested, newcomer, ordinary?.discountCents ?? 0, !!data.couponCode) }
   catch (e) { throw new ApiError((e as Error).message, 409) }
@@ -89,14 +93,15 @@ export async function quotePromotion(request: Request, env: Env, data: Record<st
     availableCents, newcomerEligible, inviteValid: !!referrer, reviewStatus, procurementStatus, allocationStatus: 'reserved',
     message: procurementStatus === 'awaiting_supplier' ? '优惠额度将完整保留。此订单需等待上游采购方式确认，暂不发起付款或充值。' : reviewStatus === 'required' ? '此订单需审核通过后继续付款与充值。' : '确认优惠后按实际应付金额付款。',
     selection: { inviteCode: referrer ? code : '', newcomer: !!newcomer, rewardCents: requested } }
-  return { quote, offer, snapshot, allocations, member, referrer, customerKey, isNew: !old && !claim, flags }
+  return { store, quote, offer, snapshot, allocations, member, referrer, customerKey, isNew: !old && !claim, flags }
 }
 
 export async function promotionStatements(env: Env, orderId: string, data: Record<string, unknown>, prepared: Awaited<ReturnType<typeof quotePromotion>>) {
-  const { quote: q, snapshot, allocations, member, referrer, customerKey, isNew, flags } = prepared, now = Date.now()
+  const { store, quote: q, snapshot, allocations, member, referrer, customerKey, isNew, flags } = prepared, now = Date.now()
+  env = memberEnvironment(env, store)
   const statements = [env.INTEREST_DB.prepare(`INSERT INTO member_order_promotions(order_id,store_id,member_id,referrer_id,invite_code,customer_key,original_cents,newcomer_cents,reward_cents,other_cents,cash_cents,supply_cents,supplier_snapshot,request_hash,review_status,risk_flags,procurement_status,created_at,updated_at)
     SELECT id,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? FROM orders WHERE id=?`)
-    .bind(MEMBER_STORE, member?.id ?? null, referrer?.id ?? null, q.selection.inviteCode, customerKey, q.originalCents, q.newcomerCents, q.rewardCents, q.otherCents, q.cashCents, snapshot.supplyCents, JSON.stringify(snapshot), await promotionRequestHash(data), q.reviewStatus, JSON.stringify(flags), q.procurementStatus, now, now, orderId)]
+    .bind(store, member?.id ?? null, referrer?.id ?? null, q.selection.inviteCode, customerKey, q.originalCents, q.newcomerCents, q.rewardCents, q.otherCents, q.cashCents, snapshot.supplyCents, JSON.stringify(snapshot), await promotionRequestHash(data), q.reviewStatus, JSON.stringify(flags), q.procurementStatus, now, now, orderId)]
   if (referrer && isNew) statements.push(env.INTEREST_DB.prepare('INSERT INTO member_first_purchases(store_id,customer_key,order_id) SELECT store_id,customer_key,order_id FROM member_order_promotions WHERE order_id=? ' + (q.newcomerCents ? '' : 'ON CONFLICT(store_id,customer_key) DO NOTHING')).bind(orderId))
   for (const allocation of allocations) statements.push(env.INTEREST_DB.prepare('INSERT INTO member_reward_allocations(order_id,grant_id,amount_cents,created_at) SELECT order_id,?,?,? FROM member_order_promotions WHERE order_id=?').bind(allocation.id, allocation.amount, now, orderId))
   statements.push(env.INTEREST_DB.prepare('INSERT INTO member_order_assertions SELECT order_id FROM member_order_promotions WHERE order_id=?').bind(orderId))
@@ -104,22 +109,24 @@ export async function promotionStatements(env: Env, orderId: string, data: Recor
 }
 
 export async function promotionView(env: Env, order: Order): Promise<PromotionView | null> {
-  if (order.owner_store_id !== MEMBER_STORE) return null
-  const p = await promotionFor(env, order.id)
+  if (order.partner_id || !isMemberStoreId(order.owner_store_id)) return null
+  const p = await promotionFor(env, order.id, order)
   if (!p) return null
   return { originalCents: p.original_cents, newcomerCents: p.newcomer_cents, rewardCents: p.reward_cents, otherCents: p.other_cents, cashCents: p.cash_cents,
     reviewStatus: p.review_status, procurementStatus: p.procurement_status, allocationStatus: p.allocation_status,
     message: order.status === 'cancelled' ? p.allocation_status === 'released' ? '订单已取消，优惠占用已释放；原券有效期保持不变。' : '付款入口已到期，正在核对是否到账。确认关闭后释放优惠占用。' : p.review_status === 'rejected' ? '此订单审核未通过，请联系支持或取消订单释放额度。' : p.procurement_status === 'awaiting_supplier' ? '这笔优惠订单需人工确认供货。优惠额度已保留，确认前不会发起付款或充值。' : p.review_status === 'required' ? '等待人工审核，优惠额度已锁定。' : '已确认本次优惠，按实际应付金额处理。' }
 }
-export async function assertPromotionReady(env: Env, id: string) {
-  const p = await promotionFor(env, id)
+export async function assertPromotionReady(env: Env, id: string, order?: Order) {
+  const p = await promotionFor(env, id, order)
   if (p && (p.procurement_status !== 'ready' || !['none','approved'].includes(p.review_status) || ['released','restored'].includes(p.allocation_status))) throw new ApiError('订单正在等待审核或上游采购确认，不能发起付款或充值。', 409)
+  if (p) env = memberEnvironment(env, p.store_id)
   if (p?.member_id && (await env.INTEREST_DB.prepare('SELECT frozen FROM member_profiles WHERE id=?').bind(p.member_id).first<{ frozen: number }>())?.frozen) throw new ApiError('账号权益正在审核，订单已暂停。', 409)
 }
 
 export async function cancelPromotion(request: Request, env: Env, order: Order) {
-  const data = await body(request), p = await promotionFor(env, order.id)
+  const data = await body(request), p = await promotionFor(env, order.id, order)
   if (!p || data.version !== order.version) throw new ApiError('订单已更新，请刷新后重试。', 409)
+  env = memberEnvironment(env, p.store_id)
   // A local timeout is not proof that an upstream payer cannot still pay.
   const upstream = await env.INTEREST_DB.prepare('SELECT attempted_at,remote_id,payment_status FROM recharge_orders WHERE order_id=?').bind(order.id).first<{ attempted_at: number | null; remote_id: string | null; payment_status: string }>()
   if (order.status !== 'pending' || order.payment_status !== 'unpaid' || order.refund_hold || (upstream && (upstream.attempted_at || upstream.remote_id))) throw new ApiError('付款入口已建立或状态待确认，请先联系支持核对上游关单，不能直接释放额度。', 409)
@@ -138,6 +145,7 @@ export function releasePromotionStatements(env: Env, orderId: string, version: n
 }
 
 export async function approvePromotion(env: Env, p: Promotion, note: string) {
+  env = memberEnvironment(env, p.store_id)
   if (p.review_status !== 'required' || !['reserved','captured'].includes(p.allocation_status)) throw new ApiError('订单审核状态已变化。', 409)
   const order = await env.INTEREST_DB.prepare('SELECT * FROM orders WHERE id=?').bind(p.order_id).first<Order>()
   if (!order || !['pending','session','failed'].includes(order.status)) throw new ApiError('订单不能执行此审核操作。', 409)

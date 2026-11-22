@@ -1,5 +1,6 @@
 import { ApiError, type Env } from './platform.ts'
 import { identityKey, promotionFor } from './member-promotions.ts'
+import { memberEnvironment, membershipConfigured } from './member-scope.ts'
 import { readRechargeInput, type RechargeCredential } from '../shared/recharge-credential.ts'
 import { REWARD_OBSERVATION_MS, twoCalendarMonths } from '../shared/member-promotions.ts'
 
@@ -36,6 +37,7 @@ const rewardSources = `SELECT p.order_id,p.store_id,p.customer_key,p.referrer_id
 export async function captureRewards(env: Env, orderId: string) {
   const p = await promotionFor(env, orderId)
   if (!p || p.allocation_status !== 'reserved') return
+  env = memberEnvironment(env, p.store_id)
   await env.INTEREST_DB.batch([
     env.INTEREST_DB.prepare("UPDATE member_reward_allocations SET status='captured' WHERE order_id=? AND status='reserved'").bind(orderId),
     env.INTEREST_DB.prepare("UPDATE member_order_promotions SET allocation_status='captured',updated_at=? WHERE order_id=? AND allocation_status='reserved' AND review_status IN ('none','approved') AND procurement_status='ready' AND EXISTS(SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND refund_hold=0 AND refunded_cents=0)").bind(Date.now(), orderId, orderId),
@@ -45,6 +47,7 @@ export async function captureRewards(env: Env, orderId: string) {
 export async function promotionPaymentConfirmed(env: Env, orderId: string) {
   const p=await promotionFor(env,orderId)
   if(!p)return
+  env=memberEnvironment(env,p.store_id)
   if(['released','restored'].includes(p.allocation_status)){
     await env.INTEREST_DB.prepare("UPDATE member_order_promotions SET review_status='required',risk_flags=json_insert(risk_flags,'$[#]','late_payment'),updated_at=? WHERE order_id=? AND NOT EXISTS(SELECT 1 FROM json_each(risk_flags) WHERE value='late_payment')").bind(Date.now(),orderId).run()
     return
@@ -59,6 +62,7 @@ export async function promotionPaymentConfirmed(env: Env, orderId: string) {
 export async function checkRewardTarget(env: Env, orderId: string, credential: RechargeCredential) {
   const p = await promotionFor(env, orderId)
   if (!p) return
+  env = memberEnvironment(env, p.store_id)
   const email = readRechargeInput(credential.mode === 'session' ? credential.session : credential.access_token, credential.mode, false).email
   if (!email) return // An opaque credential is not proof of a different customer.
   const key = await identityKey(env, 'target', email)
@@ -81,7 +85,7 @@ export async function checkRewardTarget(env: Env, orderId: string, credential: R
 }
 
 export async function reconcileMemberRewards(env: Env) {
-  if (env.MEMBERSHIP_ENABLED === undefined) return { checked: 0 }
+  if (!membershipConfigured(env)) return { checked: 0 }
   const db = env.INTEREST_DB, now = Date.now()
   // Capture only confirmed payments. If a task fails, credit remains attached to
   // that order until a confirmed refund or cancellation; an unknown write never

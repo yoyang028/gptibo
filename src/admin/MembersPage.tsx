@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Feedback } from '@/components/workspace-loading'
+import { WorkspaceSelect } from '@/partner/workspace-ui'
 import { RISK_LABELS } from '../../shared/member-risk'
 
 type Member = { id: string; email: string; emailVerified: number; frozen: number; version: number; invited: number; balance_cents: number }
@@ -17,19 +18,20 @@ const money = (n: number) => `¥${(n / 100).toFixed(2)}`
 const statuses: Record<string,string> = { pending:'待生效',active:'已生效',cancelled:'已撤销',expired:'已到期',frozen:'已冻结',reserved:'已占用',captured:'已核销',released:'已释放',restored:'已恢复',none:'无需人工审核',required:'待审核',approved:'已通过',rejected:'未通过' }
 const risks = RISK_LABELS
 const ledgerLabels: Record<string,string> = { grant:'发放待生效奖励',activate:'奖励生效',reserve:'订单占用',captured:'订单抵扣',released:'取消释放',restored:'退款恢复',expire:'到期',cancelled:'撤销',frozen:'冻结' }
-export function RewardLedger({id}: {id:string}){
+export function RewardLedger({id,store}: {id:string;store:string}){
   const [page,setPage]=useState(1)
-  const {data,error,loading}=useResource<{ledger:{id:string;order_id:string|null;kind:string;amount_cents:number;remaining_after:number;reserved_after:number;created_at:number}[]}>(`/api/admin/members?grant=${encodeURIComponent(id)}&page=${page}`)
+  const {data,error,loading}=useResource<{ledger:{id:string;order_id:string|null;kind:string;amount_cents:number;remaining_after:number;reserved_after:number;created_at:number}[]}>(`/api/admin/members?store=${encodeURIComponent(store)}&grant=${encodeURIComponent(id)}&page=${page}`)
   return <><Feedback error={error} loading={loading} data={data}/>{data&&<><div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>时间／订单</th><th>事项</th><th>金额</th><th>剩余／占用</th></tr></thead><tbody>{data.ledger.map(l=><tr key={l.id}><td>{new Date(l.created_at).toLocaleString('zh-CN')}<small>{l.order_id}</small></td><td>{ledgerLabels[l.kind]??l.kind}</td><td>{money(l.amount_cents)}</td><td>{money(l.remaining_after)}／{money(l.reserved_after)}</td></tr>)}</tbody></table></div><div className="admin-pagination"><span>第 {page} 页</span><div><Button variant="outline" disabled={page===1} onClick={()=>setPage(v=>v-1)}>上一页</Button><Button variant="outline" disabled={data.ledger.length<20} onClick={()=>setPage(v=>v+1)}>下一页</Button></div></div></>}</>
 }
-function MemberManagement({revision}: {revision:number}){
+function MemberManagement({revision,store}: {revision:number;store:string}){
   const [tab,setTab]=useState<'members'|'orders'|'rewards'>('orders'),[search,setSearch]=useState(''),[q,setQ]=useState(''),[page,setPage]=useState(1),[localRevision,setRevision]=useState(0)
-  const {data,error,loading}=useResource<Data>(`/api/admin/members?q=${encodeURIComponent(q)}&page=${page}`,revision+localRevision)
+  const endpoint=`/api/admin/members?store=${encodeURIComponent(store)}`
+  const {data,error,loading}=useResource<Data>(`${endpoint}&q=${encodeURIComponent(q)}&page=${page}`,revision+localRevision)
   const [decision,setDecision]=useState<Decision|null>(null),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[mutationError,setError]=useState('')
   const [ledgerId,setLedgerId]=useState<string|null>(null)
   function open(value:Decision){setDecision(value);setNote('');setError('')}
-  async function submit(){if(!decision||busy)return;setBusy(true);setError('');try{await api('/api/admin/members',{...decision,note});setDecision(null);setRevision(v=>v+1)}catch(e){setError(errorMessage(e))}finally{setBusy(false)}}
-  if(data&&!data.enabled)return <section className="admin-panel"><h2>通用店会员试点尚未启用</h2><p>会员、邀请及奖励功能将在测试验收后单独启用，原商城订单继续沿用现有流程。</p></section>
+  async function submit(){if(!decision||busy)return;setBusy(true);setError('');try{await api(endpoint,{...decision,note});setDecision(null);setRevision(v=>v+1)}catch(e){setError(errorMessage(e))}finally{setBusy(false)}}
+  if(data&&!data.enabled)return <section className="admin-panel"><h2>当前店铺尚未开通会员邀新</h2></section>
   return <><Feedback error={error} loading={loading} data={data}/>{data?.enabled&&<>
     <div className="admin-metrics">
       {[['会员数',data.stats.members],['待审核',data.stats.reviews],['累计发放',money(data.stats.issued_cents)]].map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}
@@ -50,11 +52,15 @@ function MemberManagement({revision}: {revision:number}){
       {!data[tab].length&&<p className="admin-empty">暂无符合条件的记录。</p>}<div className="admin-pagination"><span>第 {page} 页</span><div><Button variant="outline" disabled={page===1} onClick={()=>setPage(v=>v-1)}>上一页</Button><Button variant="outline" disabled={data[tab].length<20} onClick={()=>setPage(v=>v+1)}>下一页</Button></div></div>
     </section></>}
     <Dialog open={!!decision} disablePointerDismissal onOpenChange={v=>{if(!v&&!busy)setDecision(null)}}><DialogContent><DialogHeader><DialogTitle>{decision?.label}</DialogTitle><DialogDescription>操作会保留审核记录。通过审核不会将待上游确认的订单标成已采购或已交付；使用过的异常奖励保留流水并冻结权益。</DialogDescription></DialogHeader><form onSubmit={e=>{e.preventDefault();void submit()}}><label htmlFor="member-review-note">处理说明</label><Textarea id="member-review-note" required maxLength={500} value={note} disabled={busy} onChange={e=>setNote(e.target.value)}/>{mutationError&&<p role="alert">{mutationError}</p>}<Button type="submit" disabled={busy||!note.trim()}>{busy?'正在保存…':'确认处理'}</Button></form></DialogContent></Dialog>
-    <Dialog open={!!ledgerId} onOpenChange={v=>{if(!v)setLedgerId(null)}}><DialogContent style={{maxWidth:'min(900px, calc(100vw - 2rem))',maxHeight:'85dvh',overflowY:'auto'}}><DialogHeader><DialogTitle>奖励流水</DialogTitle><DialogDescription>保留该笔奖励的发放、占用、抵扣、恢复与异常处理记录。</DialogDescription></DialogHeader>{ledgerId&&<RewardLedger key={ledgerId} id={ledgerId}/>}</DialogContent></Dialog>
+    <Dialog open={!!ledgerId} onOpenChange={v=>{if(!v)setLedgerId(null)}}><DialogContent style={{maxWidth:'min(900px, calc(100vw - 2rem))',maxHeight:'85dvh',overflowY:'auto'}}><DialogHeader><DialogTitle>奖励流水</DialogTitle><DialogDescription>保留该笔奖励的发放、占用、抵扣、恢复与异常处理记录。</DialogDescription></DialogHeader>{ledgerId&&<RewardLedger key={ledgerId} id={ledgerId} store={store}/>}</DialogContent></Dialog>
   </>
 }
 const Operations = lazy(() => import('./MemberOperations'))
-export default function MembersPage({revision}: {revision:number}) {
+export default function MembersPage({revision,store,stores,onStoreChange}: {revision:number;store:string;stores:{id:string;name:string}[];onStoreChange:(store:string)=>void}) {
   const [view,setView]=useState<'manage'|'operations'>('manage')
-  return <><div className="member-pagination"><Button variant={view==='manage'?'default':'outline'} onClick={()=>setView('manage')}>会员与奖励</Button><Button variant={view==='operations'?'default':'outline'} onClick={()=>setView('operations')}>运营中心</Button></div>{view==='manage'?<MemberManagement revision={revision}/>:<Suspense fallback={<p>正在加载运营中心…</p>}><Operations revision={revision}/></Suspense>}</>
+  const options=stores.map(shop=>({value:shop.id,label:shop.name}))
+  return <><div className="admin-filters"><WorkspaceSelect label="邀新活动店铺" value={store} options={options} onValueChange={onStoreChange}/></div>
+    {stores.some(shop=>shop.id===store)?<><div className="member-pagination"><Button variant={view==='manage'?'default':'outline'} onClick={()=>setView('manage')}>会员与奖励</Button><Button variant={view==='operations'?'default':'outline'} onClick={()=>setView('operations')}>运营中心</Button></div>
+      {view==='manage'?<MemberManagement key={store} revision={revision} store={store}/>:<Suspense fallback={<p>正在加载运营中心…</p>}><Operations key={store} revision={revision} store={store}/></Suspense>}</>:<p className="admin-empty">当前店铺尚未开通会员邀新。可切换至已开通的店铺。</p>}
+  </>
 }

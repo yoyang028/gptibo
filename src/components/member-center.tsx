@@ -19,7 +19,7 @@ const eventLabel: Record<string,string> = { grant: '邀请奖励待生效', acti
 function RecordPagination({ label, page, hasNext, disabled, onChange }: RecordPage & { label: string; disabled: boolean; onChange: (page: number) => void }) {
   return <nav className="member-pagination" aria-label={label+'分页'}><Button variant="outline" disabled={disabled||page===1} onClick={()=>onChange(page-1)}>上一页</Button><span aria-live="polite">第 {page} 页</span><Button variant="outline" disabled={disabled||!hasNext} onClick={()=>onChange(page+1)}>下一页</Button></nav>
 }
-export default function MemberCenter({ onSessionChanged }: { onSessionChanged: () => void }) {
+export default function MemberCenter({ onSessionChanged, plusPriceCents }: { onSessionChanged: () => void; plusPriceCents?: number }) {
   const [busy,setBusy]=useState(false)
   const rulesRef = useRef<HTMLDetailsElement>(null)
   const [data,setData]=useState<MemberData|null>(null),[error,setError]=useState(''),[revision,setRevision]=useState(0),[loading,setLoading]=useState(true)
@@ -68,6 +68,6 @@ export default function MemberCenter({ onSessionChanged }: { onSessionChanged: (
       <section className="member-card"><h2>奖励与有效期</h2>{data.rewards.length?<div className="member-table-scroll"><table><thead><tr><th>来源订单</th><th>状态</th><th>剩余额度／占用</th><th>生效／到期</th></tr></thead><tbody>{data.rewards.map(g=><tr key={g.id}><td>{g.source_order_id}</td><td>{statusLabel[g.status]??g.status}</td><td>{money(g.remaining_cents)}／{money(g.reserved_cents)}</td><td>{g.status==='pending'?date(g.eligible_at)+' 后生效':g.expires_at?date(g.expires_at)+' 到期':'—'}</td></tr>)}</tbody></table></div>:<p>还没有邀请奖励。分享链接后，可在这里查看进度。</p>}{pagination('rewards','奖励与有效期')}</section>
       <section className="member-card"><h2>额度变化与使用记录</h2>{data.ledger.length?<div className="member-table-scroll"><table><thead><tr><th>时间</th><th>事项</th><th>金额</th><th>该笔剩余／占用</th></tr></thead><tbody>{data.ledger.map(l=><tr key={l.id}><td>{date(l.created_at)}</td><td>{eventLabel[l.kind]??l.kind}<small>{l.order_id}</small></td><td>{money(l.amount_cents)}</td><td>{money(l.remaining_after)}／{money(l.reserved_after)}</td></tr>)}</tbody></table></div>:<p>暂无额度变化记录。</p>}{pagination('ledger','额度变化与使用记录')}</section>
     </>}
-    {data?.enabled&&<InvitationRules detailsRef={rulesRef} showSteps={!!data.member}/>}
+    {data?.enabled&&<InvitationRules detailsRef={rulesRef} showSteps={!!data.member} plusPriceCents={plusPriceCents}/>}
   </section>
 }

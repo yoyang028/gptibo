@@ -8,13 +8,13 @@ import { RISK_LABELS } from '../../shared/member-risk'
 type Result = { originalCents: number; supplyCents: number; availableCents: number; rewardCents: number; newcomerCents: number; otherCents: number; cashCents: number; remainingCents: number; reviewStatus: string; reviewTier: string; procurementPath: string; flags: string[]; message: string; basis: string }
 const pathLabels: Record<string, string> = { hold_for_supplier: '锁券等待上游补差方案，取消恢复额度', review_then_platform_collect: '先人工审核，通过后按实付向上游代收', platform_collect: '按实付金额向原上游代收' }
 const tiers: Record<string, string> = { automatic: '正常处理', enhanced: '增强检查', manual: '必须人工审核' }
-export default function MemberSimulationPage() {
+export default function MemberSimulationPage({ store }: { store: string }) {
   const [mode, setMode] = useState('scenario'), [plan, setPlan] = useState('plus'), [balance, setBalance] = useState('140'), [reward, setReward] = useState('140'), [memberEmail, setMemberEmail] = useState(''), [customerEmail, setCustomerEmail] = useState(''), [inviteCode, setInviteCode] = useState(''), [couponCode, setCouponCode] = useState(''), [recent, setRecent] = useState('0')
   const [newcomer, setNewcomer] = useState(false), [invite, setInvite] = useState(true), [fresh, setFresh] = useState(true), [abnormal, setAbnormal] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [result, setResult] = useState<Result | null>(null)
   async function run() {
     if (busy) return
     setBusy(true); setError(''); setResult(null)
-    try { setResult(await api<Result>('/api/admin/member-ops/simulation', { mode, plan, availableCents: Math.round(Number(balance) * 100), rewardCents: Math.round(Number(reward) * 100), memberEmail, customerEmail, inviteCode, couponCode, recentOrders: Number(recent), newcomer, assumeInvite: invite, assumeNewCustomer: fresh, abnormal })) }
+    try { setResult(await api<Result>(`/api/admin/member-ops/simulation?store=${encodeURIComponent(store)}`, { mode, plan, availableCents: Math.round(Number(balance) * 100), rewardCents: Math.round(Number(reward) * 100), memberEmail, customerEmail, inviteCode, couponCode, recentOrders: Number(recent), newcomer, assumeInvite: invite, assumeNewCustomer: fresh, abnormal })) }
     catch (e) { setError(errorMessage(e)) } finally { setBusy(false) }
   }
   return <section className="admin-panel member-operations-panel"><h2>优惠规则预演</h2><p>使用当前商品售价与上游只读采购报价。可输入假设余额，或读取已验证会员的真实可用余额。预演不会生成订单、占券、核销优惠码或发起付款。</p>

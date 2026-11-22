@@ -3,15 +3,15 @@ import { api, errorMessage, RequestError } from '@/lib/api'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import type { ServerOrder } from '@/lib/use-store'
-import type { PromotionQuote, PromotionSelection } from '../../shared/member-promotions'
+import type { MemberStoreId, PromotionQuote, PromotionSelection } from '../../shared/member-promotions'
 import { readInvitation } from '@/lib/member-invitation'
 import './member-center.css'
 
 export type PromotionState = { key: string; quote: PromotionQuote | null; fallback?: PromotionSelection | null }
 type QuoteCheck = { key: string; requestKey: string; quote: PromotionQuote | null; error: string }
 
-export function PromotionChooser({ email, plan, price, couponCode, quoteKey: key, onChange }: { email: string; plan: string; price: number; couponCode: string; quoteKey: string; onChange: (value: PromotionState) => void }) {
-  const [inviteCode] = useState(readInvitation)
+export function PromotionChooser({ store, email, plan, price, couponCode, quoteKey: key, onChange }: { store: MemberStoreId; email: string; plan: string; price: number; couponCode: string; quoteKey: string; onChange: (value: PromotionState) => void }) {
+  const [inviteCode] = useState(() => readInvitation(store))
   const [newcomer, setNewcomer] = useState(false)
   const [spend, setSpend] = useState('0')
   const [checked, setChecked] = useState<QuoteCheck | null>(null)

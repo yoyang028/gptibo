@@ -2,22 +2,19 @@ import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { emailOTP } from 'better-auth/plugins/email-otp'
 import { ApiError, body, hash, json, type Env } from './platform.ts'
 import { partnerLimit } from './partner-auth.ts'
-import { storefrontHostStore } from './storefront-hosts.ts'
 import { ownerShop } from './owner-shop.ts'
 import { identityKey } from './member-identity.ts'
+import { memberEnvironment, memberScope, memberStore } from './member-scope.ts'
 import { escapeMail, shopBrand, shopMailFrom } from './store-branding.ts'
 
 export const MEMBER_STORE = 'store-3'
-export function membershipEnabled(env: Env) { return env.MEMBERSHIP_ENABLED === 'true' }
-export function memberStore(request: Request, env: Env) {
-  return membershipEnabled(env) && storefrontHostStore(request, env) === MEMBER_STORE
-}
+const authScope = (env: Env) => memberScope(env) === 'store-3' ? 's3' : 'platform'
 
 async function memberMail(env: Env, to: string, otp: string, purpose: string) {
   if (!env.RESEND_API_KEY || !env.RESEND_FROM) throw new ApiError('会员邮件服务暂不可用。', 503)
   if (!/^\d{6}$/.test(otp) || !['email-verification', 'forget-password'].includes(purpose)) throw new Error('Unsupported member mail')
-  await partnerLimit(env, 'member:s3:delivery:' + to.toLowerCase(), 5, 3600000)
-  const shop = await ownerShop(env, MEMBER_STORE)
+  await partnerLimit(env, `member:${authScope(env)}:delivery:` + to.toLowerCase(), 5, 3600000)
+  const shop = await ownerShop(env, memberScope(env))
   const name = shopBrand(shop), title = purpose === 'email-verification' ? '验证注册邮箱' : '重置登录密码'
   const result = await fetch('https://api.resend.com/emails', {
     method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000),
@@ -32,7 +29,7 @@ async function memberMail(env: Env, to: string, otp: string, purpose: string) {
 export function memberAuth(env: Env, origin: string) {
   if (!env.MEMBER_AUTH_SECRET || env.MEMBER_AUTH_SECRET.length < 32) throw new ApiError('会员登录尚未配置。', 503)
   return betterAuth({
-    appName: '商店会员', secret: env.MEMBER_AUTH_SECRET,
+    appName: '商店会员', secret: memberScope(env) === 'platform' ? env.MEMBER_AUTH_SECRET + ':platform' : env.MEMBER_AUTH_SECRET,
     baseURL: origin, basePath: '/api/member/auth', trustedOrigins: [origin],
     database: env.INTEREST_DB as NonNullable<BetterAuthOptions['database']>,
     user: { modelName: 'member_s3_user' }, session: { modelName: 'member_s3_session', expiresIn: 30 * 86400, updateAge: 86400 },
@@ -44,7 +41,7 @@ export function memberAuth(env: Env, origin: string) {
       otpLength: 6, expiresIn: 600, allowedAttempts: 5, resendStrategy: 'rotate',
       storeOTP: { hash: otp => identityKey(env, 'email-otp', otp) },
       sendVerificationOTP: async ({ email, otp, type }) => memberMail(env, email, otp, type) })],
-    advanced: { cookiePrefix: 'scholai_s3', useSecureCookies: new URL(origin).protocol === 'https:',
+    advanced: { cookiePrefix: 'scholai_' + authScope(env), useSecureCookies: new URL(origin).protocol === 'https:',
       ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] }, database: { generateId: 'uuid' } },
     // The wrapper uses the existing persistent D1 request limiter, across isolates.
     rateLimit: { enabled: false }, logger: { disabled: true }, telemetry: { enabled: false },
@@ -52,13 +49,19 @@ export function memberAuth(env: Env, origin: string) {
 }
 
 export async function verifiedMember(request: Request, env: Env) {
-  if (!memberStore(request, env) || !request.headers.get('Cookie')?.includes('scholai_s3')) return null
+  const store = memberStore(request, env)
+  if (!store) return null
+  env = memberEnvironment(env, store)
+  if (!request.headers.get('Cookie')?.includes('scholai_' + authScope(env))) return null
   const session = await memberAuth(env, new URL(request.url).origin).api.getSession({ headers: request.headers })
-  return session?.user.emailVerified ? { id: session.user.id, email: session.user.email } : null
+  return session?.user.emailVerified ? { id: session.user.id, email: session.user.email, store } : null
 }
 
 export async function memberAuthRoute(request: Request, env: Env) {
-  if (!memberStore(request, env)) return json({ error: '当前商店未开放会员功能。' }, 404)
+  const store = memberStore(request, env)
+  if (!store) return json({ error: '当前商店未开放会员功能。' }, 404)
+  env = memberEnvironment(env, store)
+  const scope = `member:${authScope(env)}:`
   const url = new URL(request.url)
   // Keep consuming pre-upgrade verification/reset links, but issue only codes.
   if (url.pathname.endsWith('/request-password-reset') && !url.pathname.includes('/email-otp/')) return json({ error: '请刷新页面，使用邮箱验证码重置密码。' }, 409)
@@ -66,12 +69,12 @@ export async function memberAuthRoute(request: Request, env: Env) {
   if (request.method === 'POST') {
     const data = await body(request.clone(), 8192)
     const ip = request.headers.get('CF-Connecting-IP') ?? 'local'
-    await partnerLimit(env, 'member:s3:ip:' + ip, 30, 60000)
+    await partnerLimit(env, scope + 'ip:' + ip, 30, 60000)
     if (url.pathname.endsWith('/email-otp/send-verification-otp') && data.type !== 'email-verification') return json({ error: '验证用途无效。' }, 400)
     if (typeof data.email === 'string' && /\/(sign-up\/email|request-password-reset|send-verification-email|send-verification-otp)$/.test(url.pathname)) {
-      await partnerLimit(env, 'member:s3:mail:' + data.email.trim().toLowerCase(), 5, 3600000)
+      await partnerLimit(env, scope + 'mail:' + data.email.trim().toLowerCase(), 5, 3600000)
       const purpose = url.pathname.endsWith('/email-otp/request-password-reset') ? 'reset' : 'verify'
-      await partnerLimit(env, 'member:s3:cooldown:' + purpose + ':' + data.email.trim().toLowerCase(), 1, 60000)
+      await partnerLimit(env, scope + 'cooldown:' + purpose + ':' + data.email.trim().toLowerCase(), 1, 60000)
     }
     if (url.pathname.endsWith('/sign-up/email')) {
       // The business registration form needs only email and password.

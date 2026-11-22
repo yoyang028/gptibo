@@ -2,6 +2,7 @@ import { ApiError, body, cookie, hash, json, LOGIN_SESSION_SECONDS, randomToken,
 import { validTotpSecret, verifyTotp } from './totp.ts'
 import { sendVerificationEmail } from './email.ts'
 import { storefrontHostStore } from './storefront-hosts.ts'
+import { configuredMemberStores, membershipEnabled } from './member-scope.ts'
 
 // Server-owned destination; request parameters cannot override it.
 export function adminLoginEmail(env: Env) {
@@ -31,7 +32,13 @@ async function reserveAttempt(env: Env, key: string, now: number, maximum: numbe
 export async function authRoute(request: Request, env: Env, path: string) {
   if (path === '/api/admin/session' && request.method === 'GET') {
     if (!configured(env)) return json({ configured: false, authenticated: false, mailReady: mailReady(env) })
-    try { await requireAdmin(request, env); return json({ configured: true, authenticated: true, mailReady: mailReady(env), username: env.ADMIN_USERNAME, membershipEnabled: env.MEMBERSHIP_ENABLED === 'true' }) }
+    try {
+      await requireAdmin(request, env)
+      const stores = configuredMemberStores(env).filter(store => membershipEnabled(env, store))
+      const names = stores.length ? (await env.INTEREST_DB.prepare("SELECT id,json_extract(settings,'$.name') name FROM owner_shop_settings WHERE id IN ('platform','store-3')").all<{ id: string; name: string | null }>()).results : []
+      const membershipStores = stores.map(id => ({ id, name: names.find(shop => shop.id === id)?.name || id }))
+      return json({ configured: true, authenticated: true, mailReady: mailReady(env), username: env.ADMIN_USERNAME, membershipEnabled: membershipStores.length > 0, membershipStores })
+    }
     catch (e) { if (e instanceof ApiError && e.status === 401) return json({ configured: true, authenticated: false, mailReady: mailReady(env) }); throw e }
   }
   if (path === '/api/admin/login/email-code' && request.method === 'POST') {

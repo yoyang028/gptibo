@@ -1,4 +1,5 @@
 import { ApiError, json, type Env } from './platform.ts'
+import { memberScope } from './member-scope.ts'
 
 function boundary(value: string | null, end: boolean) {
   if (!value) return end ? Date.now() + 1 : 0
@@ -15,7 +16,7 @@ export async function memberStatistics(env: Env, url: URL) {
     SELECT p.*,o.payment_status,o.refunded_cents,
       CASE WHEN o.status='success' OR EXISTS(SELECT 1 FROM order_events e WHERE e.order_id=o.id AND e.to_status='success') THEN 1 ELSE 0 END delivered
     FROM member_order_promotions p JOIN orders o ON o.id=p.order_id WHERE p.referrer_id IS NOT NULL
-      AND p.store_id='store-3' AND o.owner_store_id='store-3' AND o.partner_id IS NULL AND o.is_test=0 AND o.mode='live'
+      AND p.store_id=? AND o.owner_store_id=p.store_id AND o.partner_id IS NULL AND o.is_test=0 AND o.mode='live'
       AND p.created_at>=? AND p.created_at<?
   ), order_stats AS (
     SELECT referrer_id,COUNT(*) orders,COUNT(DISTINCT customer_key) buyers,
@@ -47,9 +48,9 @@ export async function memberStatistics(env: Env, url: URL) {
       COALESCE(a.used_cents,0) used_cents,COALESCE(a.restored_cents,0) restored_cents
     FROM member_profiles p JOIN member_s3_user u ON u.id=p.id LEFT JOIN order_stats o ON o.referrer_id=p.id
       LEFT JOIN grant_stats g ON g.member_id=p.id LEFT JOIN usage_stats a ON a.member_id=p.id
-    WHERE p.store_id='store-3' AND instr(lower(u.email),?)>0
+    WHERE p.store_id=? AND instr(lower(u.email),?)>0
   ) `
-  const parameters = [since, until, Date.now(), q]
+  const store = memberScope(env), parameters = [store, since, until, Date.now(), store, q]
   const [rows, totals] = await Promise.all([
     db.prepare(cte + 'SELECT * FROM report ORDER BY converted_buyers DESC,paid_cents DESC,id LIMIT 20 OFFSET ?').bind(...parameters, (page - 1) * 20).all(),
     db.prepare(cte + 'SELECT COUNT(*) inviters,COALESCE(SUM(orders),0) orders,COALESCE(SUM(paid_cents),0) paid_cents,COALESCE(SUM(refunded_cents),0) refunded_cents,COALESCE(SUM(delivered_orders),0) delivered_orders,COALESCE(SUM(used_cents),0) used_cents FROM report').bind(...parameters).first(),

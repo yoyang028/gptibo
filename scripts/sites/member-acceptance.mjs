@@ -50,13 +50,18 @@ const mf=new Miniflare({...convertV4MiniflareOptions({host:'127.0.0.1',port:loca
  d1Databases:{INTEREST_DB:'member-pilot-fixture'},
  ratelimits:{INTEREST_LIMITER:{namespace_id:'4101',simple:{limit:1000,period:60}},API_LIMITER:{namespace_id:'4102',simple:{limit:2000,period:60}},EXPENSIVE_LIMITER:{namespace_id:'4103',simple:{limit:1000,period:60}}},
  assets:{directory:path.join(root,'dist'),binding:'ASSETS',run_worker_first: ['/api/*', '/ref/*', '/i/*'],routerConfig:{has_user_worker:true},assetConfig:{not_found_handling:'single-page-application'}},
- bindings:{MEMBERSHIP_ENABLED:'true',MEMBER_AUTH_SECRET:'local-only-independent-member-secret-32-characters',OWNER_STOREFRONT_HOSTS:JSON.stringify({'127.0.0.1':'store-3'}),ADMIN_USERNAME:'local-admin',ADMIN_EMAIL:adminEmail,ADMIN_TOTP_SECRET:totpSecret,RESEND_API_KEY:'local-mail-only',RESEND_FROM:'Local <noreply@example.invalid>',PARTNER_AUTH_SECRET:'local-partner-secret',ORDER_TESTING_ENABLED:'false',RECHARGE_API_BASE:upstream+'/v1',RECHARGE_PARTNER_ID:'local-pilot',RECHARGE_KEY_ID:'local-key',RECHARGE_CLIENT_SECRET:'local-api-secret',RECHARGE_WEBHOOK_SECRET:webhookSecret,RECHARGE_NOTIFY_URL:academic+'/api/recharge/webhook',RECHARGE_PRODUCT_MAP:'{"plus":"plus"}',RECHARGE_COLLECTION_MODE:'platform_collect',RECHARGE_CHECKOUT_ENABLED:'true',RECHARGE_READ_ONLY:'false'},outboundService:outbound}),telemetry:{enabled:false},resourcePersistencePath:path.join(runtime,'state'),resourceTmpPath:path.join(runtime,'tmp')})
+ bindings:{MEMBERSHIP_ENABLED:'true',MEMBERSHIP_PLATFORM_HOST:'localhost',MEMBER_AUTH_SECRET:'local-only-independent-member-secret-32-characters',OWNER_STOREFRONT_HOSTS:JSON.stringify({'127.0.0.1':'store-3'}),ADMIN_USERNAME:'local-admin',ADMIN_EMAIL:adminEmail,ADMIN_TOTP_SECRET:totpSecret,RESEND_API_KEY:'local-mail-only',RESEND_FROM:'Local <noreply@example.invalid>',PARTNER_AUTH_SECRET:'local-partner-secret',ORDER_TESTING_ENABLED:'false',RECHARGE_API_BASE:upstream+'/v1',RECHARGE_PARTNER_ID:'local-pilot',RECHARGE_KEY_ID:'local-key',RECHARGE_CLIENT_SECRET:'local-api-secret',RECHARGE_WEBHOOK_SECRET:webhookSecret,RECHARGE_NOTIFY_URL:academic+'/api/recharge/webhook',RECHARGE_PRODUCT_MAP:'{"plus":"plus"}',RECHARGE_COLLECTION_MODE:'platform_collect',RECHARGE_CHECKOUT_ENABLED:'true',RECHARGE_READ_ONLY:'false'},outboundService:outbound}),telemetry:{enabled:false},resourcePersistencePath:path.join(runtime,'state'),resourceTmpPath:path.join(runtime,'tmp')})
 let browser
 try{
  await mf.ready
  const db=await mf.getD1Database('INTEREST_DB'),service=await mf.getWorker()
  for(const name of fs.readdirSync(path.join(root,'migrations')).filter(n=>n.endsWith('.sql')).sort())await db.batch(unstable_splitSqlQuery(fs.readFileSync(path.join(root,'migrations',name),'utf8')).map(sql=>db.prepare(sql)))
  await db.prepare("UPDATE owner_store_prices SET price_cents=13800,enabled=1 WHERE store_id='store-3' AND plan='plus'").run()
+ await db.prepare("UPDATE catalog_plans SET price_cents=12800 WHERE id='plus'").run()
+ async function runMemberJobs(){
+  const start=Math.floor(Date.now()/480000)*480000
+  for(let minute=0;minute<8;minute++)await service.scheduled({scheduledTime:start+minute*60000})
+ }
  browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||'C:/Program Files/Google/Chrome/Application/chrome.exe',env:process.env})
  async function context(){
   const c=await browser.newContext({baseURL:origin,ignoreHTTPSErrors:true,locale:'zh-CN',reducedMotion:'reduce',viewport:{width:1440,height:1000}})
@@ -64,9 +69,9 @@ try{
   c.on('page',p=>p.on('pageerror',e=>result.pageErrors.push(e.message)))
   return c
  }
- async function call(c,url,data,expected=200){
+ async function call(c,url,data,expected=200,at=origin){
   for(let i=0;i<10;i++){
-   const r=await c.request.fetch(origin+url,{method:data===undefined?'GET':'POST',headers:{Origin:origin},...(data===undefined?{}:{data})}),payload=await r.json()
+   const r=await c.request.fetch(at+url,{method:data===undefined?'GET':'POST',headers:{Origin:at},...(data===undefined?{}:{data})}),payload=await r.json()
    if(r.status()===409&&payload.error?.includes('正在同步')&&(data===undefined||['poll','query'].includes(data.action))){await new Promise(resolve=>setTimeout(resolve,150));continue}
    assert.equal(r.status(),expected,JSON.stringify(payload));return payload
   }
@@ -157,7 +162,7 @@ try{
    db.prepare("INSERT INTO order_events(id,order_id,actor,action,to_status,order_version,created_at) VALUES (?,?,'local-fixture','fixture-delivery','success',1,?)").bind(randomUUID(),id,at),
   ])
  }
- for(let slot=0;slot<4;slot++)await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000+slot*60000})
+ await runMemberJobs()
  assert.equal((await call(memberContext,'/api/member/session')).balanceCents,14000)
  record('actual workerd scheduler activates fourteen delivered-order rewards once')
  for(let i=0;i<12;i++)await db.prepare("INSERT INTO member_notifications(id,event_key,kind,target_id,member_id,mail_body,status,sent_at,created_at) VALUES (?,?,'pagination-fixture',?, ?,?,'sent',?,?)").bind('local-pagination-'+i,'local-pagination-'+i,'local-pagination-'+i,member.member.id,JSON.stringify({subject:'分页通知 '+i,text:'本地分页验收'}),Date.now(),Date.now()+i).run()
@@ -275,10 +280,13 @@ try{
  await ordinary.getByRole('button',{name:'立即购买',exact:true}).waitFor()
  assert.equal(await ordinary.locator('.member-invitation-notice').count(),0)
  await ordinary.goto(academic+'/')
- await ordinary.locator('.store-product').first().waitFor()
- assert.equal(await ordinary.locator('.member-invitation-campaign, .member-invitation-notice').count(),0)
+ await ordinary.getByRole('link',{name:/邀请好友，\s*Plus 免费用/}).waitFor()
+ await ordinary.goto(academic+'/product/chatgpt?invite='+code)
+ await ordinary.getByRole('button',{name:'立即购买',exact:true}).waitFor()
+ assert.equal(await ordinary.locator('.member-invitation-notice').count(),0)
+ assert.equal((await ordinaryContext.request.get(academic+invitePath)).status(),404)
  await ordinaryContext.close()
- record('normal pilot visitors see the activity link, EN and dark mode work, and the academic store has neither invitation surface')
+ record('both storefronts expose the campaign; ordinary visitors do not see an invite notice and a legacy VIP code cannot enroll an academic-store buyer')
  const blockedContext=await context(),blocked=await blockedContext.newPage()
  await blocked.addInitScript(()=>{for(const name of ['getItem','setItem','removeItem'])Object.defineProperty(Storage.prototype,name,{value:()=>{throw new Error('Storage disabled for local acceptance')}})})
  await blocked.goto(inviteUrl+'/product/chatgpt')
@@ -301,8 +309,8 @@ try{
  const event='local_event_'+randomUUID().replaceAll('-',''),stamp=String(Math.floor(Date.now()/1000)),raw=JSON.stringify({event_id:event,type:'order.paid',data:{order_id:remote.order_id,merchant_order_no:guestOrder.id}})
  const headers={'Content-Type':'application/json','X-Quefa-Event':'order.paid','X-Quefa-Event-Id':event,'X-Quefa-Delivery':'delivery_'+event,'X-Quefa-Timestamp':stamp,'X-Quefa-Signature':`t=${stamp},v1=${createHmac('sha256',webhookSecret).update(stamp+'.'+raw).digest('hex')}`}
  for(let i=0;i<2;i++)assert.equal((await mf.dispatchFetch(academic+'/api/recharge/webhook',{method:'POST',headers,body:raw})).status,200)
- for(let slot=0;slot<4;slot++)await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000+slot*60000})
- for(let slot=0;slot<4;slot++)await service.scheduled({scheduledTime:Math.floor(Date.now()/300000)*300000+slot*60000})
+ await runMemberJobs()
+ await runMemberJobs()
  assert.equal((await call(guestContext,`/api/orders/${guestOrder.id}`)).order.status,'success')
  const after=await call(memberContext,'/api/member/session');assert.equal(after.totals.pending,1000);assert.equal(after.invitations.total,15)
  record('unregistered guest gets five off; discounted upstream payment and duplicate callback award once after delivery')
@@ -313,8 +321,52 @@ try{
  await call(memberContext,`/api/orders/${winner.id}/promotion-cancel`,{version:winner.version})
  record('actual D1 concurrent browser requests cannot spend one reward balance twice')
  const academicIdentity=await memberContext.request.get(academic+'/api/member/session')
- assert.equal((await academicIdentity.json()).enabled,false)
- record('academic shop keeps its original guest flow and cannot use membership session')
+ assert.deepEqual(await academicIdentity.json(),{enabled:true,member:null})
+ const primaryContext=await context(),primaryPage=await primaryContext.newPage()
+ await primaryPage.goto(academic+'/account')
+ await primaryPage.getByText('成功邀请13位新客，可免费兑换1个月 Plus 会员。',{exact:true}).waitFor()
+ await primaryPage.getByRole('button',{name:'注册会员',exact:true}).click()
+ await primaryPage.getByLabel('邮箱',{exact:true}).fill(email)
+ await primaryPage.getByLabel('密码',{exact:true}).fill('Local-academic-password-123!')
+ const [primaryRegistered]=await Promise.all([primaryPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/member/auth/sign-up/email'),primaryPage.getByRole('button',{name:'注册并发送验证码',exact:true}).click()])
+ assert.equal(primaryRegistered.status(),200,await primaryRegistered.text())
+ const primaryMail=mail.findLast(message=>message.to[0]===email)
+ assert.notEqual(primaryMail.from,verification.from)
+ await primaryPage.getByLabel('邮箱验证码',{exact:true}).fill(primaryMail.text.match(/验证码：(\d{6})/)[1])
+ await primaryPage.getByRole('button',{name:'验证并登录',exact:true}).click()
+ await primaryPage.getByRole('heading',{name:'我的邀请链接',exact:true}).waitFor()
+ const primary=await call(primaryContext,'/api/member/session',undefined,200,academic)
+ assert.notEqual(primary.member.id,member.member.id)
+ assert.notEqual(primary.member.inviteCode,code)
+ assert.equal(primary.balanceCents,0)
+ const primaryInvite=await call(primaryContext,'/api/member/invitation',{alias:'star-friend'},200,academic)
+ assert.equal(primaryInvite.inviteUrl,academic+invitePath)
+ assert.equal((await primaryContext.request.get(origin+'/api/member/session').then(r=>r.json())).member,null)
+ record('both real D1 accounts use the same email and custom alias independently, with local branding and price-based redemption guidance')
+
+ const primaryGuestContext=await context(),primaryGuest=await primaryGuestContext.newPage()
+ await primaryGuest.goto(primaryInvite.inviteUrl+'/product/chatgpt')
+ await primaryGuest.getByRole('status',{name:'好友邀请优惠',exact:true}).waitFor()
+ assert.equal(await primaryGuest.locator('meta[name="scholai-member-invitation"]').getAttribute('data-store'),'platform')
+ await primaryGuest.getByRole('button',{name:'立即购买',exact:true}).click()
+ await primaryGuest.getByRole('button',{name:'继续下单',exact:true}).click()
+ await primaryGuest.locator('#purchase-email').fill('guest-local-fixture@gmail.com')
+ await primaryGuest.getByRole('checkbox',{name:/本次使用新人优惠/}).check()
+ const [primaryResponse]=await Promise.all([primaryGuest.waitForResponse(r=>new URL(r.url()).pathname==='/api/orders'&&r.request().method()==='POST'),primaryGuest.getByRole('button',{name:'继续付款',exact:true}).click()])
+ assert.equal(primaryResponse.status(),201,await primaryResponse.text())
+ const primaryOrder=(await primaryResponse.json()).order
+ assert.equal(primaryOrder.price,123)
+ assert.equal((await db.prepare('SELECT referrer_id FROM member_platform_order_promotions WHERE order_id=?').bind(primaryOrder.id).first()).referrer_id,primary.member.id)
+ assert.equal(await db.prepare('SELECT referrer_id FROM member_order_promotions WHERE order_id=?').bind(primaryOrder.id).first(),null)
+ await call(primaryGuestContext,`/api/orders/${primaryOrder.id}/fulfillment`,{action:'query'},200,academic)
+ const primaryRemote=[...orders.values()].find(o=>o.merchant_order_no===primaryOrder.id)
+ assert.equal(primaryRemote.sale_amount,'123.00')
+ primaryRemote.payment_status='paid';primaryRemote.fulfillment_status='succeeded'
+ await call(primaryGuestContext,`/api/orders/${primaryOrder.id}/fulfillment`,{action:'query'},200,academic)
+ await runMemberJobs()
+ assert.equal((await call(primaryContext,'/api/member/session',undefined,200,academic)).totals.pending,1000)
+ assert.equal((await call(memberContext,'/api/member/session')).totals.pending,1000)
+ record('the same first-order buyer gets separate ¥5 discounts and each successfully delivered order credits only its own inviter')
  const adminContext=await context()
  const challenge=await call(adminContext,'/api/admin/login/email-code',{username:'local-admin'})
  const adminCode=mail.findLast(m=>m.to[0]===adminEmail).text.match(/\b\d{6}\b/)[0]
@@ -336,6 +388,26 @@ try{
  await adminPage.getByRole('row').filter({hasText:guestOrder.id}).waitFor()
  await adminPage.screenshot({path:path.join(evidence,'admin-members-desktop.png'),fullPage:true})
  record('existing administrator authentication opens member, invitation and reward management')
+ const adminStores=(await call(adminContext,'/api/admin/session')).membershipStores
+ const storeSelect=adminPage.getByRole('combobox',{name:'邀新活动店铺',exact:true})
+ async function showStore(id){
+  await storeSelect.click()
+  await adminPage.getByRole('option',{name:adminStores.find(store=>store.id===id).name,exact:true}).click()
+ }
+ await showStore('platform')
+ await adminPage.getByRole('row').filter({hasText:primaryOrder.id}).waitFor()
+ assert.equal(await adminPage.getByRole('row').filter({hasText:guestOrder.id}).count(),0)
+ await adminPage.getByRole('button',{name:'运营中心',exact:true}).click()
+ await adminPage.getByRole('button',{name:'邀请效果',exact:true}).click()
+ const scopedStats=await call(adminContext,'/api/admin/member-ops/statistics?store=platform')
+ assert.equal(scopedStats.totals.paid_cents,12300)
+ await adminPage.getByText('¥123.00',{exact:true}).first().waitFor()
+ await adminPage.screenshot({path:path.join(evidence,'academic-invitation-statistics-desktop.png'),fullPage:true})
+ await showStore('store-3')
+ await adminPage.getByRole('button',{name:'会员与奖励',exact:true}).click()
+ await adminPage.getByRole('row').filter({hasText:guestOrder.id}).waitFor()
+ assert.equal(await adminPage.getByRole('row').filter({hasText:primaryOrder.id}).count(),0)
+ record('administrators switch the store selector and both activity orders and conversion statistics follow it')
  await adminPage.getByRole('button',{name:'奖励与撤销',exact:true}).click()
  await adminPage.getByRole('button',{name:'流水',exact:true}).first().click()
  await adminPage.getByRole('heading',{name:'奖励流水',exact:true}).waitFor()

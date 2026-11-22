@@ -1,4 +1,4 @@
-import type { PromotionSelection } from '../../shared/member-promotions'
+import type { MemberStoreId, PromotionSelection } from '../../shared/member-promotions'
 import type { PaymentMethodOption } from './payment-method-choices'
 import { emailProduct, productNameForId } from '../../shared/email-products'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
@@ -48,8 +48,8 @@ function FlowStage({ stage, children }: { stage: string; children: ReactNode }) 
   return <div ref={viewport} className="flow-viewport"><div ref={content} className="flow-stage">{children}</div></div>
 }
 
-type Props = CheckoutProps & { membershipEnabled?: boolean; couponAvailable?: boolean; shopSlug?: string; onCloseComplete?: () => void; notice?: { supportsWarranty?: boolean; purchaseNote?: string; onContinue: () => void }; emailMode: boolean; paymentMethods?: PaymentMethodOption[]; draft: { plan: PlanId; price: number }; initialEmail?: string | null; onSubmitEmail: (email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, couponCode?: string, couponPrice?: number, promotion?: PromotionSelection) => Promise<void>; children?: ReactNode | ((refreshTarget: HTMLElement | null) => ReactNode) }
-export function PurchaseFlow({ membershipEnabled = false, couponAvailable = false, shopSlug, notice, onCloseComplete, emailMode, paymentMethods, draft, initialEmail, onSubmitEmail, children, ...checkout }: Props) {
+type Props = CheckoutProps & { memberStore?: MemberStoreId; couponAvailable?: boolean; shopSlug?: string; onCloseComplete?: () => void; notice?: { supportsWarranty?: boolean; purchaseNote?: string; onContinue: () => void }; emailMode: boolean; paymentMethods?: PaymentMethodOption[]; draft: { plan: PlanId; price: number }; initialEmail?: string | null; onSubmitEmail: (email: string, username?: string, preflightToken?: string, paymentMethod?: string, expectedFeeBps?: number, turnstileToken?: string, couponCode?: string, couponPrice?: number, promotion?: PromotionSelection) => Promise<void>; children?: ReactNode | ((refreshTarget: HTMLElement | null) => ReactNode) }
+export function PurchaseFlow({ memberStore, couponAvailable = false, shopSlug, notice, onCloseComplete, emailMode, paymentMethods, draft, initialEmail, onSubmitEmail, children, ...checkout }: Props) {
   const { order, open, onOpenChange, busy, error } = checkout
   const [refreshTarget, setRefreshTarget] = useState<HTMLDivElement | null>(null)
   const [supportReason, setSupportReason] = useState<string | null>(null)
@@ -139,7 +139,7 @@ export function PurchaseFlow({ membershipEnabled = false, couponAvailable = fals
       </header>
       <FlowStage stage={stage}>
         <DialogTitle ref={titleRef} tabIndex={-1} data-stage-title className={(xgift && !emailMode) || (result && !paused) || step === 1 ? 'sr-only' : 'flow-title'}>{title}</DialogTitle>
-        {emailMode ? <PurchaseEmail membershipEnabled={membershipEnabled} couponAvailable={couponAvailable} shopSlug={shopSlug} purchasePlan={current.plan} price={current.price} key={`${shopSlug}:${current.plan}:${couponAvailable}`} paymentMethods={!checkout.testingEnabled && (xgift || emailProductInfo) ? paymentMethods ?? [] : undefined} plan={xgift ? current.plan : undefined} initialEmail={initialEmail} busy={Boolean(busy)} error={error ?? ''} inputRef={emailRef} onSubmit={onSubmitEmail} /> : typeof children === 'function' ? children(refreshTarget) : children ?? <Checkout key={order?.id} {...checkout} refreshTarget={refreshTarget} refreshDisabled={Boolean(busy) || salesBusy} />}
+        {emailMode ? <PurchaseEmail memberStore={memberStore} couponAvailable={couponAvailable} shopSlug={shopSlug} purchasePlan={current.plan} price={current.price} key={`${memberStore}:${shopSlug}:${current.plan}:${couponAvailable}`} paymentMethods={!checkout.testingEnabled && (xgift || emailProductInfo) ? paymentMethods ?? [] : undefined} plan={xgift ? current.plan : undefined} initialEmail={initialEmail} busy={Boolean(busy)} error={error ?? ''} inputRef={emailRef} onSubmit={onSubmitEmail} /> : typeof children === 'function' ? children(refreshTarget) : children ?? <Checkout key={order?.id} {...checkout} refreshTarget={refreshTarget} refreshDisabled={Boolean(busy) || salesBusy} />}
         <footer className="flow-footer" data-email-step={emailMode}>
           {emailMode ? <p><ShieldCheck size={14} />{xgift ? '仅用于订单通知与找回' : '用于商品交付、订单找回与服务联系，不订阅营销邮件。'}</p> : <>
             <OrderSupportButton key={order?.id} contacts={order?.supportContacts} name={order?.partnerName ?? 'GPTibo'} disabled={busy || salesBusy || !order} guided={open && !showingSales && Boolean(supportReason) && supportReason !== dismissedSupportReason} onGuideDismiss={() => setDismissedSupportReason(supportReason)} />

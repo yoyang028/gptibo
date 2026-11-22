@@ -1,5 +1,6 @@
 import { ApiError, body, json, type Env } from './platform.ts'
-import { memberStore, membershipEnabled, verifiedMember } from './member-auth.ts'
+import { verifiedMember } from './member-auth.ts'
+import { adminMemberEnvironment, memberEnvironment, memberScope, memberStore, membershipEnabled } from './member-scope.ts'
 import { memberProfile, availableRewards, promotionFor, approvePromotion } from './member-promotions.ts'
 import { reconcileMemberRewards, revokeReward } from './member-rewards.ts'
 import { customizeInvitation, memberInvitation } from './member-invitations.ts'
@@ -12,7 +13,9 @@ function pageOf(url: URL, key = 'page', size = 20) {
 export async function memberRoutes(request: Request, env: Env) {
   const url = new URL(request.url)
   if (!['/api/member/session','/api/member/invitation'].includes(url.pathname)) throw new ApiError('未找到接口。', 404)
-  if (!memberStore(request, env)) return json({ enabled: false, member: null })
+  const store = memberStore(request, env)
+  if (!store) return json({ enabled: false, member: null })
+  env = memberEnvironment(env, store)
   if (request.method !== (url.pathname.endsWith('/invitation') ? 'POST' : 'GET')) throw new ApiError('请求方式不支持。', 405)
   const member = await verifiedMember(request, env)
   if (!member) {
@@ -46,6 +49,7 @@ export async function memberRoutes(request: Request, env: Env) {
 }
 
 export async function adminMemberRoutes(request: Request, env: Env, url: URL) {
+  env = adminMemberEnvironment(request, env, url)
   if (!membershipEnabled(env)) return json({ enabled: false })
   const db = env.INTEREST_DB
   if (request.method === 'GET' && url.pathname === '/api/admin/members') {
@@ -53,7 +57,7 @@ export async function adminMemberRoutes(request: Request, env: Env, url: URL) {
     const grantId = url.searchParams.get('grant')
     if (grantId) {
       if (grantId.length > 160) throw new ApiError('奖励编号无效。')
-      const grant = await db.prepare("SELECT id,source_order_id FROM member_reward_grants WHERE id=? AND store_id='store-3'").bind(grantId).first()
+      const grant = await db.prepare('SELECT id,source_order_id FROM member_reward_grants WHERE id=? AND store_id=?').bind(grantId, memberScope(env)).first()
       if (!grant) throw new ApiError('未找到该奖励。', 404)
       const ledger = await db.prepare('SELECT l.* FROM member_reward_ledger l LEFT JOIN member_ledger_sequence s ON s.ledger_id=l.id WHERE l.grant_id=? ORDER BY s.sequence DESC,l.created_at DESC,l.id LIMIT 20 OFFSET ?').bind(grantId,offset).all()
       return json({ enabled: true, grant, ledger: ledger.results, page })

@@ -1,6 +1,10 @@
-# 通用店会员与邀请返券试点
+# 自营店会员与邀请返券
 
-本功能在现有 React + Cloudflare Worker + D1 商城内增量实现。仅对域名映射为 `store-3` 的通用店及 `plus`、`pro-5x`、`pro-20x`、`pro-25x` 四个规格开放。学术店、合作商身份及管理员登录沿用原流程；Go/PostgreSQL 后端不启用本功能。没有增加独立服务。
+本功能复用 React、Cloudflare Worker 和 D1。AI星球店铺 `store-3` 与科研店铺 `platform` 各自开放 `plus`、`pro-5x`、`pro-20x`、`pro-25x` 四个规格。合作商与 Go/PostgreSQL 后端沿用现有购买流程。
+
+科研店启用前应用 `0070_primary_store_members.sql`，在原 D1 新建独立会员、邀请、奖励、通知和运营表。AI星球沿用原表及登录 Cookie。同一邮箱可在两店分别注册，首次购买、邀请链接、余额及退款各按原订单所在店核算。客户档案继续按所选店铺读取实际应付、付款和退款。后台「会员与邀新」从当前域名对应店铺打开，管理员可通过「邀新活动店铺」切换报表和处理记录。
+
+科研店使用 `MEMBERSHIP_PLATFORM_HOST` 绑定实际主机名，通过 `MEMBERSHIP_PLATFORM_ENABLED=false` 暂停新活动并继续保有原订单保护和后台维护范围。AI星球沿用 `MEMBERSHIP_ENABLED`。两店轮流占用现有每分钟定时任务，返券观察期按实际交付时间计算。
 
 ## 已实现规则
 

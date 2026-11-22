@@ -4,6 +4,7 @@ import { promotionFor } from './member-promotions.ts'
 import { findRechargeOrder, queryPlatformOrder } from './recharge/service.ts'
 import { config, request, moneyCents, type RemoteOrder, type Redemption } from './recharge/client.ts'
 import { INVITATION_PLANS } from '../shared/member-promotions.ts'
+import { memberScope, membershipConfigured } from './member-scope.ts'
 
 type Snapshot = Record<string, string | number | null>
 type Check = { state: 'matched' | 'difference' | 'expected' | 'error'; differences: string[]; local: Snapshot; upstream: Snapshot }
@@ -11,11 +12,11 @@ export async function operationEvent(env: Env, category: string, target: string,
   await env.INTEREST_DB.prepare('INSERT INTO member_operation_events(id,category,target_id,action,actor,note,details,created_at) VALUES (?,?,?,?,?,?,?,?)')
     .bind(crypto.randomUUID(), category, target, action, actor, note, JSON.stringify(details), Date.now()).run()
 }
-export function assertPilotOrder(o: Order) {
-  if (o.owner_store_id !== 'store-3' || o.partner_id || o.mode !== 'live' || o.is_test || !(INVITATION_PLANS as readonly string[]).includes(o.plan)) throw new ApiError('请选择通用店的真实活动规格订单。', 409)
+export function assertPilotOrder(o: Order, env: Env) {
+  if (o.owner_store_id !== memberScope(env) || o.partner_id || o.mode !== 'live' || o.is_test || !(INVITATION_PLANS as readonly string[]).includes(o.plan)) throw new ApiError('请选择当前店铺的真实活动规格订单。', 409)
 }
 async function compare(env: Env, o: Order): Promise<Check> {
-  const p = await promotionFor(env, o.id), row = await findRechargeOrder(env, o.id)
+  const p = await promotionFor(env, o.id, o), row = await findRechargeOrder(env, o.id)
   const local: Snapshot = { orderId: o.id, status: o.status, payment: o.payment_status, cashCents: p?.cash_cents ?? o.price_cents,
     supplyCents: p?.supply_cents ?? row?.supply_cents ?? null, refundCents: o.refunded_cents,
     review: p?.review_status ?? 'none', procurement: p?.procurement_status ?? 'ready', remoteId: row?.remote_id ?? null,
@@ -58,7 +59,7 @@ async function compare(env: Env, o: Order): Promise<Check> {
   return result
 }
 export async function reconcilePilotOrder(env: Env, id: string, actor = 'system') {
-  const order = await getOrder(env, id); assertPilotOrder(order)
+  const order = await getOrder(env, id); assertPilotOrder(order, env)
   const db = env.INTEREST_DB, token = crypto.randomUUID(), now = Date.now()
   await db.prepare('INSERT INTO member_order_reconciliations(order_id) VALUES (?) ON CONFLICT(order_id) DO NOTHING').bind(id).run()
   await db.prepare('UPDATE member_order_reconciliations SET lease_token=?,lease_until=? WHERE order_id=? AND lease_until<=?').bind(token, now + 60000, id, now).run()
@@ -78,11 +79,13 @@ export async function reconcilePilotOrder(env: Env, id: string, actor = 'system'
   } finally { await db.prepare('UPDATE member_order_reconciliations SET lease_token=NULL,lease_until=0 WHERE order_id=? AND lease_token=?').bind(id, token).run() }
 }
 export async function scanPilotOrders(env: Env, limit = 3) {
-  if (env.MEMBERSHIP_ENABLED === undefined) return { checked: 0, failed: 0 }
+  if (!membershipConfigured(env)) return { checked: 0, failed: 0 }
+  const store = memberScope(env)
   const rows = (await env.INTEREST_DB.prepare(`SELECT o.id FROM orders o LEFT JOIN member_order_reconciliations c ON c.order_id=o.id
-    WHERE o.owner_store_id='store-3' AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0
+    WHERE o.owner_store_id=? AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0
+      AND (?<>'platform' OR o.created_at>=(SELECT enabled_since FROM member_notification_settings WHERE id=1))
       AND o.plan IN ('plus','pro-5x','pro-20x','pro-25x') AND COALESCE(c.lease_until,0)<=?
-      AND COALESCE(c.checked_at,0)<? ORDER BY COALESCE(c.checked_at,0),o.created_at,o.id LIMIT ?`).bind(Date.now(), Date.now() - 300000, Math.max(1, Math.min(3, limit))).all<{ id: string }>()).results
+      AND COALESCE(c.checked_at,0)<? ORDER BY COALESCE(c.checked_at,0),o.created_at,o.id LIMIT ?`).bind(store, store, Date.now(), Date.now() - 300000, Math.max(1, Math.min(3, limit))).all<{ id: string }>()).results
   let failed = 0
   for (let i = 0; i < rows.length; i += 2) {
     const results = await Promise.allSettled(rows.slice(i, i + 2).map(o => reconcilePilotOrder(env, o.id)))
@@ -91,8 +94,8 @@ export async function scanPilotOrders(env: Env, limit = 3) {
   return { checked: rows.length, failed }
 }
 export async function syncPilotOrder(env: Env, id: string, note: string) {
-  const o = await getOrder(env, id); assertPilotOrder(o)
-  const p = await promotionFor(env, id)
+  const o = await getOrder(env, id); assertPilotOrder(o, env)
+  const p = await promotionFor(env, id, o)
   if (p && (p.cash_cents === 0 || p.procurement_status === 'awaiting_supplier' || !['none','approved'].includes(p.review_status))) throw new ApiError('该订单需先完成审核与上游采购方案核对，保持锁券待处理。', 409)
   // The existing validated GET-only state machine owns transitions. No direct
   // edits to payments, fulfillment, idempotency keys or reward records here.

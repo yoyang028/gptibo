@@ -14,6 +14,10 @@ export interface Database {
 export interface Env {
   /** Consumer membership pilot. Independent from administrator and reseller auth. */
   MEMBERSHIP_ENABLED?: string
+  /** Exact primary-store host allowed to issue invitations. */
+  MEMBERSHIP_PLATFORM_HOST?: string
+  /** Optional pause switch that keeps the primary store's existing orders and jobs scoped. */
+  MEMBERSHIP_PLATFORM_ENABLED?: string
   MEMBER_AUTH_SECRET?: string
   /** JSON hostname -> owner storefront ID; maintained in private deployment config. */
   OWNER_STOREFRONT_HOSTS?: string

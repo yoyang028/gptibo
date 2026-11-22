@@ -1,6 +1,7 @@
 import { ApiError, hash, type Env, type Statement } from './platform.ts'
 import { identityKey } from './member-identity.ts'
 import { enqueueMemberNotification } from './member-notifications.ts'
+import { memberScope, membershipConfigured } from './member-scope.ts'
 import { RISK_LABELS, RISK_WINDOW_MS, riskFlags, type RiskMetrics } from '../shared/member-risk.ts'
 export { riskFlags } from '../shared/member-risk.ts'
 export async function riskIpKey(env: Env, ip: string | null) {
@@ -16,18 +17,18 @@ export async function riskMetrics(env: Env, context: { memberId?: string | null;
     COALESCE(SUM(CASE WHEN COALESCE(p.reward_cents,0)+COALESCE(p.newcomer_cents,0)+COALESCE(p.other_cents,c.discount_cents,0)>0
       AND (p.allocation_status='reserved' OR p.order_id IS NULL) AND o.payment_status='unpaid' AND o.status='pending' THEN 1 ELSE 0 END),0) activeReservations
     FROM orders o LEFT JOIN member_order_promotions p ON p.order_id=o.id LEFT JOIN member_order_signals s ON s.order_id=o.id LEFT JOIN shop_coupon_uses c ON c.order_id=o.id
-    WHERE o.owner_store_id='store-3' AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0
+    WHERE o.owner_store_id=? AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0
       AND o.plan IN ('plus','pro-5x','pro-20x','pro-25x') AND o.created_at>?
       AND (p.member_id=? OR s.member_id=? OR p.customer_key=? OR s.customer_key=? OR o.owner_hash=?)`)
-    .bind(now - RISK_WINDOW_MS, context.memberId ?? '', context.memberId ?? '', context.customerKey ?? '', context.customerKey ?? '', context.browserKey ?? '').first<Omit<RiskMetrics, 'ipOrders'>>()
+    .bind(memberScope(env), now - RISK_WINDOW_MS, context.memberId ?? '', context.memberId ?? '', context.customerKey ?? '', context.customerKey ?? '', context.browserKey ?? '').first<Omit<RiskMetrics, 'ipOrders'>>()
   const ip = ipKey ? await env.INTEREST_DB.prepare('SELECT COUNT(*) n FROM member_order_signals WHERE ip_key=? AND created_at>?').bind(ipKey, now - 3600000).first<{ n: number }>() : null
   return { totalOrders: result?.totalOrders ?? 0, unpaidOrders: result?.unpaidOrders ?? 0, repeatedReservations: result?.repeatedReservations ?? 0, activeReservations: result?.activeReservations ?? 0, ipOrders: ip?.n ?? 0 }
 }
 export async function riskSignalStatements(request: Request, env: Env, id: string, email: string, memberId: string | null): Promise<Statement[]> {
   const db = env.INTEREST_DB, key = await identityKey(env, 'email', email), ip = await riskIpKey(env, request.headers.get('CF-Connecting-IP'))
   const statements = [db.prepare(`INSERT INTO member_order_signals(order_id,customer_key,member_id,ip_key,created_at)
-    SELECT id,?,?,?,created_at FROM orders WHERE id=? AND owner_store_id='store-3' AND partner_id IS NULL AND mode='live' AND is_test=0
-      AND plan IN ('plus','pro-5x','pro-20x','pro-25x') ON CONFLICT(order_id) DO NOTHING`).bind(key, memberId, ip, id)]
+    SELECT id,?,?,?,created_at FROM orders WHERE id=? AND owner_store_id=? AND partner_id IS NULL AND mode='live' AND is_test=0
+      AND plan IN ('plus','pro-5x','pro-20x','pro-25x') ON CONFLICT(order_id) DO NOTHING`).bind(key, memberId, ip, id, memberScope(env))]
   for (const [kind, expression] of [['member','s.member_id'],['customer','s.customer_key'],['browser','o.owner_hash']] as const) {
     statements.push(db.prepare(`INSERT INTO member_risk_subjects(kind,subject_key,latest_order_id,last_order_at)
       SELECT ?,${expression},o.id,o.created_at FROM orders o JOIN member_order_signals s ON s.order_id=o.id WHERE o.id=? AND ${expression} IS NOT NULL
@@ -37,7 +38,7 @@ export async function riskSignalStatements(request: Request, env: Env, id: strin
   return statements
 }
 export async function scanMemberRisks(env: Env, limit = 3) {
-  if (env.MEMBERSHIP_ENABLED === undefined) return { checked: 0 }
+  if (!membershipConfigured(env)) return { checked: 0 }
   const db = env.INTEREST_DB, now = Date.now()
   const subjects = (await db.prepare(`SELECT s.* FROM member_risk_subjects s WHERE s.checked_at<? AND (s.last_order_at>? OR EXISTS(
     SELECT 1 FROM member_risk_cases c WHERE c.kind=s.kind AND c.subject_key=s.subject_key AND c.status<>'resolved'))

@@ -2,6 +2,14 @@ export const INVITATION_REWARD_CENTS = 1000
 export const NEWCOMER_DISCOUNT_CENTS = 500
 export const REWARD_OBSERVATION_MS = 24 * 60 * 60 * 1000
 export const INVITATION_PLANS = ['plus', 'pro-5x', 'pro-20x', 'pro-25x'] as const
+export const MEMBER_STORE_IDS = ['store-3', 'platform'] as const
+export type MemberStoreId = typeof MEMBER_STORE_IDS[number]
+export function isMemberStoreId(value: unknown): value is MemberStoreId {
+  return value === 'store-3' || value === 'platform'
+}
+export function memberInvitationCookie(store: MemberStoreId) {
+  return store === 'platform' ? 'scholai_platform_invitation' : 'scholai_s3_invitation'
+}
 export type PromotionSelection = { inviteCode: string; newcomer: boolean; rewardCents: number }
 export type PromotionView = {
   originalCents: number; newcomerCents: number; rewardCents: number; cashCents: number; otherCents: number

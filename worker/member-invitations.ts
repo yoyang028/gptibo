@@ -1,6 +1,7 @@
 import { ApiError, type Env } from './platform.ts'
-import { memberStore } from './member-auth.ts'
+import { memberEnvironment, memberStore } from './member-scope.ts'
 import { memberInvitationPath } from '../shared/member-invitation-path.ts'
+import { memberInvitationCookie } from '../shared/member-promotions.ts'
 
 const reserved = new Set(['admin','api','account','login','register','shop','store','support','help','invite','member','checkout','assets','www'])
 export function invitationAlias(value: unknown) {
@@ -38,15 +39,18 @@ export async function customizeInvitation(env: Env, id: string, value: unknown, 
 }
 
 export async function invitationEntry(request: Request, env: Env) {
-  if (!memberStore(request, env)) return new Response('未找到邀请链接。', { status: 404 })
+  const store = memberStore(request, env)
+  if (!store) return new Response('未找到邀请链接。', { status: 404 })
+  env = memberEnvironment(env, store)
   if (request.method !== 'GET') throw new ApiError('请求方式不支持。', 405)
   const url = new URL(request.url), entry = memberInvitationPath(url.pathname), candidate = entry?.alias ?? ''
   const found = /^[a-z0-9][a-z0-9-]{1,18}[a-z0-9]$/.test(candidate) ? await env.INTEREST_DB.prepare(`SELECT p.invite_code
     FROM member_invite_aliases a JOIN member_profiles p ON p.id=a.member_id JOIN member_s3_user u ON u.id=p.id
-    WHERE a.alias=? AND p.store_id='store-3' AND p.frozen=0 AND u.emailVerified=1`).bind(candidate).first<{ invite_code: string }>() : null
+    WHERE a.alias=? AND p.store_id=? AND p.frozen=0 AND u.emailVerified=1`).bind(candidate, store).first<{ invite_code: string }>() : null
   if (!found) return new Response('邀请链接无效或暂不可用，请返回商店购买。', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } })
   if (!entry || !/^[A-Z0-9]{32}$/.test(found.invite_code)) throw new ApiError('邀请链接暂不可用。', 503)
-  const cookie = `scholai_s3_invitation=${found.invite_code}; Path=/; Max-Age=2592000; SameSite=Lax${url.protocol === 'https:' ? '; Secure' : ''}`
+  const cookieName = memberInvitationCookie(store)
+  const cookie = `${cookieName}=${found.invite_code}; Path=/; Max-Age=2592000; SameSite=Lax${url.protocol === 'https:' ? '; Secure' : ''}`
   const canonical = entry.canonicalBase + (entry.suffix === '/' ? '' : entry.suffix)
   if (url.pathname !== canonical) return new Response(null, { status: 302, headers: {
     Location: canonical + url.search, 'Cache-Control': 'no-store', 'Set-Cookie': cookie,
@@ -59,7 +63,7 @@ export async function invitationEntry(request: Request, env: Env) {
   if (!asset.ok || !asset.headers.get('Content-Type')?.includes('text/html')) throw new ApiError('邀请页面暂不可用，请稍后重试。', 503)
   const html = await asset.text()
   if (!/<\/head>/i.test(html)) throw new ApiError('邀请页面暂不可用，请稍后重试。', 503)
-  const meta = `<meta name="scholai-member-invitation" content="${found.invite_code}" data-alias="${entry.alias}">`
+  const meta = `<meta name="scholai-member-invitation" content="${found.invite_code}" data-alias="${entry.alias}" data-store="${store}">`
   const headers = new Headers(asset.headers)
   for (const name of ['Content-Length', 'ETag', 'Last-Modified']) headers.delete(name)
   headers.set('Cache-Control', 'no-store')

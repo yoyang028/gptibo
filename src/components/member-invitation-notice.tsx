@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { cn } from 'cn'
 import { CircleCheck, Gift } from 'lucide-react'
-import { INVITATION_REWARD_CENTS, NEWCOMER_DISCOUNT_CENTS } from '../../shared/member-promotions'
+import { INVITATION_REWARD_CENTS, NEWCOMER_DISCOUNT_CENTS, type MemberStoreId } from '../../shared/member-promotions'
 import { invitationSnapshot, subscribeInvitation } from '@/lib/member-invitation'
 import { useStorefrontI18n } from '@/lib/storefront-i18n'
 import { storefrontHref } from '@/lib/storefront-routing'
@@ -26,9 +26,9 @@ export function MemberInvitationCampaign({ onOpen }: { onOpen: () => void }) {
   </a>
 }
 
-export function MemberInvitationNotice() {
+export function MemberInvitationNotice({ store }: { store: MemberStoreId }) {
   const { t } = useStorefrontI18n()
-  const snapshot = useSyncExternalStore(subscribeInvitation, invitationSnapshot, () => '')
+  const snapshot = useSyncExternalStore(subscribeInvitation, () => invitationSnapshot(store), () => '')
   if (!snapshot) return null
   return <div className="member-invitation-notice" role="status" aria-label={t('好友邀请优惠')}>
     <CircleCheck size={15} aria-hidden="true" />
