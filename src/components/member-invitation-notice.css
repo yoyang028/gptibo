@@ -1,19 +1,25 @@
 .member-invitation-campaign,
 .member-invitation-notice {
-  --invitation-accent: #075cba;
-  --invitation-tint: color-mix(in oklab, var(--invitation-accent) 8%, var(--background));
-  --invitation-border: color-mix(in oklab, var(--invitation-accent) 22%, var(--border));
+  --invitation-accent: #1359ac;
+  --invitation-tint: color-mix(in oklab, var(--invitation-accent) 7%, var(--card));
+  --invitation-border: color-mix(in oklab, var(--invitation-accent) 16%, var(--border));
+  --invitation-highlight: color-mix(in oklab, var(--card) 88%, transparent);
+  --invitation-muted: color-mix(in oklab, var(--muted-foreground) 86%, var(--invitation-accent));
   border: 1px solid var(--invitation-border);
   color: var(--foreground);
 }
 
 .dark .member-invitation-campaign,
 .dark .member-invitation-notice {
-  --invitation-accent: #9bcbff;
-  --invitation-tint: color-mix(in oklab, var(--invitation-accent) 12%, var(--background));
+  --invitation-accent: #a6cfff;
+  --invitation-tint: color-mix(in oklab, var(--invitation-accent) 11%, var(--card));
+  --invitation-highlight: color-mix(in oklab, var(--invitation-accent) 13%, transparent);
 }
 
 .member-invitation-campaign {
+  --invitation-button-top: #1768c4;
+  --invitation-button-bottom: #104f9f;
+  --invitation-button-text: #fff;
   display: flex;
   flex: 0 1 416px;
   align-items: center;
@@ -21,9 +27,18 @@
   min-width: 0;
   margin-inline-start: auto;
   padding: 10px 12px;
-  border-radius: 12px;
-  background: linear-gradient(115deg, var(--invitation-tint), color-mix(in oklab, var(--invitation-accent) 4%, var(--background)));
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at 9% 0%, color-mix(in oklab, var(--invitation-accent) 10%, transparent), transparent 61%),
+    linear-gradient(118deg, var(--invitation-tint), color-mix(in oklab, var(--invitation-accent) 2%, var(--card)));
+  box-shadow: inset 0 1px 0 var(--invitation-highlight), 0 3px 12px color-mix(in oklab, var(--invitation-accent) 7%, transparent);
   text-decoration: none;
+}
+
+.dark .member-invitation-campaign {
+  --invitation-button-top: #c2dfff;
+  --invitation-button-bottom: #95c2f4;
+  --invitation-button-text: #102c4d;
 }
 
 .store-intro:has(> .member-invitation-campaign) { gap: clamp(14px, 1.7vw, 24px); }
@@ -35,14 +50,18 @@
   width: 32px;
   height: 32px;
   place-items: center;
-  border-radius: 10px;
+  border: 1px solid color-mix(in oklab, var(--invitation-accent) 16%, transparent);
+  border-radius: 9px;
   color: var(--invitation-accent);
-  background: color-mix(in oklab, var(--invitation-accent) 13%, transparent);
+  background: linear-gradient(150deg, var(--invitation-highlight), color-mix(in oklab, var(--invitation-accent) 12%, transparent));
+  box-shadow: inset 0 1px 0 var(--invitation-highlight);
 }
 
 .invitation-campaign-copy { flex: 1; min-width: 0; }
-.invitation-campaign-copy h2 { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.35; }
-.member-invitation-campaign .invitation-campaign-copy p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+.invitation-campaign-copy h2 { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.35; letter-spacing: -.015em; }
+.invitation-campaign-copy h2 strong { color: var(--invitation-accent); font-weight: 700; white-space: nowrap; }
+.member-invitation-campaign .invitation-campaign-copy p { margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--invitation-muted); }
+.invitation-campaign-copy p span { display: inline-block; max-width: 100%; text-wrap: pretty; }
 
 .invitation-campaign-action {
   display: inline-flex;
@@ -50,20 +69,22 @@
   align-items: center;
   gap: 5px;
   padding: 6px 9px;
-  border-radius: 7px;
-  background: var(--invitation-accent);
-  color: var(--background);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--invitation-button-top), var(--invitation-button-bottom));
+  box-shadow: inset 0 1px 0 #ffffff38, 0 2px 5px color-mix(in oklab, var(--invitation-button-bottom) 24%, transparent);
+  color: var(--invitation-button-text);
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
 
-.member-invitation-campaign:hover { border-color: var(--invitation-accent); }
+.member-invitation-campaign:hover { border-color: color-mix(in oklab, var(--invitation-accent) 43%, var(--border)); }
 .member-invitation-campaign:focus-visible { outline: 2px solid var(--invitation-accent); outline-offset: 3px; }
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .member-invitation-campaign { transition: border-color 160ms ease; }
+  .member-invitation-campaign { transition: border-color 160ms ease, transform 160ms ease; }
+  .member-invitation-campaign:hover { transform: translateY(-1px); }
   .invitation-campaign-action svg { transition: transform 160ms ease; }
-  .member-invitation-campaign:hover .invitation-campaign-action svg { transform: translateX(2px); }
+  .member-invitation-campaign:hover .invitation-campaign-action svg { transform: translateX(3px); }
 }
 
 .member-invitation-notice {
@@ -72,15 +93,26 @@
   gap: 8px;
   min-width: 0;
   max-width: 100%;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: var(--invitation-tint);
+  padding: 4px 11px 4px 5px;
+  border-radius: 999px;
+  background: linear-gradient(106deg, var(--invitation-tint), var(--card));
+  box-shadow: inset 0 1px 0 var(--invitation-highlight);
   font-size: 13px;
   line-height: 1.45;
 }
 
-.member-invitation-notice > svg { flex: none; color: var(--invitation-accent); }
-.member-invitation-notice-message { display: flex; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
+.invitation-notice-icon {
+  display: grid;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--invitation-accent) 11%, transparent);
+  color: var(--invitation-accent);
+}
+
+.member-invitation-notice-message { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; color: var(--invitation-muted); }
 .member-invitation-notice-message strong { color: var(--invitation-accent); font-weight: 650; }
 .detail-intro-title:has(> .member-invitation-notice) { display: flex; align-items: center; gap: 16px; }
 .detail-intro-title:has(> .member-invitation-notice) > h1 { flex: none; }
@@ -93,7 +125,7 @@
 @media (max-width: 600px) {
   .member-invitation-campaign { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: start; gap: 7px 11px; }
   .invitation-campaign-copy h2 { font-size: 17px; }
-  .invitation-campaign-action { grid-column: 2; justify-self: start; padding: 4px 0; color: var(--invitation-accent); background: transparent; }
+  .invitation-campaign-action { grid-column: 2; justify-self: start; padding: 4px 0; color: var(--invitation-accent); background: transparent; box-shadow: none; }
   .detail-intro-title:has(> .member-invitation-notice) { gap: 10px; }
-  .member-invitation-notice { gap: 6px; padding: 5px 8px; font-size: 12px; }
+  .member-invitation-notice { gap: 6px; padding: 4px 8px 4px 5px; border-radius: 10px; font-size: 12px; }
 }

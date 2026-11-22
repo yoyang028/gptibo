@@ -15,8 +15,10 @@ export function MemberInvitationCampaign({ onOpen }: { onOpen: () => void }) {
   }}>
     <span className="invitation-campaign-icon" aria-hidden="true"><Gift size={18} strokeWidth={1.75} /></span>
     <div className="invitation-campaign-copy">
-      <h2 id="invitation-campaign-title">{t('邀请好友，Plus 免费用')}</h2>
-      <p id="invitation-campaign-description">{t('每邀 1 位有效新客得 {reward} 元，攒够奖励可全额抵扣 1 个月 Plus。', { reward: INVITATION_REWARD_CENTS / 100 })}</p>
+      <h2 id="invitation-campaign-title">{t('邀请好友，')}<strong>{t('Plus 免费用')}</strong></h2>
+      <p id="invitation-campaign-description">
+        <span>{t('每邀 1 位有效新客得 {reward} 元，', { reward: INVITATION_REWARD_CENTS / 100 })}</span><span>{t('攒够奖励可全额抵扣 1 个月 Plus。')}</span>
+      </p>
     </div>
     <span className="invitation-campaign-action" id="invitation-campaign-action">{t('查看邀请活动')}<ArrowRight size={15} aria-hidden="true" /></span>
   </a>
@@ -27,7 +29,7 @@ export function MemberInvitationNotice() {
   const snapshot = useSyncExternalStore(subscribeInvitation, invitationSnapshot, () => '')
   if (!snapshot) return null
   return <div className="member-invitation-notice" role="status" aria-label={t('好友邀请优惠')}>
-    <TicketPercent size={16} aria-hidden="true" />
+    <span className="invitation-notice-icon" aria-hidden="true"><TicketPercent size={13} strokeWidth={1.8} /></span>
     <div className="member-invitation-notice-message">
       <strong>{t('已收到好友邀请')}</strong>
       <span>{t('符合新客条件，首单可选减 {discount} 元。', { discount: NEWCOMER_DISCOUNT_CENTS / 100 })}</span>
