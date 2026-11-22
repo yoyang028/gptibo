@@ -1,16 +1,36 @@
 import { useSyncExternalStore } from 'react'
-import { CircleCheck } from 'lucide-react'
+import { ArrowRight, Gift, TicketPercent } from 'lucide-react'
+import { INVITATION_REWARD_CENTS, NEWCOMER_DISCOUNT_CENTS } from '../../shared/member-promotions'
 import { invitationSnapshot, subscribeInvitation } from '@/lib/member-invitation'
-import { CopyButton } from './copy-button'
+import { useStorefrontI18n } from '@/lib/storefront-i18n'
+import { storefrontHref } from '@/lib/storefront-routing'
 import './member-invitation-notice.css'
 
+export function MemberInvitationCampaign({ onOpen }: { onOpen: () => void }) {
+  const { t } = useStorefrontI18n()
+  return <a className="member-invitation-campaign page-width" href={storefrontHref('account')} aria-labelledby="invitation-campaign-title invitation-campaign-action" aria-describedby="invitation-campaign-description" onClick={event => {
+    if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    onOpen()
+  }}>
+    <span className="invitation-campaign-icon" aria-hidden="true"><Gift size={21} strokeWidth={1.75} /></span>
+    <div className="invitation-campaign-copy">
+      <h2 id="invitation-campaign-title">{t('邀请好友，Plus 免费用')}</h2>
+      <p id="invitation-campaign-description">{t('每邀 1 位有效新客得 {reward} 元，攒够奖励可全额抵扣 1 个月 Plus。', { reward: INVITATION_REWARD_CENTS / 100 })}</p>
+    </div>
+    <span className="invitation-campaign-action" id="invitation-campaign-action">{t('查看邀请活动')}<ArrowRight size={15} aria-hidden="true" /></span>
+  </a>
+}
+
 export function MemberInvitationNotice() {
+  const { t } = useStorefrontI18n()
   const snapshot = useSyncExternalStore(subscribeInvitation, invitationSnapshot, () => '')
   if (!snapshot) return null
-  const [code, alias] = snapshot.split('|')
-  const inviteUrl = new URL(alias ? '/ref/' + alias : '/?invite=' + code, location.origin).href
-  return <aside className="member-invitation-notice page-width" aria-label="好友邀请来源">
-    <div className="member-invitation-notice-message" role="status"><CircleCheck size={20} aria-hidden="true"/><div><strong>已记录好友邀请</strong><p>本店 ChatGPT 四个规格，符合新客条件首单可选减5元。</p></div></div>
-    <CopyButton variant="outline" value={inviteUrl} label="复制此邀请链接"/>
-  </aside>
+  return <div className="member-invitation-notice" role="status" aria-label={t('好友邀请优惠')}>
+    <TicketPercent size={16} aria-hidden="true" />
+    <div className="member-invitation-notice-message">
+      <strong>{t('已收到好友邀请')}</strong>
+      <span>{t('符合新客条件，首单可选减 {discount} 元。', { discount: NEWCOMER_DISCOUNT_CENTS / 100 })}</span>
+    </div>
+  </div>
 }

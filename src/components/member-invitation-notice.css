@@ -1,3 +1,88 @@
-.member-invitation-notice{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:20px;padding:14px 18px;border:1px solid color-mix(in oklab,var(--primary) 20%,var(--border));border-radius:12px;background:color-mix(in oklab,var(--primary) 5%,var(--background));color:var(--foreground)}
-.member-invitation-notice-message{display:flex;align-items:center;gap:12px;min-width:0}.member-invitation-notice-message>svg{flex-shrink:0;color:var(--primary)}.member-invitation-notice-message strong{font-size:14px;font-weight:600}.member-invitation-notice-message p{font-size:12px;line-height:1.7;margin:3px 0 0;color:var(--muted-foreground)}.member-invitation-notice>.copy-control{flex-shrink:0}
-@media(max-width:640px){.member-invitation-notice{flex-wrap:wrap;gap:12px;margin-top:14px;padding:12px 14px}.member-invitation-notice>.copy-control{margin-left:32px}.member-invitation-notice-message{align-items:flex-start}.member-invitation-notice-message>svg{margin-top:2px}}
+.member-invitation-campaign,
+.member-invitation-notice {
+  --invitation-accent: #075cba;
+  --invitation-tint: color-mix(in oklab, var(--invitation-accent) 8%, var(--background));
+  --invitation-border: color-mix(in oklab, var(--invitation-accent) 22%, var(--border));
+  border: 1px solid var(--invitation-border);
+  color: var(--foreground);
+}
+
+.dark .member-invitation-campaign,
+.dark .member-invitation-notice {
+  --invitation-accent: #9bcbff;
+  --invitation-tint: color-mix(in oklab, var(--invitation-accent) 12%, var(--background));
+}
+
+.member-invitation-campaign {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: linear-gradient(115deg, var(--invitation-tint), color-mix(in oklab, var(--invitation-accent) 4%, var(--background)));
+  text-decoration: none;
+}
+
+.invitation-campaign-icon {
+  display: grid;
+  flex: none;
+  width: 39px;
+  height: 39px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--invitation-accent);
+  background: color-mix(in oklab, var(--invitation-accent) 13%, transparent);
+}
+
+.invitation-campaign-copy { flex: 1; min-width: 0; }
+.invitation-campaign-copy h2 { margin: 0; font-size: 19px; font-weight: 650; line-height: 1.35; }
+.invitation-campaign-copy p { margin: 4px 0 0; font-size: 13px; line-height: 1.55; color: var(--muted-foreground); }
+
+.invitation-campaign-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--invitation-accent);
+  color: var(--background);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.member-invitation-campaign:hover { border-color: var(--invitation-accent); }
+.member-invitation-campaign:focus-visible { outline: 2px solid var(--invitation-accent); outline-offset: 3px; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .member-invitation-campaign { transition: border-color 160ms ease; }
+  .invitation-campaign-action svg { transition: transform 160ms ease; }
+  .member-invitation-campaign:hover .invitation-campaign-action svg { transform: translateX(2px); }
+}
+
+.member-invitation-notice {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
+  margin-top: 12px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--invitation-tint);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.member-invitation-notice > svg { flex: none; margin-top: 1px; color: var(--invitation-accent); }
+.member-invitation-notice-message { display: flex; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
+.member-invitation-notice-message strong { color: var(--invitation-accent); font-weight: 650; }
+#main-content .detail-intro:has(.member-invitation-notice) { padding-bottom: 18px; }
+
+@media (max-width: 600px) {
+  .member-invitation-campaign { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: start; gap: 9px 11px; padding: 12px; margin-bottom: 18px; }
+  .invitation-campaign-icon { width: 32px; height: 32px; }
+  .invitation-campaign-icon svg { width: 18px; height: 18px; }
+  .invitation-campaign-copy h2 { font-size: 17px; }
+  .invitation-campaign-copy p { font-size: 12px; }
+  .invitation-campaign-action { grid-column: 2; justify-self: start; padding: 4px 0; color: var(--invitation-accent); background: transparent; }
+}
