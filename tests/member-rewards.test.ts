@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { memberFixture } from './member-fixture.ts'
-import { reconcileMemberRewards, revokeReward } from '../worker/member-rewards.ts'
+import { checkRewardTarget, reconcileMemberRewards, revokeReward } from '../worker/member-rewards.ts'
 import { twoCalendarMonths } from '../shared/member-promotions.ts'
 
 async function fixture(t: Parameters<typeof memberFixture>[0]) {
@@ -53,6 +53,85 @@ test('guest can decline newcomer discount and still earn one delayed reward afte
   f.db.prepare('UPDATE member_reward_grants SET eligible_at=?').run(Date.now()-1)
   await reconcileMemberRewards(f.env)
   assert.equal((await (await f.call('/api/member/session',undefined,inviter.cookie)).json()).balanceCents,1000)
+})
+
+test('after confirmed closure an already delivered retry earns once for its own inviter', async t => {
+  const f = await fixture(t), buyer = await f.buyer(), email = 'retry-guest@example.test'
+  const previousInviter = await f.identity('first-inviter@example.test')
+  const actualInviter = await f.identity('paid-order-inviter@example.test')
+  const { order: abandoned } = await f.create(email, { inviteCode: f.codeOf(previousInviter), newcomer: true }, buyer)
+  const { order: fulfilled, quote } = await f.create(email, { inviteCode: f.codeOf(actualInviter) }, buyer)
+  assert.equal(quote.newcomerEligible, false)
+  assert.equal(fulfilled.price, 138)
+
+  async function sync(orderId: string) {
+    assert.equal((await f.call(`/api/orders/${orderId}/fulfillment`, { action: 'query' }, buyer)).status, 200)
+  }
+  await sync(abandoned.id)
+  await sync(fulfilled.id)
+  const remoteFor = (id: string) => [...f.upstream.remotes.values()].find(remote => remote.merchant_order_no === id)!
+  const paid = remoteFor(fulfilled.id)
+  paid.payment_status = 'paid'
+  paid.fulfillment_status = 'succeeded'
+  await sync(fulfilled.id)
+
+  f.db.prepare('UPDATE orders SET created_at=? WHERE id=?').run(Date.now() - 20 * 60000, abandoned.id)
+  assert.equal((await (await f.call(`/api/orders/${abandoned.id}`, undefined, buyer)).json()).order.status, 'cancelled')
+  await reconcileMemberRewards(f.env)
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM member_reward_grants').get()!.n, 0)
+  assert.equal(f.db.prepare('SELECT order_id FROM member_first_purchases').get()!.order_id, abandoned.id)
+
+  const unpaid = remoteFor(abandoned.id)
+  unpaid.payment_status = 'expired'
+  await sync(abandoned.id)
+  await Promise.all([reconcileMemberRewards(f.env), reconcileMemberRewards(f.env)])
+  const grant = f.db.prepare('SELECT * FROM member_reward_grants').get()!
+  assert.equal(grant.source_order_id, fulfilled.id)
+  assert.equal(grant.member_id, actualInviter.id)
+  assert.equal(grant.status, 'pending')
+  assert.equal(grant.amount_cents, 1000)
+  assert.equal(Number(grant.eligible_at) - Number(grant.delivered_at), 24 * 3600000)
+  assert.equal(f.db.prepare('SELECT order_id FROM member_first_purchases').get()!.order_id, fulfilled.id)
+
+  unpaid.payment_status = 'paid'
+  await sync(abandoned.id)
+  await reconcileMemberRewards(f.env)
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM member_reward_grants').get()!.n, 1)
+  assert.equal(f.db.prepare("SELECT COUNT(*) n FROM member_reward_ledger WHERE kind='grant'").get()!.n, 1)
+  assert.equal(f.upstream.writes.filter(write => write.path === '/v1/orders').length, 2)
+})
+
+test('when both attempts pay, the first confirmed payment can earn before the original holder', async t => {
+  const f = await fixture(t), buyer = await f.buyer(), email = 'second-paid-first@example.test'
+  const first = await f.identity('started-first@example.test'), second = await f.identity('paid-first@example.test')
+  const { order: held } = await f.create(email, { inviteCode: f.codeOf(first), newcomer: true }, buyer)
+  const { order: paidFirst } = await f.create(email, { inviteCode: f.codeOf(second) }, buyer)
+  const at = Date.now() - 2000
+  for (const [id, paidAt] of [[held.id, at + 1000], [paidFirst.id, at]] as const) {
+    f.db.prepare("UPDATE orders SET payment_status='paid',status='success' WHERE id=?").run(id)
+    f.db.prepare("INSERT INTO order_events(id,order_id,actor,action,to_status,order_version,created_at) VALUES (?,?,'system','payment-confirmed','session',1,?)").run(crypto.randomUUID(), id, paidAt)
+    f.db.prepare("INSERT INTO order_events(id,order_id,actor,action,to_status,order_version,created_at) VALUES (?,?,'system','fixture-delivery','success',2,?)").run(crypto.randomUUID(), id, paidAt + 500)
+  }
+  await reconcileMemberRewards(f.env)
+  const grants = f.db.prepare('SELECT member_id,source_order_id FROM member_reward_grants').all().map(row => ({ ...row }))
+  assert.deepEqual(grants, [{ member_id: second.id, source_order_id: paidFirst.id }])
+  assert.equal(f.db.prepare('SELECT order_id FROM member_first_purchases').get()!.order_id, paidFirst.id)
+})
+
+test('a retry without a first-order claim still checks an already used recharge target', async t => {
+  const f = await fixture(t), buyer = await f.buyer(), inviter = await f.identity('target-inviter@example.test')
+  const inviteCode = f.codeOf(inviter), email = 'target-retry@example.test'
+  const { order: original } = await f.create('previous-buyer@example.test', { inviteCode }, buyer)
+  const { order: abandoned } = await f.create(email, { inviteCode, newcomer: true }, buyer)
+  const { order: retry } = await f.create(email, { inviteCode }, buyer)
+  const credential = { mode: 'session' as const, session: JSON.stringify({ user: { email: 'already-used-target@example.test' } }) }
+  assert.equal(f.db.prepare('SELECT 1 FROM member_first_purchases WHERE order_id=?').get(retry.id), undefined)
+  await checkRewardTarget(f.env, original.id, credential)
+  await assert.rejects(checkRewardTarget(f.env, retry.id, credential), /人工审核/)
+  const promotion = f.db.prepare('SELECT review_status,risk_flags FROM member_order_promotions WHERE order_id=?').get(retry.id)!
+  assert.equal(promotion.review_status, 'required')
+  assert.deepEqual(JSON.parse(String(promotion.risk_flags)), ['target_repeat'])
+  assert.equal(f.db.prepare('SELECT order_id FROM member_first_purchases WHERE order_id=?').get(abandoned.id)!.order_id, abandoned.id)
 })
 
 test('newcomer five-yuan discount is optional, exclusive, reserved once and isolated by store',async t=>{

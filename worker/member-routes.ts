@@ -66,12 +66,21 @@ export async function adminMemberRoutes(request: Request, env: Env, url: URL) {
         FROM member_s3_user u LEFT JOIN member_profiles p ON p.id=u.id WHERE instr(lower(u.email),?)>0 ORDER BY u.createdAt DESC LIMIT 20 OFFSET ?`).bind(Date.now(), q, offset).all(),
       db.prepare(`SELECT p.*,o.customer_email,o.plan_name,o.status,o.payment_status,o.version order_version,
         u.email referrer_email FROM member_order_promotions p JOIN orders o ON o.id=p.order_id LEFT JOIN member_s3_user u ON u.id=p.referrer_id
-        WHERE instr(lower(o.customer_email||' '||o.id),?)>0 ORDER BY CASE WHEN p.review_status='required' THEN 0 WHEN p.procurement_status='awaiting_supplier' AND o.status<>'cancelled' THEN 1 ELSE 2 END,p.created_at DESC LIMIT 20 OFFSET ?`).bind(q, offset).all(),
+        WHERE instr(lower(COALESCE(o.customer_email,'')||' '||o.id||' '||COALESCE(u.email,'')),?)>0
+        ORDER BY CASE WHEN o.status='cancelled' THEN 2 WHEN p.review_status='required' THEN 0 WHEN p.procurement_status='awaiting_supplier' THEN 1 ELSE 2 END,
+          p.created_at DESC LIMIT 20 OFFSET ?`).bind(q, offset).all(),
       db.prepare('SELECT g.*,u.email FROM member_reward_grants g JOIN member_s3_user u ON u.id=g.member_id WHERE instr(lower(u.email),?)>0 ORDER BY g.created_at DESC LIMIT 20 OFFSET ?').bind(q, offset).all(),
-      db.prepare(`SELECT (SELECT COUNT(*) FROM member_s3_user) members,(SELECT COUNT(*) FROM member_order_promotions WHERE review_status='required' AND allocation_status NOT IN ('released','restored')) reviews,
+      db.prepare(`WITH activity_payments AS (
+        SELECT p.cash_cents paid,MIN(p.cash_cents,MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))) refunded
+        FROM member_order_promotions p JOIN orders o ON o.id=p.order_id LEFT JOIN recharge_orders r ON r.order_id=o.id
+        WHERE o.payment_status='paid' AND o.mode='live' AND o.is_test=0
+      ) SELECT (SELECT COUNT(*) FROM member_s3_user) members,
+        (SELECT COUNT(*) FROM member_order_promotions p JOIN orders o ON o.id=p.order_id
+          WHERE p.review_status='required' AND p.allocation_status NOT IN ('released','restored') AND o.status<>'cancelled') reviews,
         (SELECT COALESCE(SUM(amount_cents),0) FROM member_reward_grants) issued_cents,
-        (SELECT COALESCE(SUM(cash_cents),0) FROM member_order_promotions p JOIN orders o ON o.id=p.order_id WHERE o.payment_status='paid') received_cents,
-        (SELECT COUNT(*) FROM member_reward_grants) reward_count,(SELECT COUNT(*) FROM member_order_promotions) order_count`).first(),
+        COALESCE(SUM(paid),0) received_cents,COALESCE(SUM(refunded),0) refunded_cents,COALESCE(SUM(paid-refunded),0) net_received_cents,
+        (SELECT COUNT(*) FROM member_reward_grants) reward_count,(SELECT COUNT(*) FROM member_order_promotions) order_count
+        FROM activity_payments`).first(),
     ])
     return json({ enabled: true, members: members.results, orders: orders.results, rewards: rewards.results, stats, page })
   }

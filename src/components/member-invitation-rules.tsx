@@ -68,7 +68,7 @@ export function InvitationRules({ detailsRef, showSteps = true }: { detailsRef?:
   return <section id="member-invitation-rules" className="member-card member-rules" aria-labelledby="member-rules-heading">
     <div className="member-rules-heading"><div><span className="member-section-kicker">{showSteps?'参与说明':'活动规则'}</span><h2 id="member-rules-heading">{showSteps?'奖励这样拿':'奖励与使用说明'}</h2></div><span>验证邮箱即可邀请，无需先购买</span></div>
     {showSteps&&<InvitationSteps/>}
-    <div className="member-reward-example"><p><strong>成功邀请14位新客，可免费兑换1个月 Plus 会员。</strong></p><p>按当前 Plus 售价计算，需使用已生效的购物奖励抵扣。全额抵扣仍需审核及等待处理。</p></div>
+    <div className="member-reward-example"><p><strong>成功邀请14位新客，可免费兑换1个月 Plus 会员。</strong></p><p>按当前 Plus 售价计算，需使用已生效的购物奖励抵扣。0 元或低于采购价的订单会锁定额度，待确认供货后再处理。确认前可取消订单，释放占用的奖励。</p></div>
     <p className="member-rules-eligibility"><strong>活动暂时仅限本店 ChatGPT 四个规格。</strong><br/><strong>新客条件：</strong>此前没有本店有效实付购买记录。好友无需注册会员。</p>
     <details ref={detailsRef} className="member-rules-details"><summary><span>完整活动规则与使用说明</span><span className="member-rules-expand" aria-hidden="true">展开规则</span><span className="member-rules-collapse" aria-hidden="true">收起规则</span></summary>
       <div className="member-full-rules">{rules.map(({ title, content }, i) => <section key={title} className="member-rule"><h3><span>0{i + 1} / </span>{title}</h3>{content}</section>)}</div>

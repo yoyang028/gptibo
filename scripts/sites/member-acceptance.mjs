@@ -185,6 +185,7 @@ try{
  await page.locator('#purchase-email').fill(email)
  await page.getByRole('checkbox',{name:/使用奖励抵扣/}).check()
  await page.getByText('实际应付',{exact:true}).waitFor()
+ await page.getByText('确认后锁定优惠，暂不付款或充值。',{exact:true}).waitFor()
  const buy=page.getByRole('button',{name:'确认优惠订单',exact:true})
  await buy.waitFor()
  const [freeResponse]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==='/api/orders'&&r.request().method()==='POST'),buy.click()])
@@ -321,6 +322,18 @@ try{
  const adminPage=await adminContext.newPage();await adminPage.goto(origin+'/admin')
  await adminPage.getByRole('button',{name:'会员与邀新',exact:true}).click()
  await adminPage.getByRole('button',{name:'活动订单与审核',exact:true}).waitFor()
+ await adminPage.getByText('活动订单净收',{exact:true}).waitFor()
+ const releasedRow=adminPage.getByRole('row').filter({hasText:free.id})
+ await releasedRow.getByText('已释放',{exact:true}).waitFor()
+ assert.equal(await releasedRow.getByText('待审核',{exact:true}).count(),0)
+ assert.equal(await releasedRow.getByText('等待上游补差／余额采购方案',{exact:true}).count(),0)
+ await adminPage.getByLabel('搜索邀请人或买家邮箱，或活动订单号',{exact:true}).fill(email)
+ const [inviterSearch]=await Promise.all([
+  adminPage.waitForResponse(r=>new URL(r.url()).pathname==='/api/admin/members'&&new URL(r.url()).searchParams.get('q')===email),
+  adminPage.getByRole('button',{name:'查询',exact:true}).click(),
+ ])
+ assert((await inviterSearch.json()).orders.some(o=>o.order_id===guestOrder.id&&o.referrer_email===email))
+ await adminPage.getByRole('row').filter({hasText:guestOrder.id}).waitFor()
  await adminPage.screenshot({path:path.join(evidence,'admin-members-desktop.png'),fullPage:true})
  record('existing administrator authentication opens member, invitation and reward management')
  await adminPage.getByRole('button',{name:'奖励与撤销',exact:true}).click()
@@ -433,6 +446,68 @@ try{
  assert.equal(await resetPage.getByLabel('我的邀请链接',{exact:true}).inputValue(),inviteUrl)
  await resetPage.setViewportSize({width:390,height:844});await resetPage.screenshot({path:path.join(evidence,'member-aiplanet-mobile.png'),fullPage:true})
  record('browser resets password with six digits, revokes old sessions and preserves the one-time custom invitation')
+
+ const openPurchase=async (browserContext,url)=>{
+  const checkout=await browserContext.newPage()
+  await checkout.setViewportSize({width:390,height:844})
+  await checkout.goto(url)
+  await checkout.getByLabel('订单摘要',{exact:true}).getByRole('button',{name:'立即购买',exact:true}).click()
+  await checkout.getByRole('button',{name:'继续下单',exact:true}).click()
+  return checkout
+ }
+ const quoteError='优惠核对暂时不可用，请稍后重试。'
+ const failedQuote=route=>route.fulfill({status:503,json:{error:quoteError}})
+ const createResponse=checkout=>checkout.waitForResponse(r=>new URL(r.url()).pathname==='/api/orders'&&r.request().method()==='POST')
+ const casualContext=await context(),casual=await openPurchase(casualContext,origin+'/product/chatgpt')
+ let failCasualQuote=true
+ await casual.route('**/api/orders/promotion-quote',route=>failCasualQuote?failedQuote(route):route.fallback())
+ const casualEmail=casual.locator('#purchase-email')
+ await casualEmail.fill('retry-ordinary-local-fixture@gmail.com')
+ await casual.getByText(quoteError,{exact:true}).waitFor()
+ assert.equal(await casual.getByRole('button',{name:'按原价继续付款',exact:true}).isEnabled(),true)
+ failCasualQuote=false
+ await casual.getByRole('button',{name:'重试优惠核对',exact:true}).click()
+ await casual.getByText('实际应付',{exact:true}).waitFor()
+ assert.equal(await casual.getByRole('button',{name:'继续付款',exact:true}).isEnabled(),true)
+ failCasualQuote=true
+ await casualEmail.fill('fallback-ordinary-local-fixture@gmail.com')
+ await casual.getByText(quoteError,{exact:true}).waitFor()
+ const [casualResponse]=await Promise.all([createResponse(casual),casual.getByRole('button',{name:'按原价继续付款',exact:true}).click()])
+ assert.equal(casualResponse.status(),201,await casualResponse.text())
+ assert.equal(casualResponse.request().postDataJSON().promotion,undefined)
+ assert.equal((await casualResponse.json()).order.price,138)
+ await casualContext.close()
+ record('an ordinary guest can retry a failed quote or explicitly continue at the original price without applying a discount')
+
+ const invitedContext=await context(),invitedCheckout=await openPurchase(invitedContext,inviteUrl+'/product/chatgpt')
+ let failInvitedQuote=false
+ await invitedCheckout.route('**/api/orders/promotion-quote',route=>failInvitedQuote?failedQuote(route):route.fallback())
+ const invitedEmail=invitedCheckout.locator('#purchase-email')
+ await invitedEmail.fill('retry-invited-local-fixture@gmail.com')
+ const firstDiscount=invitedCheckout.getByRole('checkbox',{name:/本次使用新人优惠/})
+ await firstDiscount.waitFor()
+ failInvitedQuote=true
+ await firstDiscount.check()
+ await invitedCheckout.getByText(quoteError,{exact:true}).waitFor()
+ assert.equal(await firstDiscount.isChecked(),true)
+ assert.equal(await invitedCheckout.getByRole('button',{name:'继续付款',exact:true}).isDisabled(),true)
+ assert.equal(await invitedCheckout.getByRole('button',{name:'按原价继续付款',exact:true}).count(),0)
+ failInvitedQuote=false
+ await invitedCheckout.getByRole('button',{name:'重试优惠核对',exact:true}).click()
+ await invitedCheckout.getByRole('region',{name:'邀请与奖励优惠'}).getByText('¥133.00',{exact:true}).waitFor()
+ assert.equal(await firstDiscount.isChecked(),true)
+ failInvitedQuote=true
+ await invitedEmail.fill('waive-invited-local-fixture@gmail.com')
+ await invitedCheckout.getByText(quoteError,{exact:true}).waitFor()
+ await invitedCheckout.getByRole('button',{name:'取消本次活动优惠',exact:true}).click()
+ const [invitedResponse]=await Promise.all([createResponse(invitedCheckout),invitedCheckout.getByRole('button',{name:'按原价继续付款',exact:true}).click()])
+ assert.equal(invitedResponse.status(),201,await invitedResponse.text())
+ assert.deepEqual(invitedResponse.request().postDataJSON().promotion,{inviteCode:code,newcomer:false,rewardCents:0})
+ const unspentOrder=(await invitedResponse.json()).order
+ assert.equal(unspentOrder.price,138)
+ assert.equal((await db.prepare('SELECT referrer_id FROM member_order_promotions WHERE order_id=?').bind(unspentOrder.id).first()).referrer_id,member.member.id)
+ await invitedContext.close()
+ record('failed discount checks retain the choice for retry; waiving it explicitly preserves the inviter when paying the original price')
  assert.deepEqual(result.pageErrors,[]);assert.deepEqual(result.externalRequests,[])
  result.passed=true
  fs.writeFileSync(path.join(evidence,'result.json'),JSON.stringify(result,null,2))

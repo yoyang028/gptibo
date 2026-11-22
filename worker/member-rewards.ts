@@ -3,6 +3,36 @@ import { identityKey, promotionFor } from './member-promotions.ts'
 import { readRechargeInput, type RechargeCredential } from '../shared/recharge-credential.ts'
 import { REWARD_OBSERVATION_MS, twoCalendarMonths } from '../shared/member-promotions.ts'
 
+const paymentTime = (order: 'o' | 'old') => `COALESCE((SELECT MIN(created_at) FROM order_events
+  WHERE order_id=${order}.id AND action IN ('payment-confirmed','manual-payment-confirmed')),${order}.created_at)`
+const noEarlierPaidPurchase = `NOT EXISTS (
+  SELECT 1 FROM orders old LEFT JOIN member_order_promotions prior ON prior.order_id=old.id
+  WHERE old.id<>o.id AND old.owner_store_id=p.store_id AND old.partner_id IS NULL
+    AND old.mode='live' AND old.is_test=0 AND lower(trim(old.customer_email))=lower(trim(o.customer_email))
+    AND old.payment_status='paid' AND old.refunded_cents<COALESCE(prior.cash_cents,old.price_cents)
+    AND (${paymentTime('old')},old.created_at,old.id)<(${paymentTime('o')},o.created_at,o.id)
+)`
+
+const rewardSources = `SELECT p.order_id,p.store_id,p.customer_key,p.referrer_id,c.order_id first_order_id,t.target_key,
+  COALESCE((SELECT MIN(created_at) FROM order_events WHERE order_id=o.id AND to_status='success'),
+    (SELECT MIN(finished_at) FROM recharge_redemptions WHERE order_id=o.id AND status='succeeded')) delivered_at
+  FROM member_order_promotions p JOIN orders o ON o.id=p.order_id
+  JOIN member_profiles m ON m.id=p.referrer_id
+  LEFT JOIN member_first_purchases c ON c.store_id=p.store_id AND c.customer_key=p.customer_key
+  LEFT JOIN orders held ON held.id=c.order_id
+  LEFT JOIN member_target_uses t ON t.order_id=p.order_id
+  LEFT JOIN member_target_claims tc ON tc.target_key=t.target_key
+  WHERE (c.order_id IS NULL OR c.order_id=p.order_id OR (held.payment_status='paid'
+    AND NOT EXISTS(SELECT 1 FROM member_reward_grants WHERE source_order_id=c.order_id)))
+    AND (tc.order_id IS NULL OR tc.order_id=p.order_id)
+    AND p.cash_cents>0 AND p.procurement_status='ready' AND p.review_status IN ('none','approved')
+    AND p.allocation_status NOT IN ('released','restored') AND m.frozen=0
+    AND o.owner_store_id=p.store_id AND o.partner_id IS NULL AND o.mode='live' AND o.is_test=0
+    AND o.status='success' AND o.payment_status='paid' AND o.refund_hold=0 AND o.refunded_cents=0
+    AND NOT EXISTS(SELECT 1 FROM member_reward_grants WHERE source_order_id=o.id)
+    AND NOT EXISTS(SELECT 1 FROM json_each(p.risk_flags) WHERE value IN ('self_invitation','target_repeat'))
+    AND ${noEarlierPaidPurchase}`
+
 export async function captureRewards(env: Env, orderId: string) {
   const p = await promotionFor(env, orderId)
   if (!p || p.allocation_status !== 'reserved') return
@@ -34,7 +64,10 @@ export async function checkRewardTarget(env: Env, orderId: string, credential: R
   const key = await identityKey(env, 'target', email)
   await env.INTEREST_DB.prepare('INSERT INTO member_target_claims(target_key,order_id) VALUES (?,?) ON CONFLICT(target_key) DO NOTHING').bind(key, orderId).run()
   const previous = await env.INTEREST_DB.prepare('SELECT order_id FROM member_target_claims WHERE target_key=? AND order_id<>?').bind(key, orderId).first()
-  const firstCandidate = await env.INTEREST_DB.prepare('SELECT 1 FROM member_first_purchases WHERE order_id=?').bind(orderId).first()
+  const firstCandidate = previous && p.referrer_id && await env.INTEREST_DB.prepare(`SELECT 1
+    FROM member_order_promotions p JOIN orders o ON o.id=p.order_id WHERE p.order_id=? AND (
+      EXISTS(SELECT 1 FROM member_first_purchases WHERE order_id=p.order_id) OR ${noEarlierPaidPurchase}
+    )`).bind(orderId).first()
   if (previous && firstCandidate && !JSON.parse(p.risk_flags).includes('target_repeat')) {
     await env.INTEREST_DB.batch([
       env.INTEREST_DB.prepare("UPDATE member_order_promotions SET review_status='required',risk_flags=json_insert(risk_flags,'$[#]','target_repeat'),updated_at=? WHERE order_id=?").bind(Date.now(), orderId),
@@ -84,29 +117,24 @@ export async function reconcileMemberRewards(env: Env) {
     statements.push(db.prepare('UPDATE member_order_promotions SET refund_observed_cents=MAX(refund_observed_cents,?) WHERE order_id=?').bind(p.refunded_cents,p.order_id))
     await db.batch(statements)
   }
-  // Both the order and its delivered event must be real. No reward for a free
-  // exchange, a test payment, a callback alone, or a queued fulfillment.
-  const delivered = (await db.prepare(`SELECT p.order_id,p.referrer_id,
-      COALESCE((SELECT MIN(created_at) FROM order_events WHERE order_id=o.id AND to_status='success'),
-        (SELECT MIN(finished_at) FROM recharge_redemptions WHERE order_id=o.id AND status='succeeded')) delivered_at
-    FROM member_order_promotions p JOIN orders o ON o.id=p.order_id
-    JOIN member_first_purchases c ON c.order_id=p.order_id
-    JOIN member_profiles m ON m.id=p.referrer_id
-    WHERE p.referrer_id IS NOT NULL AND p.cash_cents>0 AND p.review_status IN ('none','approved')
-      AND p.allocation_status NOT IN ('released','restored') AND o.mode='live' AND o.is_test=0
-      AND o.status='success' AND o.payment_status='paid' AND o.refund_hold=0 AND o.refunded_cents=0 AND m.frozen=0
-      AND NOT EXISTS(SELECT 1 FROM member_reward_grants WHERE source_order_id=o.id)
-      AND NOT EXISTS(SELECT 1 FROM orders old WHERE old.id<>o.id AND old.owner_store_id=p.store_id AND old.partner_id IS NULL
-        AND old.mode='live' AND old.is_test=0 AND lower(old.customer_email)=lower(o.customer_email)
-        AND old.payment_status='paid' AND old.refunded_cents<old.price_cents AND old.created_at<o.created_at)
-      AND NOT EXISTS(SELECT 1 FROM json_each(p.risk_flags) WHERE value IN ('self_invitation','target_repeat'))
-    LIMIT 100`).all<{ order_id: string; referrer_id: string; delivered_at: number | null }>()).results
-  for (const p of delivered) {
-    if (!p.delivered_at) continue
-    await db.prepare(`INSERT INTO member_reward_grants(id,store_id,member_id,source_order_id,status,delivered_at,eligible_at,created_at)
-      SELECT ?,store_id,referrer_id,order_id,'pending',?,?,? FROM member_order_promotions WHERE order_id=?
-      AND EXISTS(SELECT 1 FROM orders WHERE id=? AND status='success' AND payment_status='paid' AND refund_hold=0 AND refunded_cents=0)
-      ON CONFLICT(source_order_id) DO NOTHING`).bind('invite:' + p.order_id, p.delivered_at, p.delivered_at + REWARD_OBSERVATION_MS, now, p.order_id, p.order_id).run()
+  const delivered = (await db.prepare(`SELECT order_id FROM (${rewardSources}) WHERE delivered_at>0
+    ORDER BY delivered_at,order_id LIMIT 100`).all<{ order_id: string }>()).results
+  const source = `FROM (${rewardSources} AND p.order_id=?) WHERE delivered_at>0`
+  for (const { order_id: orderId } of delivered) {
+    // An open unpaid order keeps its claim. After confirmed closure, or when both
+    // orders were paid and the held one paid later, use the earlier confirmed
+    // payment's saved inviter. Keep the claim and grant in one transaction.
+    await db.batch([
+      db.prepare(`INSERT INTO member_first_purchases(store_id,customer_key,order_id)
+        SELECT store_id,customer_key,order_id ${source} AND first_order_id IS NOT order_id
+        ON CONFLICT(store_id,customer_key) DO UPDATE SET order_id=excluded.order_id`).bind(orderId),
+      db.prepare(`INSERT INTO member_target_claims(target_key,order_id)
+        SELECT target_key,order_id ${source} AND first_order_id=order_id AND target_key IS NOT NULL
+        ON CONFLICT(target_key) DO NOTHING`).bind(orderId),
+      db.prepare(`INSERT INTO member_reward_grants(id,store_id,member_id,source_order_id,status,delivered_at,eligible_at,created_at)
+        SELECT 'invite:'||order_id,store_id,referrer_id,order_id,'pending',delivered_at,delivered_at+?,?
+        ${source} AND first_order_id=order_id ON CONFLICT(source_order_id) DO NOTHING`).bind(REWARD_OBSERVATION_MS, now, orderId),
+    ])
   }
   const pending = (await db.prepare("SELECT g.*,o.status order_status,o.refunded_cents,o.refund_hold FROM member_reward_grants g JOIN orders o ON o.id=g.source_order_id JOIN member_profiles m ON m.id=g.member_id WHERE g.status='pending' AND (o.refunded_cents>0 OR o.status IN ('failed','cancelled') OR (g.eligible_at<=? AND o.status='success' AND o.refund_hold=0 AND m.frozen=0)) ORDER BY g.eligible_at LIMIT 200").bind(now).all<{ id: string; eligible_at: number; order_status: string; refunded_cents: number; refund_hold: number }>()).results
   for (const g of pending) {
