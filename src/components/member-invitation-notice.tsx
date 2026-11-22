@@ -17,7 +17,7 @@ export function MemberInvitationCampaign({ onOpen }: { onOpen: () => void }) {
   }}>
     <Gift size={18} aria-hidden="true" />
     <div className="invitation-campaign-copy">
-      <h2 id="invitation-campaign-title">{t('邀请好友，Plus 免费用')}</h2>
+      <h2 id="invitation-campaign-title">{t('邀请好友，')}<span className="invitation-campaign-benefit">{t('Plus 免费用')}</span></h2>
       <p id="invitation-campaign-description">
         <span>{t('每邀 1 位有效新客得 {reward} 元，', { reward: INVITATION_REWARD_CENTS / 100 })}</span><span>{t('攒够奖励可全额抵扣 1 个月 Plus。')}</span>
       </p>

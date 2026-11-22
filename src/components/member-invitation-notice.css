@@ -23,7 +23,9 @@
 .member-invitation-notice > svg { flex: none; color: var(--primary); }
 
 .invitation-campaign-copy { flex: 1; min-width: 0; }
-.invitation-campaign-copy h2 { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.invitation-campaign-copy h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; }
+.invitation-campaign-benefit { color: #075cba; white-space: nowrap; }
+.dark .invitation-campaign-benefit { color: #9bcbff; }
 .member-invitation-campaign .invitation-campaign-copy p { margin: 3px 0 0; color: var(--muted-foreground); font-size: 12px; line-height: 1.7; }
 .invitation-campaign-copy p span { display: inline-block; max-width: 100%; }
 .member-invitation-campaign:hover .invitation-campaign-action { background: var(--muted); }
