@@ -126,7 +126,7 @@ try {
       ),
     )
   await adminPage.getByRole('button', { name: '登录后台', exact: true }).click()
-  await adminPage.getByRole('tab', { name: '商品发布', exact: true }).waitFor()
+  await adminPage.getByRole('link', { name: '商品管理', exact: true }).waitFor()
   const fixture = {
     id: '',
     version: 0,
@@ -268,8 +268,9 @@ try {
     'All four Codex specifications remain selectable on 390px mobile without horizontal overflow',
   )
   await adminPage.reload()
+  await adminPage.getByRole('link', { name: '商品管理', exact: true }).click()
   await adminPage
-    .getByRole('tab', { name: '商品上下架与排序', exact: true })
+    .getByRole('tab', { name: '陈列与排序', exact: true })
     .click()
   const claudeToggle = adminPage.getByRole('button', {
     name: '展开 Claude 套餐定价',
@@ -320,10 +321,10 @@ try {
   record(
     'Owner product sorting contains two grouped rows with three and four independently editable prices',
   )
-  await adminPage.getByRole('tab', { name: '商品发布', exact: true }).click()
+  await adminPage.getByRole('tab', { name: '商品库', exact: true }).click()
   await adminPage
     .locator(`[data-product-id="${created[0]}"]`)
-    .getByRole('button', { name: '编辑商品', exact: true })
+    .getByRole('button', { name: '编辑与定价', exact: true })
     .click()
   const dialog = adminPage.getByRole('dialog')
   assert.equal(

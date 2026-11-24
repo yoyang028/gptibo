@@ -37,7 +37,7 @@ export async function authRoute(request: Request, env: Env, path: string) {
       const stores = configuredMemberStores(env).filter(store => membershipEnabled(env, store))
       const names = stores.length ? (await env.INTEREST_DB.prepare("SELECT id,json_extract(settings,'$.name') name FROM owner_shop_settings WHERE id IN ('platform','store-3')").all<{ id: string; name: string | null }>()).results : []
       const membershipStores = stores.map(id => ({ id, name: names.find(shop => shop.id === id)?.name || id }))
-      return json({ configured: true, authenticated: true, mailReady: mailReady(env), username: env.ADMIN_USERNAME, membershipEnabled: membershipStores.length > 0, membershipStores })
+      return json({ configured: true, authenticated: true, mailReady: mailReady(env), username: env.ADMIN_USERNAME, ownerStoreScopes: true, membershipEnabled: membershipStores.length > 0, membershipStores })
     }
     catch (e) { if (e instanceof ApiError && e.status === 401) return json({ configured: true, authenticated: false, mailReady: mailReady(env) }); throw e }
   }

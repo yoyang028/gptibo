@@ -38,7 +38,7 @@ import { CopyButton } from '@/components/copy-button'
 import { Feedback } from '@/components/workspace-loading'
 import { api, errorMessage } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
-import { WorkspaceSelect } from '@/partner/workspace-ui'
+import type { AdminStoreScope } from '../../shared/admin-workspace'
 import {
   monthAfter,
   MEMBERSHIP_PLANS,
@@ -1158,18 +1158,14 @@ function CustomerInspector({
 export default function CustomerManagement({
   admin = false,
   revision,
-  ownerStoreId,
-  ownerStores = [],
-  onOwnerStoreChange,
+  orderScope,
 }: {
   admin?: boolean
   revision: number
-  ownerStoreId?: string
-  ownerStores?: {id:string;name:string}[]
-  onOwnerStoreChange?: (id:string) => void
+  orderScope?: AdminStoreScope
 }) {
   const endpoint = admin ? '/api/admin/customers' : '/api/partner/customers'
-  const [storeScope,setStoreScope] = useState(ownerStoreId ?? 'all')
+  const ownerScope = admin && orderScope && orderScope !== 'all'
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -1189,7 +1185,10 @@ export default function CustomerManagement({
   },[])
   const query = new URLSearchParams(applied)
   query.set('page',String(page))
-  if(ownerStoreId){query.set('scope','owner');if(storeScope!=='all')query.set('store',storeScope)}
+  if (ownerScope) {
+    query.set('scope', 'owner')
+    if (orderScope !== 'owner') query.set('store', orderScope)
+  }
 
   // Data resource
   const { data, error, loading } = useResource<CustomerList>(
@@ -1258,17 +1257,17 @@ export default function CustomerManagement({
       {/* Top Banner & Main Actions */}
       <Card className="crm-header-panel">
         <CardHeader className="crm-header-row">
-          <div>
+          {orderScope ? <p className="text-muted-foreground">下单客户按邮箱自动归档</p> : <div>
             <CardTitle className="text-xl font-bold flex items-center gap-2">
               <Users className="size-5 text-primary" />
-              {ownerStoreId ? '我的客户' : admin ? '客户管理中心' : '我的客户管理'}
+              {admin ? '客户管理中心' : '我的客户管理'}
             </CardTitle>
             <CardDescription className="mt-1">
-              {ownerStoreId ? '店铺下单客户按邮箱自动归集，订单与消费统计每 30 秒更新；会员开通记录仍可手工补充。' : admin
+              {admin
                 ? '全站客户档案与会员账号集中管理，支持按渠道代理筛选、开通跟踪及多工作表 Excel 导出。'
                 : '自主管理所属客户的会员账号、开通续费记录与到期提醒，全流程清晰可查。'}
             </CardDescription>
-          </div>
+          </div>}
 
           <div className="crm-header-actions">
             <Button
@@ -1294,7 +1293,6 @@ export default function CustomerManagement({
       </Card>
 
       <Feedback error={error || exportError} loading={loading} data={data} />
-      {ownerStoreId && <WorkspaceSelect label="客户店铺范围" value={storeScope} options={[{value:'all',label:'全部自营店铺'},...ownerStores.map(s=>({value:s.id,label:s.name}))]} onValueChange={id=>{setStoreScope(id);setPage(1);if(id!=='all')onOwnerStoreChange?.(id)}} />}
 
       {data && (
         <>
@@ -1506,7 +1504,7 @@ export default function CustomerManagement({
                     </Select>
                   </div>
 
-                  {admin && !ownerStoreId && (
+                  {admin && !ownerScope && (
                     <div className="crm-control-group">
                       <Label>所属渠道 / 代理</Label>
                       <Select

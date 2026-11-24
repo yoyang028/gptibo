@@ -57,6 +57,7 @@ import { quotePromotion, promotionStatements, promotionView, promotionFor, promo
 type Plan = { purchase_note?: string; delivery_instructions: string; partner_enabled: number; id: string; product_id: string; name: string; price_cents: number; enabled: number; renewal_only: number; version: number }
 type OrderPartnerSource = { id: string; slug: string; name: string; email: string; wechat: string; qq: string }
 const statuses: Status[] = ['pending', 'session', 'processing', 'success', 'failed', 'cancelled']
+const activeLiveOrders = "mode='live' AND is_test=0 AND status IN ('session','processing','failed') AND (refunded_cents=0 OR refunded_cents<price_cents)"
 const publicOrder = (o: Order) => ({ purchaseNote: o.purchase_note ?? '', isTest: Boolean(o.is_test), customerEmail: o.customer_email, refundedCents: o.refunded_cents, refundHold: Boolean(o.refund_hold), redemptionBlocked: Boolean(o.redemption_blocked), id: o.id, plan: o.plan, planName: o.plan_name, partnerName: o.partner_name ?? undefined, price: o.price_cents / 100, mode: o.mode, paymentStatus: o.payment_status, status: o.status, createdAt: o.created_at, updatedAt: o.updated_at, startedAt: o.started_at ?? undefined, smsPhone: o.sms_phone ?? undefined, version: o.version })
 type AdminOrder = Order & { settlement_status: 'pending' | 'paid' | null; owner_store_name?: string }
 const adminOrder = async (env: Env, o: AdminOrder) => {
@@ -344,6 +345,19 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === '/api/admin/suppliers' || path === '/api/admin/suppliers/bugan/check') return supplierManagement(request, env, path)
   if (path === '/api/admin/payments/reconcile' && method === 'POST') { await body(request); return json(await reconcilePayments(env)) }
   if (path === '/api/admin/recharge/reconcile' && method === 'POST') { await body(request); return json(await reconcileRecharge(env)) }
+  if (path === '/api/admin/workbench' && method === 'GET') {
+    const today = Math.floor((Date.now() + 8 * 3600000) / 86400000) * 86400000 - 8 * 3600000
+    const [pending, sales] = await Promise.all([
+      db.prepare(`SELECT COUNT(*) total FROM orders WHERE ${activeLiveOrders}`).first<{ total: number }>(),
+      db.prepare(`SELECT COUNT(*) orders,
+        COALESCE(SUM(CASE WHEN o.payment_status='paid' THEN 1 ELSE 0 END),0) paid,
+        COALESCE(SUM(CASE WHEN o.payment_status='paid' THEN COALESCE(m.cash_cents,o.price_cents) ELSE 0 END),0) cash_cents
+        FROM orders o LEFT JOIN member_order_promotions m ON m.order_id=o.id
+        WHERE o.partner_id IS NULL AND o.mode='live' AND o.is_test=0 AND o.created_at>=? AND o.created_at<?`)
+        .bind(today,today + 86400000).first<{ orders: number; paid: number; cash_cents: number }>(),
+    ])
+    return json({ pendingOrders: pending?.total ?? 0, today: sales })
+  }
   if (path === '/api/admin/overview' && method === 'GET') {
     // Only settle demo work. Production reconciliation needs a verified provider.
     await settleDue(env)
@@ -355,14 +369,15 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
   if (path === '/api/admin/orders' && method === 'GET') {
     await settleDue(env)
     const { page, offset } = pageParams(url); const q = url.searchParams.get('q')?.trim() ?? ''; const status = url.searchParams.get('status') ?? ''; const plan = url.searchParams.get('plan') ?? ''
-    if (q.length > 320 || (status && !statuses.includes(status as Status))) throw new ApiError('筛选条件无效。')
+    if (q.length > 320 || (status && status !== 'active' && !statuses.includes(status as Status))) throw new ApiError('筛选条件无效。')
     const values: Value[] = []; const clauses: string[] = []
     const storeId=url.searchParams.get('store') || null
     if(storeId) await ownerShop(env,storeId)
     if(url.searchParams.get('scope')==='owner' || storeId) clauses.push('partner_id IS NULL','is_test=0')
     if(storeId){clauses.push('owner_store_id=?');values.push(storeId)}
     if (q) { clauses.push("(instr(id,?) > 0 OR instr(lower(COALESCE(customer_email,'')),?) > 0 OR EXISTS(SELECT 1 FROM recharge_orders t WHERE t.order_id=orders.id AND instr(lower(t.remote_id),?) > 0))"); values.push(q.toUpperCase(), q.toLowerCase(), q.toLowerCase()) }
-    if (status) { clauses.push('status=?'); values.push(status) }
+    if (status === 'active') clauses.push(activeLiveOrders)
+    else if (status) { clauses.push('status=?'); values.push(status) }
     if (plan) { clauses.push('plan=?'); values.push(plan) }
     const where = clauses.length ? ' WHERE ' + clauses.join(' AND ') : ''
     const count = await db.prepare('SELECT COUNT(*) total FROM orders' + where).bind(...values).first<{ total: number }>()

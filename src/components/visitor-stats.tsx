@@ -156,8 +156,21 @@ export function VisitorStats({
   const setDays = onDaysChange ?? setInternalDays
   const query = new URL(endpoint, location.origin)
   query.searchParams.set('days', String(days))
-  const { data, error, loading } = useResource<VisitorSummary>(query.pathname + query.search, revision)
+  const resource = useResource<VisitorSummary>(query.pathname + query.search, revision)
+  return <VisitorTrend {...resource} {...{ title, description, action, className, days, setDays }} />
+}
 
+export function VisitorTrend({ data, error, loading, title, description, action, className, days, setDays }: {
+  data?: VisitorSummary
+  error: string
+  loading: boolean
+  title: string
+  description?: string
+  action?: ReactNode
+  className?: string
+  days: VisitorPeriod
+  setDays: (value: VisitorPeriod) => void
+}) {
   const avgDailyVisitors = data
     ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(
       data.trend.reduce((sum, day) => sum + day.visitors, 0) / data.days

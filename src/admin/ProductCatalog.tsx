@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react'
-import { ArrowRight, CheckCircle2, KeyRound, Package, Plus, RefreshCw, Search, Wallet } from 'lucide-react'
+import { CheckCircle2, KeyRound, Package, Plus, RefreshCw, Search, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Feedback } from '@/components/workspace-loading'
 import { api, errorMessage, type CatalogPlan } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
-import { WorkspaceTabs } from '@/partner/workspace-ui'
+import { WorkspaceSelect, WorkspaceTabs } from '@/partner/workspace-ui'
 import { productNameForId } from '../../shared/email-products'
 import { ADMIN_SUPPLIERS, productSupplier, type AdminSupplier, type ProductSection } from '../../shared/admin-suppliers'
 import type { ShopProduct, ShopProductInput } from '../../shared/shop-products'
@@ -14,6 +14,7 @@ import { freshProduct } from './product-draft'
 import { ProductArtworkSettingsButton } from './ProductArtworkSettings'
 import { PlanEditor } from './PlanEditor'
 import { GmailSupplierPanel } from './GmailSupplierPanel'
+import { XGiftPanel } from './XGiftPanel'
 import HanfolkCatalog from './HanfolkCatalog'
 import SmsManagement from './SmsManagement'
 import './product-catalog.css'
@@ -147,10 +148,13 @@ export default function ProductCatalog({ revision, supplier, onSupplier, onSaved
     setEdit({ ...freshProduct(), delivery: 'api', api: { provider: 'xiaojiu', baseUrl: 'https://98-xj.com', productCode: '', configured: false, verified: false } })
   }
   return <div className="product-catalog">
-    <nav className="supplier-section-nav" aria-label="商品服务商">
-      {[{ id: 'all', name: '商品总览' }, ...ADMIN_SUPPLIERS, { id: 'other', name: '自营及其他' }].map(s => <Button key={s.id} variant="ghost" aria-current={supplier === s.id ? 'page' : undefined} onClick={() => onSupplier(s.id as ProductSection)}>{s.name}<span className="supplier-section-count">{data ? rows.filter(r => s.id === 'all' || r.supplier === s.id).length : '—'}</span></Button>)}
-    </nav>
-    {supplier === 'all' && <div className="supplier-overview">{ADMIN_SUPPLIERS.map(s => <button key={s.id} className="supplier-overview-card" onClick={() => onSupplier(s.id)}><span className="supplier-mark" data-supplier={s.id}>{s.mark}</span><strong>{s.name}</strong><p>{s.description}</p><span>{loading && !data ? '读取中…' : data ? rows.filter(r => r.supplier === s.id).length + ' 项商品 / 规格' : '暂未读取'}<ArrowRight size={15} /></span></button>)}</div>}
+    <div className="supplier-library-tools">
+      <label htmlFor="supplier-library-source">供货来源</label>
+      <WorkspaceSelect id="supplier-library-source" label="供货来源" value={supplier}
+        options={[{ value: 'all', label: '全部来源' }, ...ADMIN_SUPPLIERS.map(source => ({ value: source.id, label: source.name })), { value: 'other', label: '自营及其他' }]}
+        onValueChange={value => onSupplier(value as ProductSection)}
+      />
+    </div>
     <Feedback error={error || editError} loading={loading} data={data} />
     {supplier === 'grizzly' ? <SmsManagement revision={revision} onOrder={onOrder} /> : supplier === 'daju' ? <HanfolkCatalog revision={revision} onSaved={onSaved} /> : data && <>
       {supplier !== 'all' && <div className="supplier-page-heading"><div><h2>{supplierName(supplier)}</h2><p>{supplier === 'other' ? '管理人工交付、自营商品及其他已接入的供货商品。' : ADMIN_SUPPLIERS.find(s => s.id === supplier)?.description}</p></div>{supplier === 'xiaojiu' ? <Button onClick={addXiaojiu}><Plus size={15} />新增Xiaojiu商品</Button> : supplier === 'other' ? <Button onClick={() => setEdit(freshProduct())}><Plus size={15} />新增自营商品</Button> : null}</div>}
@@ -159,7 +163,7 @@ export default function ProductCatalog({ revision, supplier, onSupplier, onSaved
         { value: 'products', label: '已整理商品', content: <InventoryTable rows={rows.filter(r => r.supplier === supplier)} onEdit={editRow} busy={busy} /> },
         { value: 'source', label: supplier === 'bugan' ? 'API 与供货商品' : '上游目录与 API', content: supplier === 'bugan' ? <BuganConnection data={data.bugan} /> : <XiaojiuSource products={data.products.filter(p => productSupplier(p, data.linkedSuppliers) === 'xiaojiu')} onEdit={p => void editProduct(p)} onCreate={setEdit} /> },
         ...(supplier === 'bugan' ? [{ value: 'history', label: '修改记录', content: <PlanHistory revision={revision} ids={Object.keys(data.bugan.productMap)} /> }] : []),
-      ]} /> : <><div className="supplier-list-toolbar"><span>{supplier === 'all' ? '全部服务商的商品统一查看，编辑时保留各自供货配置。' : '未归属上述四家服务商的商品。'}</span><ProductArtworkSettingsButton onSaved={onSaved} /></div><InventoryTable key={supplier} rows={rows.filter(r => supplier === 'all' || r.supplier === 'other')} onEdit={editRow} busy={busy} />{supplier === 'other' && <GmailSupplierPanel revision={revision} />}</>}
+      ]} /> : <><div className="supplier-list-toolbar"><ProductArtworkSettingsButton onSaved={onSaved} /></div><InventoryTable key={supplier} rows={rows.filter(r => supplier === 'all' || r.supplier === 'other')} onEdit={editRow} busy={busy} />{supplier === 'other' && <><GmailSupplierPanel revision={revision} /><XGiftPanel revision={revision} /></>}</>}
     </>}
     {edit && <ProductEditor key={edit.id || 'new'} initial={edit} listingOnly={Boolean(data?.linkedSuppliers[edit.id] === 'daju')} onClose={() => setEdit(undefined)} onSaved={onSaved} />}
     {plan && <PlanEditor plan={plan} onClose={() => setPlan(undefined)} onUpdated={onSaved} />}

@@ -23,7 +23,11 @@ function validate(patch: Record<string, unknown>) {
   if ('announcementPlacement' in patch && !['home','product','both'].includes(String(patch.announcementPlacement))) throw new ApiError('公告位置无效。')
 }
 async function allStores(env: Env) {
-  return (await env.INTEREST_DB.prepare("SELECT id,slug,COALESCE(json_extract(settings,'$.displayOrder'),slot) slot,version FROM owner_shop_settings ORDER BY COALESCE(json_extract(settings,'$.displayOrder'),slot)").all<{ id: string; slug: string; slot: number; version: number }>()).results
+  return (await env.INTEREST_DB.prepare(`SELECT id,slug,version,
+    COALESCE(json_extract(settings,'$.displayOrder'),slot) slot,
+    COALESCE(NULLIF(json_extract(settings,'$.name'),''),'GPTibo') name,
+    COALESCE(json_extract(settings,'$.active'),1) active
+    FROM owner_shop_settings ORDER BY slot`).all<{ id: string; slug: string; slot: number; version: number; name: string; active: number }>()).results
 }
 async function storedSettings(env: Env, id: string) {
   const settings = await ownerShop(env, id)
@@ -51,6 +55,12 @@ async function commitSettings(env: Env, expected: { id: string; version: number;
 
 export async function ownerStorefrontRoutes(request: Request, env: Env, url: URL): Promise<Response> {
   const suffix = url.pathname.slice('/api/admin/my-shop'.length), db = env.INTEREST_DB
+  if (suffix === '/directory' && request.method === 'GET') {
+    const stores = (await allStores(env)).map(({ id, name, active, slug }) => ({
+      id, name, active: Boolean(active), ...ownerStorefrontLinks(env, url.origin, id, slug),
+    }))
+    return json({ stores })
+  }
   if (suffix === '/identity' && request.method === 'GET') {
     const storeId = url.searchParams.get('store') || 'platform'
     const record = (await allStores(env)).find(s => s.id === storeId)

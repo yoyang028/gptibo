@@ -98,6 +98,35 @@ test('presentation order changes without reassigning store IDs, domain ownership
   assert.equal(stores[2].active,false)
   assert.equal(stores[1].slug,'store-3')
   assert.equal(f.db.prepare("SELECT slot FROM owner_shop_settings WHERE id='store-3'").get()!.slot,3)
+  f.env.OWNER_STOREFRONT_HOSTS = JSON.stringify({ 'general.example.test': 'store-3' })
+  const directory = await json(f, '/api/admin/my-shop/directory')
+  assert.deepEqual(directory.stores.map((s:any) => [s.name, s.active, s.storefront_url]), [
+    ['ScholAI', true, 'https://shop.example.invalid/'],
+    ['AI星球', true, 'https://general.example.test/'],
+    ['备用商店', false, 'https://shop.example.invalid/s/store-2'],
+  ])
+  assert.equal((await f.request('/api/admin/my-shop/directory')).status, 401)
+})
+
+test('workbench pending count matches its order drilldown and today uses Beijing order creation time', async t => {
+  const f = await customerFixture()
+  t.after(() => f.db.close())
+  const midnight = Math.floor((Date.now() + 28800000) / 86400000) * 86400000 - 28800000
+  const agent = await f.agent('代理渠道')
+  const waiting = order(f.db, { status: 'session', payment_status: 'paid', created_at: midnight })
+  const waitingAgent = order(f.db, { status: 'processing', payment_status: 'paid', partner_id: agent.id, created_at: midnight })
+  order(f.db, { status: 'success', payment_status: 'paid', owner_store_id: 'store-3', price_cents: 900, created_at: midnight + 1 })
+  order(f.db, { status: 'success', payment_status: 'paid', created_at: midnight - 1 })
+  order(f.db, { status: 'failed', payment_status: 'paid', refunded_cents: 1000, created_at: midnight - 1 })
+  order(f.db, { status: 'processing', payment_status: 'paid', is_test: 1, created_at: midnight })
+  order(f.db, { status: 'processing', mode: 'demo', created_at: midnight })
+  order(f.db, { created_at: midnight + 86400000 })
+  const workbench = await json(f, '/api/admin/workbench')
+  assert.deepEqual(workbench, { pendingOrders: 2, today: { orders: 2, paid: 2, cash_cents: 1900 } })
+  const drilldown = await json(f, '/api/admin/orders?status=active')
+  assert.equal(drilldown.total, workbench.pendingOrders)
+  assert.deepEqual(new Set(drilldown.orders.map((row: { id: string }) => row.id)), new Set([waiting, waitingAgent]))
+  assert.equal((await f.request('/api/admin/workbench')).status, 401)
 })
 
 test('customer spending uses actual promotion cash and never treats zero-cash member credit as cash received',async t=>{

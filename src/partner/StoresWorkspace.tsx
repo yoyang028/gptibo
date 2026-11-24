@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/table'
 import { prepareLogo } from '@/lib/prepare-logo'
 import { synchronizeOwnerIdentity } from '../../shared/owner-identity'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { Plus, Store, Ticket, Globe, ArrowUpRight } from 'lucide-react'
 import QRCode from 'qrcode'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { CopyButton } from '@/components/copy-button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { api, errorMessage } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
 import { money, toCents } from './model'
@@ -148,6 +149,19 @@ const labels: Record<string, string> = {
   closed: '已关闭',
 }
 
+type OwnerPanel = {
+  section: 'stores' | 'prices' | 'coupons' | 'domains'
+  storeId: string
+  edit?: string
+  onCloseEditor?: () => void
+  onOpen?: (store: string, section: 'orders' | 'customers' | 'visitors') => void
+}
+
+function StoreSections({ owner, ...tabs }: ComponentProps<typeof WorkspaceTabs> & { owner?: OwnerPanel }) {
+  if (owner) return tabs.items.find(item => item.value === owner.section)?.content
+  return <WorkspaceTabs {...tabs} />
+}
+
 export function StoresWorkspace({
   prefix = '/api/partner',
   readOnly = false,
@@ -157,13 +171,8 @@ export function StoresWorkspace({
   active = true,
   revision: parentRevision = 0,
   sortingContent,
-  publishingContent,
-  owner = false,
-  selectedStoreId,
-  onStoreChange,
+  owner,
 }: {
-  selectedStoreId?: string
-  onStoreChange?: (id: string) => void
   prefix?: string
   readOnly?: boolean
   adminManagement?: boolean
@@ -171,8 +180,7 @@ export function StoresWorkspace({
   active?: boolean
   revision?: number
   sortingContent?: ReactNode
-  publishingContent?: ReactNode
-  owner?: boolean
+  owner?: OwnerPanel
   onSaved?: () => void
 }) {
   const [revision, setRevision] = useState(0)
@@ -181,7 +189,7 @@ export function StoresWorkspace({
     revision + parentRevision,
   )
   const domainResource = useResource<DomainData>(
-    prefix + '/domain',
+    !owner || owner.section === 'domains' ? prefix + '/domain' : null,
     revision + parentRevision,
   )
   const [selected, setLocalSelected] = useState('')
@@ -207,8 +215,13 @@ export function StoresWorkspace({
   const [note, setNote] = useState('')
   const monthlyFee = domainResource.data?.monthlyFeeCents ?? 0
   const data = resource.data
-  const setSelected = (id: string) => { setLocalSelected(id); onStoreChange?.(id) }
-  const shop = data?.stores.find((s) => s.id === (selectedStoreId ?? selected)) ?? data?.stores[0]
+  const setSelected = setLocalSelected
+  const shop = data?.stores.find((s) => s.id === (owner?.storeId ?? selected)) ?? data?.stores[0]
+  const editing = editor ?? data?.stores.find(s => s.id === owner?.edit)
+  function closeEditor() {
+    setEditor(null)
+    owner?.onCloseEditor?.()
+  }
   const storefrontPath = (slug: string) => owner ? slug ? '/s/' + slug : '/' : partnerStorefrontPath(slug)
   const storefrontUrl = (store: Shop) => store.storefront_url || (data?.referralOrigin || location.origin) + storefrontPath(store.slug)
   const reload = () => {
@@ -216,12 +229,12 @@ export function StoresWorkspace({
     onSaved?.()
   }
   useEffect(() => {
-    if (!active) return
+    if (!active || owner) return
     const timer = setInterval(() => {
       if (!document.hidden) setRevision((v) => v + 1)
     }, 30000)
     return () => clearInterval(timer)
-  }, [active])
+  }, [active, owner])
   useEffect(() => {
     let cancelled = false
     const source = payment?.qr
@@ -286,7 +299,7 @@ export function StoresWorkspace({
         </p>
       </div>
     )
-  const storeContext = shop && (
+  const storeContext = !owner && shop && (
     <div className="store-context">
       <WorkspaceSelect
         label="选择商店"
@@ -313,7 +326,7 @@ export function StoresWorkspace({
         <div>
           <CopyButton
             value={storefrontUrl(shop)}
-            label={owner ? '复制店铺链接' : '复制推广链接'}
+            label="复制推广链接"
           />
           {!readOnly && (
             <Button variant="outline" onClick={() => setEditor(shop)}>
@@ -326,25 +339,24 @@ export function StoresWorkspace({
   )
   return (
     <section className="stores-workspace">
-      <div className="stores-heading">
+      {!owner && <div className="stores-heading">
         <div>
           <h2>
             <Store size={21} />
-            {owner ? '我的店铺' : '我的商店'} <small>{data.stores.length}/{data.capabilities?.maxStores ?? (owner ? 1 : 5)}</small>
+            我的商店 <small>{data.stores.length}/{data.capabilities?.maxStores ?? 5}</small>
           </h2>
-          <p>{owner ? '分别管理三家自营店的形象、价格与订单，也可统一同步选定参数。' : data.capabilities?.maxStores === 1 ? '管理自己的商店形象、售价和客户订单，商品与供货价由平台统一提供。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
+          <p>{data.capabilities?.maxStores === 1 ? '管理自己的商店形象、售价和客户订单，商品与供货价由平台统一提供。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
         </div>
-        {owner && data.capabilities?.bulkSettings && <StoreBulkSettings stores={data.stores} onSaved={reload} />}
-        {!readOnly && !owner && (
+        {!readOnly && (
           <Button
-            disabled={busy || owner || data.stores.length >= (data.capabilities?.maxStores ?? 5)}
+            disabled={busy || data.stores.length >= (data.capabilities?.maxStores ?? 5)}
             onClick={() => setEditor('new')}
           >
             <Plus size={15} />
             新增商店
           </Button>
         )}
-      </div>
+      </div>}
       {(error || resource.error || domainResource.error) && (
         <p className="stores-error" role="alert">
           {error || resource.error || domainResource.error}
@@ -356,18 +368,51 @@ export function StoresWorkspace({
         </p>
       )}
       {shop && (
-        <WorkspaceTabs
+        <StoreSections
+          owner={owner}
           label="商店管理"
           value={tab}
           onValueChange={setTab}
           items={[
-            ...(publishingContent ? [{value:'publishing',label:'商品发布',content:publishingContent}] : []),
             {
-              value: 'overview',
+              value: owner ? 'stores' : 'overview',
               label: '商店概览',
-              content: (
+              content: owner ? (
+                <section className="admin-panel admin-store-directory" aria-label="自营店铺列表">
+                  <div className="admin-store-directory-heading">
+                    <span>{data.stores.filter(s => s.active).length} 家营业中 · 共 {data.stores.length} 家</span>
+                    {data.capabilities?.bulkSettings && <StoreBulkSettings stores={data.stores} onSaved={reload} />}
+                  </div>
+                  <ul className="admin-store-list">
+                    {data.stores.map(store => {
+                      const url = new URL(storefrontUrl(store))
+                      return <li key={store.id} className="admin-store-row">
+                        <div className="admin-store-info">
+                          <div><strong>{store.name}</strong> <span className={store.active ? 'admin-pill available' : 'admin-pill'}>{store.active ? '营业中' : '已停用'}</span></div>
+                          <a href={url.href} target="_blank" rel="noreferrer" aria-label={'预览 ' + store.name}>
+                            {url.host}{url.pathname.replace(/\/$/, '')} <ArrowUpRight size={13} />
+                          </a>
+                        </div>
+                        <div className="admin-store-actions">
+                          {owner.onOpen && <Button variant="ghost" size="sm" onClick={() => owner.onOpen?.(store.id, 'orders')}>查看订单</Button>}
+                          <Popover>
+                            <PopoverTrigger render={<Button variant="ghost" size="sm" aria-label={'更多操作 · ' + store.name} />}>更多</PopoverTrigger>
+                            <PopoverContent align="end" className="admin-store-menu">
+                              {owner.onOpen && <>
+                                <Button variant="ghost" onClick={() => owner.onOpen?.(store.id, 'customers')}>查看客户</Button>
+                                <Button variant="ghost" onClick={() => owner.onOpen?.(store.id, 'visitors')}>查看访客</Button>
+                              </>}
+                              <CopyButton value={url.href} label="复制链接" variant="ghost" />
+                            </PopoverContent>
+                          </Popover>
+                          <Button variant="outline" size="sm" onClick={() => setEditor(store)}>编辑</Button>
+                        </div>
+                      </li>
+                    })}
+                  </ul>
+                </section>
+              ) : (
                 <div className="store-overview">
-                  {owner && storeContext}
                   <div className="store-overview-summary">
                     <div>
                       <span>营业中的商店</span>
@@ -412,7 +457,7 @@ export function StoresWorkspace({
                       </div>
                       <div className="store-overview-stat">
                         <strong>{money(s.earned_cents)}</strong>
-                        <small>{owner ? '已确认订单差额' : '累计收益'}</small>
+                        <small>累计收益</small>
                       </div>
                       <div className="store-overview-stat">
                         <strong>{s.visitors}</strong>
@@ -421,7 +466,7 @@ export function StoresWorkspace({
                       <div className="store-overview-actions">
                         <CopyButton
                           value={storefrontUrl(s)}
-                          label={owner ? '复制店铺链接' : '复制推广链接'}
+                          label="复制推广链接"
                         />
                         <Button
                           variant="outline"
@@ -452,11 +497,10 @@ export function StoresWorkspace({
                   <>
                     <div className="store-price-list">
                       <p className="stores-help">
-                        售价和优惠后价格均不能低于拿货价。关闭套餐后仅影响当前商店的新订单。
+                        {owner && `当前修改 ${shop.name} 的售价和开售状态。`}售价和优惠后价格均不能低于拿货价。关闭套餐后仅影响当前商店的新订单。
                       </p>
-                      {data.prices.map((p) => (
+                      {data.prices.filter(p => p.store_id === shop.id).map((p) => (
                         <div
-                          hidden={p.store_id !== shop.id}
                           key={p.store_id + p.plan}
                         >
                           <PriceEditor
@@ -518,7 +562,7 @@ export function StoresWorkspace({
                       <div>
                         <h3>
                           <Ticket size={18} />
-                          代理优惠码
+                          {owner ? '店铺优惠码' : '代理优惠码'}
                         </h3>
                         <p>
                           只在勾选的商店商品生效。邮箱限次在同一码绑定的所有商店之间共用。
@@ -587,7 +631,7 @@ export function StoresWorkspace({
                       <div>
                         <h3>
                           <Globe size={18} />
-                          域名与续费
+                          {owner ? '已绑定域名' : '域名与续费'}
                         </h3>
                         <p>
                           {owner ? '查看当前店铺已绑定的正式域名与访问入口。' : monthlyFee === 0
@@ -627,7 +671,7 @@ export function StoresWorkspace({
                         单。
                       </p>
                     )}
-                    {owner && domainResource.data && !domainResource.data.domains.some(d => d.storeId === shop.id) && <p className="stores-help">当前店铺尚未绑定独立域名，可使用上方的店铺访问入口。</p>}
+                    {owner && domainResource.data && !domainResource.data.domains.some(d => d.storeId === shop.id) && <p className="stores-help">当前店铺尚未绑定独立域名。可在「店铺列表」查看访问入口。</p>}
                     {domainResource.data?.domains
                       .filter((d) => d.storeId === shop.id)
                       .map((d) => (
@@ -801,7 +845,7 @@ export function StoresWorkspace({
               ? [
                   {
                     value: 'sorting',
-                    label: owner ? '商品上下架与排序' : '默认店排序',
+                    label: '默认店排序',
                     content: sortingContent,
                   },
                 ]
@@ -854,16 +898,17 @@ export function StoresWorkspace({
           </div>
         </DialogContent>
       </Dialog>
-      {editor && (
+      {editing && (
         <StoreEditor
+          key={editing === 'new' ? 'new' : editing.id}
           logoEndpoint={prefix + '/branding/logo'}
-          owner={owner}
+          owner={Boolean(owner)}
           error={error}
-          shop={editor === 'new' ? undefined : editor}
+          shop={editing === 'new' ? undefined : editing}
           busy={busy}
-          onClose={() => setEditor(null)}
+          onClose={closeEditor}
           save={async (value) => {
-            if (await mutate(prefix + '/stores', value)) setEditor(null)
+            if (await mutate(prefix + '/stores', value)) closeEditor()
           }}
         />
       )}
@@ -1193,7 +1238,7 @@ function StoreEditor({
         <DialogHeader>
           <DialogTitle>{shop ? '编辑商店' : '新增商店'}</DialogTitle>
           <DialogDescription>
-            {owner ? '保存后只更新当前店铺。统一修改请返回商店概览选择要同步的参数。' : '设置仅属于这家店。推广码创建后保持固定。'}
+            {owner ? `保存后仅更新 ${shop?.name}。` : '设置仅属于这家店。推广码创建后保持固定。'}
           </DialogDescription>
         </DialogHeader>
         <form

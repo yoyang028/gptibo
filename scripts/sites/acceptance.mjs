@@ -29,7 +29,6 @@ function code(site, email) { const mail = latestMail(site, email); assert.ok(mai
 async function get(ctx, url) { const response = await ctx.request.get(url); assert.equal(response.status(), 200, await response.text()); return response.json() }
 async function post(ctx, url, data) { const response = await ctx.request.post(url, { headers: { Origin: origin }, data }); assert.ok(response.ok(), await response.text()); return response.json() }
 async function noOverflow(page) { assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Page overflows the viewport') }
-async function closeDialog(page) { await page.keyboard.press('Escape'); await page.locator('[role=dialog]').waitFor({ state: 'hidden' }) }
 async function choose(page, label, name) { await page.getByRole('combobox', { name: label, exact: true }).click(); await page.getByRole('option', { name, exact: true }).click() }
 try {
   const admin = await context(origin), adminPage = await admin.newPage()
@@ -47,15 +46,14 @@ try {
   const registry = await get(admin, '/api/admin/my-shop/stores')
   const reserved = registry.stores.find(s => s.id === 'store-2')
   if (!reserved.active) await post(admin, '/api/admin/my-shop/stores', { ...reserved, active: true })
-  await adminPage.getByRole('button', { name: '我的店铺', exact: true }).click()
-  await adminPage.locator('.store-overview-row').nth(2).waitFor()
-  assert.equal(await adminPage.locator('.store-overview-row').count(), 3)
-  await adminPage.getByRole('combobox', { name: '当前店铺', exact: true }).waitFor()
+  await adminPage.getByRole('link', { name: '店铺管理', exact: true }).click()
+  await adminPage.locator('.admin-store-row').nth(2).waitFor()
+  assert.equal(await adminPage.locator('.admin-store-row').count(), 3)
   await adminPage.screenshot({ path: path.join(evidence, 'owner-three-stores.png'), fullPage: true })
   record('Existing main workbench lists three owner shops in the original shop workspace')
 
   const before = await get(admin, '/api/admin/my-shop/stores')
-  const secondRow = adminPage.locator('.store-overview-row').filter({ hasText: '商店二' })
+  const secondRow = adminPage.locator('.admin-store-row').filter({ hasText: reserved.name })
   await secondRow.getByRole('button', { name: '编辑', exact: true }).click()
   const editor = adminPage.getByRole('dialog')
   await editor.getByLabel('首页标题', { exact: true }).fill('商店。找到适合你的服务。')
@@ -68,7 +66,7 @@ try {
   record('Editing one shop changes its own public parameters without changing the root shop')
 
   await adminPage.getByRole('button', { name: '统一修改参数', exact: true }).click()
-  await choose(adminPage, '复制参数的店铺', '商店二')
+  await choose(adminPage, '复制参数的店铺', reserved.name)
   await adminPage.getByLabel('首页标题与简介', { exact: true }).check()
   assert.equal(await adminPage.getByLabel('商品售价与销售状态', { exact: true }).isChecked(), false)
   await adminPage.screenshot({ path: path.join(evidence, 'owner-bulk-settings.png'), fullPage: false })
@@ -79,19 +77,20 @@ try {
   assert.deepEqual(synced.prices.map(p => p.price_cents), before.prices.map(p => p.price_cents))
   record('Bulk UI synchronizes only selected fields; different prices remain unchanged')
 
-  const prices = [13900,14900,15900]
+  const prices = { platform: 13900, 'store-2': 14900, 'store-3': 15900 }
   for (let i = 0; i < synced.stores.length; i++) {
     const s = synced.stores[i], quote = (await get(admin, '/api/admin/my-shop/stores')).prices.find(p => p.store_id === s.id && p.plan === 'plus')
     if (i === 1) {
-      await choose(adminPage, '当前店铺', s.name)
-      await adminPage.getByRole('tab', { name: '商品售价', exact: true }).click()
+      await adminPage.getByRole('link', { name: '商品管理', exact: true }).click()
+      await adminPage.getByRole('tab', { name: '店铺售价', exact: true }).click()
+      await choose(adminPage, '店铺范围', s.name)
       const form = adminPage.locator('.store-price-row:visible').filter({ has: adminPage.getByLabel(quote.name + '售价', { exact: true }) })
-      await form.getByLabel(quote.name + '售价', { exact: true }).fill((prices[i] / 100).toFixed(2))
+      await form.getByLabel(quote.name + '售价', { exact: true }).fill((prices[s.id] / 100).toFixed(2))
       await form.getByRole('checkbox').check()
       const saved = adminPage.waitForResponse(r => r.url().endsWith('/api/admin/my-shop/stores/prices') && r.request().method() === 'POST')
       await form.getByRole('button', { name: '保存', exact: true }).click()
       assert.equal((await saved).status(), 200)
-    } else await post(admin, '/api/admin/my-shop/stores/prices', { storeId: s.id, plan: 'plus', priceCents: prices[i], enabled: true, version: quote.version })
+    } else await post(admin, '/api/admin/my-shop/stores/prices', { storeId: s.id, plan: 'plus', priceCents: prices[s.id], enabled: true, version: quote.version })
   }
   const customer = await context(origin), page = await customer.newPage(), styles = []
   for (const [i, slug] of ['', 'store-2', 'store-3'].entries()) {
@@ -99,7 +98,7 @@ try {
     await page.goto(base || '/')
     await page.locator('.store-intro h1').waitFor()
     const catalog = await get(customer, '/api/catalog' + (slug ? '?partner=' + slug : ''))
-    assert.equal(catalog.plans.find(p => p.id === 'plus').price_cents, prices[i])
+    assert.equal(catalog.plans.find(p => p.id === 'plus').price_cents, prices[slug || 'platform'])
     styles.push(await page.locator('.store-layout').evaluate(el => ({ background: getComputedStyle(el).backgroundColor, font: getComputedStyle(el).fontFamily })))
     await noOverflow(page); await page.screenshot({ path: path.join(evidence, `owner-store-${i + 1}-desktop.png`), fullPage: true })
     await page.goto(base + '/product/chatgpt'); await page.locator('.store-layout').waitFor()
@@ -111,14 +110,14 @@ try {
   record('Three storefronts use the same desktop/mobile template and different server-validated prices')
 
   await post(customer, '/api/orders/client', {})
-  for (const [i, slug] of ['', 'store-2', 'store-3'].entries()) {
-    const response = await post(customer, '/api/orders', { partner: slug || undefined, plan: 'plus', expectedPrice: prices[i], email: 'buyer@example.invalid', key: crypto.randomUUID() })
+  for (const slug of ['', 'store-2', 'store-3']) {
+    const response = await post(customer, '/api/orders', { partner: slug || undefined, plan: 'plus', expectedPrice: prices[slug || 'platform'], email: 'buyer@example.invalid', key: crypto.randomUUID() })
     const id = slug || 'platform', list = await get(admin, '/api/admin/my-shop/orders?store=' + id)
     assert.ok(list.rows.some(o => o.id === response.order.id && o.owner_store_id === id))
   }
   record('Three storefront orders return to the main admin with separate shop attribution')
 
-  await adminPage.getByRole('button', { name: '代理管理', exact: true }).click()
+  await adminPage.getByRole('link', { name: '代理管理', exact: true }).click()
   await adminPage.getByRole('button', { name: '开通代理', exact: true }).first().waitFor()
   const email = 'agent-' + Date.now() + '@example.invalid'
   await adminPage.getByRole('button', { name: '开通代理', exact: true }).first().click()

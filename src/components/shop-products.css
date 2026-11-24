@@ -297,9 +297,6 @@
   object-fit: contain;
   border-radius: 24px;
 }
-.owner-shop-module {
-  margin-top: 20px;
-}
 .owner-publisher-toolbar {
   display: flex;
   justify-content: space-between;
@@ -397,9 +394,6 @@
   border-radius: 8px;
   background: var(--background);
   color: inherit;
-}
-.owner-shop-canvas .partner-page-tabs {
-  width: 100%;
 }
 .product-inventory-state { color:var(--muted-foreground); font-size:11px; line-height:1.5; }
 .shop-variant .product-inventory-state { display:block; margin-top:5px; }

@@ -219,6 +219,12 @@ test('selected-store visitor periods retain store ownership across legacy links 
     assert.deepEqual(global.ownerStores.map((s: any) => [s.id, s.pageViews]), [['platform', 1], ['store-3', 2], ['store-2', 0]])
     assert.equal(global.ownerStores.find((s:any)=>s.id==='store-3').storefront_url, 'https://general.example.test/')
     assert.equal(global.visitors, 1)
+    f.db.prepare('INSERT INTO visitor_days(day,shop_id,visitor_hash,page_views) VALUES(?,?,?,?)').run(global.trend[0].day, 'agent-channel', 'agent-visitor', 4)
+    const ownerTotal = await f.read('/api/admin/visitors?scope=owner&days=1')
+    assert.deepEqual([ownerTotal.visitors, ownerTotal.pageViews], [1, 3])
+    assert.deepEqual(ownerTotal.partners, [])
+    const platformTotal = await f.read('/api/admin/visitors?scope=all&days=1')
+    assert.deepEqual([platformTotal.visitors, platformTotal.pageViews], [2, 7])
     assert.equal((await f.request('/api/admin/my-shop/visitors?store=store-3?days=7', undefined, f.admin)).status, 404)
   } finally { f.db.close() }
 })

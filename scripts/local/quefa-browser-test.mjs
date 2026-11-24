@@ -233,7 +233,7 @@ try {
   await adminPage.getByRole('navigation', {name: '后台导航'}).waitFor()
   const detail = await api(admin, '/api/admin/orders/' + initial.id)
   assert.equal(detail.order.status, 'success')
-  await adminPage.getByRole('navigation', {name: '后台导航'}).getByRole('button', {name: '订单管理', exact: true}).click()
+  await adminPage.getByRole('navigation', {name: '后台导航'}).getByRole('link', {name: '订单与售后', exact: true}).click()
   await adminPage.getByText(initial.id, {exact: true}).first().waitFor()
   if (cloudflare) {
     await waitFor(async () => (await api(admin, '/api/admin/refunds/notifications')).pending, Number.isInteger, 'admin refund notification capability')

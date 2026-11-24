@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Feedback } from '@/components/workspace-loading'
-import { WorkspaceSelect } from '@/partner/workspace-ui'
 import { RISK_LABELS } from '../../shared/member-risk'
 
 type Member = { id: string; email: string; emailVerified: number; frozen: number; version: number; invited: number; balance_cents: number }
@@ -56,11 +55,11 @@ function MemberManagement({revision,store}: {revision:number;store:string}){
   </>
 }
 const Operations = lazy(() => import('./MemberOperations'))
-export default function MembersPage({revision,store,stores,onStoreChange}: {revision:number;store:string;stores:{id:string;name:string}[];onStoreChange:(store:string)=>void}) {
+export default function MembersPage({revision,store,enabled}: {revision:number;store:string;enabled:boolean}) {
   const [view,setView]=useState<'manage'|'operations'>('manage')
-  const options=stores.map(shop=>({value:shop.id,label:shop.name}))
-  return <><div className="admin-filters"><WorkspaceSelect label="邀新活动店铺" value={store} options={options} onValueChange={onStoreChange}/></div>
-    {stores.some(shop=>shop.id===store)?<><div className="member-pagination"><Button variant={view==='manage'?'default':'outline'} onClick={()=>setView('manage')}>会员与奖励</Button><Button variant={view==='operations'?'default':'outline'} onClick={()=>setView('operations')}>运营中心</Button></div>
-      {view==='manage'?<MemberManagement key={store} revision={revision} store={store}/>:<Suspense fallback={<p>正在加载运营中心…</p>}><Operations key={store} revision={revision} store={store}/></Suspense>}</>:<p className="admin-empty">当前店铺尚未开通会员邀新。可切换至已开通的店铺。</p>}
+  if (!enabled) return <p className="admin-empty">当前店铺尚未开通会员邀新。可切换至已开通的店铺。</p>
+  return <>
+    <div className="member-pagination"><Button variant={view==='manage'?'default':'outline'} onClick={()=>setView('manage')}>会员与奖励</Button><Button variant={view==='operations'?'default':'outline'} onClick={()=>setView('operations')}>运营中心</Button></div>
+    {view==='manage'?<MemberManagement key={store} revision={revision} store={store}/>:<Suspense fallback={<p>正在加载运营中心…</p>}><Operations key={store} revision={revision} store={store}/></Suspense>}
   </>
 }

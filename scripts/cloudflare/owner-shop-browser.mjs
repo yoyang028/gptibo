@@ -140,7 +140,7 @@ try {
   await adminPage.getByRole('button', { name: '登录后台', exact: true }).click()
   await adminPage
     .getByRole('navigation', { name: '后台导航' })
-    .getByRole('button', { name: '我的店铺', exact: true })
+    .getByRole('link', { name: '店铺管理', exact: true })
     .waitFor()
   initial = (await api(admin, '/api/admin/my-shop/stores')).stores[0]
   record(
@@ -165,7 +165,7 @@ try {
     .first()
     .click()
   const storeDialog = adminPage.getByRole('dialog')
-  await storeDialog.getByLabel('品牌名称', { exact: true }).fill('本机验收商店')
+  await storeDialog.getByLabel('商店名称', { exact: true }).fill('本机验收商店')
   await storeDialog.getByLabel('Logo', { exact: true }).setInputFiles(imagePath)
   await storeDialog
     .getByRole('button', { name: '保存商店', exact: true })
@@ -177,9 +177,11 @@ try {
   record(
     'Original store editor saves root brand and logo; storefront title and header reflect it',
   )
-  await adminPage.getByRole('tab', { name: '商品发布', exact: true }).click()
+  await adminPage.getByRole('navigation', { name: '后台导航' }).getByRole('link', { name: '商品管理', exact: true }).click()
+  await adminPage.getByRole('combobox', { name: '供货来源', exact: true }).click()
+  await adminPage.getByRole('option', { name: '自营及其他', exact: true }).click()
   await adminPage
-    .getByRole('button', { name: '发布新商品', exact: true })
+    .getByRole('button', { name: '新增自营商品', exact: true })
     .click()
   const dialog = adminPage.getByRole('dialog')
   await dialog.getByLabel('商品名称', { exact: true }).fill('本机验收自营订阅')
@@ -267,7 +269,7 @@ try {
   )
   await adminPage
     .getByRole('navigation', { name: '后台导航' })
-    .getByRole('button', { name: '订单管理', exact: true })
+    .getByRole('link', { name: '订单与售后', exact: true })
     .click()
   await adminPage.getByText(order.id, { exact: true }).first().click()
   const detail = adminPage.getByRole('dialog')
@@ -387,9 +389,8 @@ try {
   })
   await adminPage
     .getByRole('navigation', { name: '后台导航' })
-    .getByRole('button', { name: '我的店铺', exact: true })
+    .getByRole('link', { name: '商品管理', exact: true })
     .click()
-  await adminPage.getByRole('tab', { name: '商品发布', exact: true }).click()
   await adminPage
     .getByText('本机验收自营订阅', { exact: true })
     .first()
@@ -514,7 +515,7 @@ try {
   )
   await adminPage
     .getByRole('navigation', { name: '后台导航' })
-    .getByRole('button', { name: '订单管理', exact: true })
+    .getByRole('link', { name: '订单与售后', exact: true })
     .click()
   await adminPage.getByText(xiaojiuOrder.id, { exact: true }).first().click()
   const xiaojiuOrderDialog = adminPage.getByRole('dialog')

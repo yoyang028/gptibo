@@ -2,11 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { Bell, Volume2, VolumeX } from 'lucide-react'
 import { api, errorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import '@/components/ticket-workspace.css'
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from '@/components/ui/popover'
 
 type Summary = { version: number; pending: number; enabled?: boolean }
+export type AdminNotifications = { tickets?: number; refunds?: number }
 
-export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefunds: () => void }) {
+export function TicketAlerts({ onOpen, onRefunds, onCounts }: {
+  onOpen: () => void
+  onRefunds: () => void
+  onCounts: (counts: AdminNotifications) => void
+}) {
   const [summary, setSummary] = useState<Summary>()
   const [refunds, setRefunds] = useState<Summary>()
   const [enabled, setEnabled] = useState(false)
@@ -14,6 +19,7 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
   const [errors, setErrors] = useState({ tickets: '', refunds: '' })
   const [unseen, setUnseen] = useState(false)
   const [unseenRefund, setUnseenRefund] = useState(false)
+  const [open, setOpen] = useState(false)
   const audio = useRef<AudioContext | null>(null)
   const speech = useRef<SpeechSynthesisUtterance | null>(null)
   const sound = useRef(false)
@@ -102,6 +108,9 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
       sound.current = false; stopSpeech(); void audio.current?.close(); audio.current = null
     }
   }, [])
+  const tickets = summary?.enabled === false ? undefined : summary?.pending
+  const refundCount = refunds?.pending
+  useEffect(() => onCounts({ tickets, refunds: refundCount }), [tickets, refundCount, onCounts])
   function toggle() {
     if (sound.current) { sound.current = false; setEnabled(false); stopSpeech(); return }
     try {
@@ -114,5 +123,27 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
   }
   const ticketsSupported = summary?.enabled !== false
   const connectionError = [ticketsSupported && errors.tickets && `工单提醒连接中断：${errors.tickets}`, errors.refunds && `退款提醒连接中断：${errors.refunds}`].filter(Boolean).join('；')
-  return <section className="ticket-alert" aria-label="工单与退款提醒"><div><strong><Bell size={15} className="inline" /> {ticketsSupported && <>{unseen ? '收到新的代理工单消息' : summary ? `待处理工单 ${summary.pending} 条` : '工单提醒'} · </>}{unseenRefund ? '收到新的退款申请' : refunds ? `待处理退款 ${refunds.pending} 单` : '退款提醒'}</strong><p role="status">{connectionError || audioError || (enabled ? `${ticketsSupported ? '声音已开启 · 工单响铃、' : '声音已开启 · '}退款语音播报；保持后台打开，约 15 秒检查一次。` : `${ticketsSupported ? '点击开启并试听：工单响铃，' : '点击开启并试听：'}退款播报「您有一单退款待处理」。`)}</p></div><div className="ticket-alert-actions"><Button variant="outline" size="sm" onClick={toggle}>{enabled ? <VolumeX size={14} /> : <Volume2 size={14} />}{enabled ? '关闭声音' : '开启声音提醒'}</Button>{ticketsSupported && <Button size="sm" onClick={() => { setUnseen(false); onOpen() }}>查看工单{summary ? ` (${summary.pending})` : ''}</Button>}<Button variant="outline" size="sm" onClick={() => { setUnseenRefund(false); onRefunds() }}>查看退款{refunds ? ` (${refunds.pending})` : ''}</Button></div></section>
+  const pending = (tickets ?? 0) + (refundCount ?? 0)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger render={<Button variant="ghost" size="icon" className="admin-bell" aria-label={pending ? `后台通知，${pending} 条待处理` : '后台通知'} />}>
+        <Bell size={17} />
+        {(pending > 0 || unseen || unseenRefund) && <span className="admin-bell-dot" aria-hidden="true" />}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="admin-notifications">
+        <PopoverTitle>后台通知</PopoverTitle>
+        {ticketsSupported && <Button variant="ghost" onClick={() => { setOpen(false); setUnseen(false); onOpen() }}>
+          代理工单{tickets !== undefined && ` · ${tickets} 条待处理`}{unseen && ' · 有新消息'}
+        </Button>}
+        <Button variant="ghost" onClick={() => { setOpen(false); setUnseenRefund(false); onRefunds() }}>
+          退款与售后{refundCount !== undefined && ` · ${refundCount} 单待处理`}{unseenRefund && ' · 有新申请'}
+        </Button>
+        <Button variant="outline" onClick={toggle} aria-pressed={enabled}>
+          {enabled ? <VolumeX size={15} /> : <Volume2 size={15} />}
+          {enabled ? '关闭声音提醒' : '开启声音提醒'}
+        </Button>
+        {(connectionError || audioError) && <p role="status">{connectionError || audioError}</p>}
+      </PopoverContent>
+    </Popover>
+  )
 }

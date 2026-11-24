@@ -30,10 +30,10 @@ export async function recordVisitor(request: Request, env: Env) {
   return json({ ok: true })
 }
 
-export async function visitorSummary(env: Env, url: URL, shopId?: string) {
+export async function visitorSummary(env: Env, url: URL, shopId?: string, ownerOnly = false) {
   const days = period(url)
   const since = daysAgo(days)
-  const filter = shopId ? 'day>=? AND shop_id=?' : 'day>=?'
+  const filter = shopId ? 'day>=? AND shop_id=?' : ownerOnly ? 'day>=? AND shop_id IN (SELECT id FROM owner_shop_settings)' : 'day>=?'
   const args = shopId ? [since, shopId] : [since]
   const rows = (await env.INTEREST_DB.prepare(`SELECT day,SUM(page_views) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE ${filter} GROUP BY day ORDER BY day`).bind(...args).all<{ day: string; pageViews: number; visitors: number }>()).results
   const total = await env.INTEREST_DB.prepare(`SELECT COALESCE(SUM(page_views),0) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE ${filter}`).bind(...args).first<{ pageViews: number; visitors: number }>()
@@ -46,15 +46,19 @@ export async function visitorSummary(env: Env, url: URL, shopId?: string) {
 }
 
 export async function adminVisitorSummary(env: Env, url: URL) {
-  const summary = await visitorSummary(env, url)
-  const since = daysAgo(summary.days)
-  const platform = await env.INTEREST_DB.prepare("SELECT COALESCE(SUM(page_views),0) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE day>=? AND shop_id='platform'").bind(since).first<{ pageViews: number; visitors: number }>()
-  const partners = (await env.INTEREST_DB.prepare(`SELECT p.id,p.name,p.slug,p.active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
-    FROM partners p LEFT JOIN visitor_days v ON v.shop_id=p.id AND v.day>=? GROUP BY p.id ORDER BY visitors DESC,pageViews DESC,p.created_at DESC`).bind(since).all<{ id: string; name: string; slug: string; active: number; pageViews: number; visitors: number }>()).results
-  const stores = (await env.INTEREST_DB.prepare(`SELECT s.id,s.slug,COALESCE(NULLIF(json_extract(s.settings,'$.name'),''),'GPTibo') name,
+  const ownerOnly = url.searchParams.get('scope') === 'owner'
+  const since = daysAgo(period(url))
+  const [summary, partnerResult, storeResult] = await Promise.all([
+    visitorSummary(env, url, undefined, ownerOnly),
+    ownerOnly ? null : env.INTEREST_DB.prepare(`SELECT p.id,p.name,p.slug,p.active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
+      FROM partners p LEFT JOIN visitor_days v ON v.shop_id=p.id AND v.day>=? GROUP BY p.id ORDER BY visitors DESC,pageViews DESC,p.created_at DESC`)
+      .bind(since).all<{ id: string; name: string; slug: string; active: number; pageViews: number; visitors: number }>(),
+    env.INTEREST_DB.prepare(`SELECT s.id,s.slug,COALESCE(NULLIF(json_extract(s.settings,'$.name'),''),'GPTibo') name,
     COALESCE(json_extract(s.settings,'$.active'),1) active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
     FROM owner_shop_settings s LEFT JOIN visitor_days v ON v.shop_id=s.id AND v.day>=? GROUP BY s.id ORDER BY COALESCE(json_extract(s.settings,'$.displayOrder'),s.slot)`)
-    .bind(since).all<{ id: string; slug: string; name: string; active: number; pageViews: number; visitors: number }>()).results
-  const ownerStores = stores.map(store => ({ ...store, ...ownerStorefrontLinks(env, url.origin, store.id, store.slug) }))
-  return { ...summary, platform: platform ?? { pageViews: 0, visitors: 0 }, ownerStores, partners }
+      .bind(since).all<{ id: string; slug: string; name: string; active: number; pageViews: number; visitors: number }>(),
+  ])
+  const ownerStores = storeResult.results.map(store => ({ ...store, ...ownerStorefrontLinks(env, url.origin, store.id, store.slug) }))
+  const platform = ownerStores.find(store => store.id === 'platform')
+  return { ...summary, platform: { pageViews: platform?.pageViews ?? 0, visitors: platform?.visitors ?? 0 }, ownerStores, partners: partnerResult?.results ?? [] }
 }

@@ -33,9 +33,11 @@ async function api(url,data){
   assert.equal(response.status(),200,url);return response.json()
 }
 async function choose(store){
-  await page.getByRole('combobox',{name:'当前店铺',exact:true}).click()
-  await page.getByRole('option',{name:store.name,exact:true}).click()
+  await page.getByRole('combobox',{name:'店铺范围',exact:true}).click()
+  await page.getByRole('option',{name:store.name+(store.active?'':'（停用）'),exact:true}).click()
 }
+const nav=page.getByRole('navigation',{name:'后台导航'})
+const open=name=>nav.getByRole('link',{name,exact:true}).click()
 async function period(store,days){
   const pending=page.waitForResponse(r=>{
     const url=new URL(r.url());return url.pathname==='/api/admin/my-shop/visitors'&&url.searchParams.get('store')===store&&url.searchParams.get('days')===String(days)
@@ -59,15 +61,17 @@ try{
   await page.locator('#admin-email-code').fill(mail.text.match(/\b\d{6}\b/)[0])
   await page.locator('#admin-code').fill(totp(fs.readFileSync(path.join(privateRoot,'admin-totp'),'utf8').trim()))
   await page.getByRole('button',{name:'登录后台',exact:true}).click()
-  await page.getByRole('combobox',{name:'当前店铺',exact:true}).waitFor()
+  await page.getByRole('region',{name:'自营店铺列表'}).waitFor()
   const data=await api('/api/admin/my-shop/stores'),general=data.stores.find(s=>s.id==='store-3'),reserved=data.stores.find(s=>s.id==='store-2')
   assert.equal(general.storefront_url,'https://general.example.test/')
+  assert.equal(await page.getByRole('link',{name:'预览 '+general.name,exact:true}).getAttribute('href'),general.storefront_url)
+  assert.equal(await page.getByRole('link',{name:'预览 '+reserved.name,exact:true}).getAttribute('href'),origin+'/s/store-2')
   const baseline={}
   for(const store of data.stores){
     baseline[store.id]=await api('/api/admin/my-shop/visitors?store='+store.id+'&days=1')
     await api('/api/visitors',{visitorId:crypto.randomUUID(),path:store.slug?'/s/'+store.slug:'/'})
   }
-  await page.getByRole('tab',{name:'访客统计',exact:true}).click()
+  await open('数据与财务')
   for(const store of data.stores){
     await choose(store)
     const today=await period(store.id,1)
@@ -78,26 +82,25 @@ try{
   }
   await choose(general)
   await period(general.id,1)
-  assert.equal(await page.getByRole('link',{name:'预览当前店铺',exact:true}).getAttribute('href'),general.storefront_url)
   await page.screenshot({path:path.join(evidence,'general-visitors.png'),fullPage:true})
-  await page.getByRole('tab',{name:'我的商店',exact:true}).click()
-  await page.getByRole('tab',{name:'域名与账单',exact:true}).click()
-  assert.equal(await page.locator('.store-current a').getAttribute('href'),general.storefront_url)
+  await open('店铺管理')
+  await page.getByRole('tab',{name:'域名',exact:true}).click()
+  await choose(general)
   const cards=page.locator('.store-domain')
+  await cards.nth(1).waitFor()
   assert.equal(await cards.count(),2)
   for(let index=0;index<2;index++){
     const card=cards.nth(index),host=await card.locator('strong').first().textContent()
     await card.getByRole('button',{name:'复制域名推广链接',exact:true}).click()
     assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'https://'+host+'/')
   }
-  record('General store preview, current link, domain cards and copied apex/www URLs share the actual hostname mapping')
+  record('Store preview and copied apex/www domain links use the actual hostname mapping')
   await page.screenshot({path:path.join(evidence,'general-domains.png'),fullPage:true})
   await choose(reserved)
   assert.equal(await page.locator('.store-domain').count(),0)
-  await page.getByText('当前店铺尚未绑定独立域名，可使用上方的店铺访问入口。',{exact:true}).waitFor()
-  assert.equal(await page.getByRole('link',{name:'预览当前店铺',exact:true}).getAttribute('href'),origin+'/s/store-2')
+  await page.getByText('当前店铺尚未绑定独立域名。可在「店铺列表」查看访问入口。',{exact:true}).waitFor()
   record('The reserved store keeps its legacy path and is not presented as having a domain binding')
-  await choose(general);await page.getByRole('tab',{name:'访客统计',exact:true}).click()
+  await open('数据与财务');await choose(general);await period(general.id,1)
   await page.setViewportSize({width:390,height:844})
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
   assert.equal(await page.locator('.visitor-stats [aria-pressed="true"]').textContent(),'1 天')
@@ -114,7 +117,8 @@ try{
   const drill=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/admin/my-shop/visitors'&&new URL(r.url()).searchParams.get('store')==='store-3'&&new URL(r.url()).searchParams.get('days')==='1')
   await generalRow.getByRole('button',{name:'查看趋势',exact:true}).click()
   assert.equal((await drill).status(),200)
-  await page.getByRole('dialog').locator('.visitor-kpi-value').first().waitFor()
+  await page.locator('.visitor-stats .visitor-kpi-value').first().waitFor()
+  assert.equal(await page.getByRole('dialog').count(),0)
   await page.screenshot({path:path.join(evidence,'general-global-drilldown.png'),fullPage:true})
   record('Global source distribution includes every owner shop and opens the general store with the selected period')
   assert(proof.visitorRequests.length>=12)

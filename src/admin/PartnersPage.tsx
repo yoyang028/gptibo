@@ -14,7 +14,7 @@ import { api, errorMessage } from '@/lib/api'
 import { CopyLink, Feedback, Pagination, Pricing } from '@/partner/shared'
 import { date, money, payoutLabel, usePartnerData, type Dashboard, type Partner, type Payout } from '@/partner/model'
 import { PartnerOrders } from '@/partner/Partner'
-import PartnerDefaultPrices from './PartnerDefaultPrices'
+import PartnerRankingChart from './PartnerRankingChart'
 import { RecruitPermission, ParentRelationship } from './RecruitPermission'
 import { partnerStorefrontPath } from '../../shared/partner-link.ts'
 import '@/partner/partner.css'
@@ -381,7 +381,7 @@ function PayoutHandler({ payout, onClose, onSaved }: { payout: Payout; onClose: 
     </Dialog>
   )
 }
-function Payouts({ revision, onSaved }: { revision: number; onSaved: () => void }) {
+export function PartnerPayouts({ revision, onSaved }: { revision: number; onSaved: () => void }) {
   const [page, setPage] = useState(1); const [edit, setEdit] = useState<Payout>()
   const { data, error, loading } = usePartnerData<{ rows: Payout[]; total: number }>('/api/admin/partner-payouts?page=' + page, revision)
   return <><section className="admin-panel"><div className="admin-panel-title"><h2>代理结算</h2><span>待处理申请优先显示</span></div><Feedback error={error} loading={loading} data={data} />{data && <>{data.rows.length ? <div className="admin-table-scroll"><table className="admin-table"><thead><tr><th>代理 / 时间</th><th>金额</th><th>状态</th><th>说明 / 流水</th><th>操作</th></tr></thead><tbody>{data.rows.map(p => <tr key={p.id}><td>{p.partner_name}<small>{date(p.created_at)}</small></td><td>{money(p.amount_cents)}</td><td>{payoutLabel(p.status, p.reviewed_at)}</td><td>{p.note || '—'}<small>{p.reference}</small></td><td>{p.status === 'pending' ? <Button variant="outline" onClick={() => setEdit(p)}>处理申请</Button> : <Button variant="ghost" onClick={() => setEdit(p)}>查看明细</Button>}</td></tr>)}</tbody></table></div> : <div className="admin-empty"><h3>暂无结算申请</h3><p>代理提交的正式订单收益结算会显示在这里。</p></div>}<Pagination page={page} total={data.total} onPage={setPage} /></>}</section>{edit && <PayoutHandler payout={edit} onClose={() => setEdit(undefined)} onSaved={onSaved} />}</>
@@ -445,18 +445,12 @@ function PayoutCooldownReset({ partner, onClose, onSaved }: { partner?: Partner;
   </Dialog>
 }
 export default function PartnersPage({ revision: externalRevision }: { revision: number }) {
-  const [notice, setNotice] = useState<{ message: string; failed: boolean }>(); const [revision, setRevision] = useState(0); const [tab, setTab] = useState('partners'); const [payoutsVisited, setPayoutsVisited] = useState(false); const [create, setCreate] = useState(false); const [selected, setSelected] = useState<string>(); const [page, setPage] = useState(1); const [search, setSearch] = useState(''); const [q, setQ] = useState('')
+  const [notice, setNotice] = useState<{ message: string; failed: boolean }>(); const [revision, setRevision] = useState(0); const [create, setCreate] = useState(false); const [selected, setSelected] = useState<string>(); const [page, setPage] = useState(1); const [search, setSearch] = useState(''); const [q, setQ] = useState('')
   const reload = () => setRevision(v => v + 1); const version = externalRevision + revision
   const [cooldownReset, setCooldownReset] = useState<{ partner?: Partner }>()
   const { data, error, loading } = usePartnerData<{ rows: (Partner & { wechat: string; qq: string })[]; total: number; mailReady: boolean }>(`/api/admin/partners?page=${page}&q=${encodeURIComponent(q)}`, version)
   return <>
-    <Tabs value={tab} onValueChange={v => { setTab(String(v)); if (v === 'payouts') setPayoutsVisited(true) }} className="partner-tabs">
-      <TabsList variant="line">
-        <TabsTrigger value="partners">代理列表</TabsTrigger>
-        <TabsTrigger value="payouts">结算申请</TabsTrigger>
-        <TabsTrigger value="defaults">默认拿货价</TabsTrigger>
-      </TabsList>
-      <TabsContent value="partners" className="workspace-enter">
+    <div className="workspace-enter">
         {notice && <Alert role={notice.failed ? 'alert' : 'status'} variant={notice.failed ? 'destructive' : 'default'} className="partner-list-result">
           {notice.failed ? <CircleAlert /> : <Check className="text-primary" />}
           <AlertDescription>{notice.message}</AlertDescription>
@@ -496,10 +490,8 @@ export default function PartnersPage({ revision: externalRevision }: { revision:
             <Pagination page={page} total={data.total} onPage={setPage} />
           </>}
         </section>
-      </TabsContent>
-      <TabsContent value="defaults" className="workspace-enter"><PartnerDefaultPrices revision={version} /></TabsContent>
-      <TabsContent value="payouts" keepMounted={payoutsVisited} className="workspace-enter"><Payouts revision={version} onSaved={reload} /></TabsContent>
-    </Tabs>
+      <PartnerRankingChart revision={version} />
+    </div>
     {create && <PartnerCreator onClose={() => setCreate(false)} onSaved={(_id, message, invitationSent) => { reload(); setNotice({ message: message ?? '代理已开通', failed: invitationSent === false }); setPage(1); setSearch(''); setQ('') }} />}
     {selected && <PartnerManagement key={selected} id={selected} revision={version} onClose={() => setSelected(undefined)} onSaved={reload} />}
     {cooldownReset && <PayoutCooldownReset partner={cooldownReset.partner} onClose={() => setCooldownReset(undefined)} onSaved={message => { reload(); setNotice({ message, failed: false }) }} />}
