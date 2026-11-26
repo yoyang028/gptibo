@@ -1,7 +1,7 @@
 import { ApiError, body, json, type Env, type Value } from './platform.ts'
 import { requirePartner } from './partner-auth.ts'
 import { ownerShop } from './owner-shop.ts'
-import { customerOrderStatsQuery, customerOrderColumns, customerOrderHistory, orderMembershipStats, orderMembershipColumns } from './order-customers.ts'
+import { customerOrderStatsQuery, customerOrderColumns, customerOrderDiscounts, customerOrderHistory, orderMembershipStats, orderMembershipColumns } from './order-customers.ts'
 import { MEMBERSHIP_PLANS,monthAfter,type Customer,type CustomerAccount,type CustomerSubscription } from '../shared/customers.ts'
 
 const uuid = (value: unknown): value is string => typeof value==='string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)
@@ -151,14 +151,17 @@ export async function customerRoutes(request:Request,env:Env,url:URL,admin=false
         COALESCE(SUM(order_paid_cents),0) order_paid_cents, COALESCE(SUM(order_refunded_cents),0) order_refunded_cents,
         COALESCE(SUM(order_net_cents),0) order_net_cents FROM (${filtered}) f`).bind(now, soon, now, ...values),
     ]) as { results:unknown[] }[]
-    const [plans, partners, stores] = await Promise.all([
+    const customers = result[0].results as Customer[]
+    const [plans, partners, stores, discounts] = await Promise.all([
       db.prepare("SELECT id,name FROM catalog_plans WHERE product_id='chatgpt' AND id IN ('plus','pro-5x','pro-20x','pro-25x') ORDER BY rowid").all(),
       admin && audience !== 'owner' ? db.prepare('SELECT id,name FROM partners ORDER BY name').all() : null,
       admin && audience !== 'agent' ? db.prepare(`SELECT id,json_extract(settings,'$.name') name,COALESCE(json_extract(settings,'$.active'),1) active
         FROM owner_shop_settings ORDER BY COALESCE(json_extract(settings,'$.displayOrder'),slot)`).all() : null,
+      automatic ? customerOrderDiscounts(env, customers.filter(customer => customer.order_count).map(customer => customer.id), store) : null,
     ])
     const stats = result[1].results[0] as { customers:number }
-    return json({ customers:result[0].results, total:stats.customers, stats, plans:plans.results,
+    const rows = discounts ? customers.map(customer => ({ ...customer, order_discounts:discounts.get(customer.id) })) : customers
+    return json({ customers:rows, total:stats.customers, stats, plans:plans.results,
       partners:partners?.results ?? [], stores:stores?.results ?? [], page, asOf:now })
   }
   if(!path && request.method==='POST') {

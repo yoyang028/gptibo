@@ -14,7 +14,7 @@ const state=await(await fetch(control+'/state')).json();assert.equal(state.local
 await fetch(control+'/reset-auth-limits',{method:'POST',headers:{Origin:control,'X-Local-Control':fs.readFileSync(path.join(privateRoot,'control-token'),'utf8').trim()}})
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE_PATH||'D:/ChatGPT/CodexCache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE||'C:/Program Files/Google/Chrome/Application/chrome.exe',env:{...process.env,TEMP:path.join(root,'artifacts/local/tmp'),TMP:path.join(root,'artifacts/local/tmp')}})
-const admin=await browser.newContext({baseURL:origin,ignoreHTTPSErrors:true,viewport:{width:1440,height:1040}})
+const admin=await browser.newContext({baseURL:origin,ignoreHTTPSErrors:true,viewport:{width:1440,height:1040},colorScheme:'dark'})
 const buyer=await browser.newContext({baseURL:origin,ignoreHTTPSErrors:true})
 const result={checks:[],pageErrors:[],externalRequests:[],realPayments:0,realEmails:0}
 await admin.route('**/*',route=>{if(new URL(route.request().url()).origin===origin)return route.continue();result.externalRequests.push(new URL(route.request().url()).origin);return route.abort()})
@@ -24,6 +24,7 @@ async function api(url,data,context=admin,status=200){const r=await context.requ
 async function choose(label,name){await page.getByRole('combobox',{name:label,exact:true}).click();await page.getByRole('option',{name,exact:true}).click()}
 function response(path,store){return page.waitForResponse(r=>{const u=new URL(r.url());return u.pathname===path&&(store===undefined||u.searchParams.get('store')===store)})}
 const prefix='auto-'+crypto.randomUUID().slice(0,8),shared=prefix+'@example.test',other=prefix+'-other@example.test'
+const couponCode='CRM-'+prefix.toUpperCase()
 let product,cleanupError
 try{
   await page.goto('/admin?view=my-shop')
@@ -44,9 +45,12 @@ try{
     image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==',badge:'服务',unit:'份',duration:'一次',priceCents:990,stock:10,features:['本机测试'],purchaseNote:'模拟订单',deliveryInstructions:'人工确认',steps:[{title:'下单',description:'核对订单'}],faq:[{question:'如何交付？',answer:'原订单查看'}],fields:[],delivery:'manual',payment:{label:'模拟收款',instructions:'本机模拟，勿真实付款',url:'https://payments.example.com/pay',qr:''},
   },admin,201)).product
   await api('/api/admin/my-shop/stores/prices',{storeId:'store-3',plan:product.id,priceCents:1490,enabled:true,version:0})
+  await api('/api/admin/my-shop/coupons',{id:'',version:0,code:couponCode,discountCents:150,startsAt:new Date(Date.now()-60000).toISOString(),
+    endsAt:new Date(Date.now()+3600000).toISOString(),maxUses:1,oncePerEmail:true,active:true,targets:[{storeId:'platform',plan:product.id}]})
   await api('/api/orders/client',{},buyer)
-  async function order(store,email){return(await api('/api/orders',{plan:product.id,partner:store==='platform'?undefined:store,expectedPrice:store==='platform'?990:1490,email,key:crypto.randomUUID()},buyer,201)).order}
-  const academic=await order('platform',shared),planet=await order('store-3',shared)
+  async function order(store,email,code){return(await api('/api/orders',{plan:product.id,partner:store==='platform'?undefined:store,
+    expectedPrice:store==='platform'?(code?840:990):1490,couponCode:code,email,key:crypto.randomUUID()},buyer,201)).order}
+  const academic=await order('platform',shared,couponCode),planet=await order('store-3',shared)
   for(const order of [academic,planet]){
     await api('/api/orders/'+order.id+'/custom-action',{action:'claim-payment',version:order.version,reference:'LOCAL-FIXTURE-'+order.id},buyer)
     await api('/api/admin/my-shop/orders/'+order.id,{action:'confirm-payment',version:order.version,note:'本机模拟到账记录，不实际收款'})
@@ -66,11 +70,12 @@ try{
   await choose('所属店铺','AI星球')
   const crm=page.locator('.crm-container')
   await crm.getByRole('columnheader',{name:'客户资料',exact:true}).waitFor()
-  assert.deepEqual(await crm.locator('thead th').allTextContents(), ['客户资料','所属店铺','绑定账号与套餐','到期状态与提醒','订单统计','会员录入金额'])
+  assert.deepEqual(await crm.locator('thead th').allTextContents(), ['客户资料','所属店铺','绑定账号与套餐','优惠情况','订单统计','到期状态与提醒'])
   await crm.getByRole('textbox',{name:'搜索关键词',exact:true}).fill(prefix)
   pending=response('/api/admin/customers','store-3');await crm.getByRole('button',{name:'查询',exact:true}).click()
   let data=await(await pending).json();assert.equal(data.total,1);assert.equal(data.stats.order_paid_cents,1490)
   await crm.getByText(shared,{exact:true}).first().waitFor()
+  await crm.locator('tbody tr').filter({hasText:shared}).getByText('未用优惠',{exact:true}).waitFor()
   record('The same buyer is automatically one customer across shops and selected-store totals use that store’s paid amount')
   await page.clock.install()
   await order('store-3',other)
@@ -79,11 +84,27 @@ try{
   await crm.getByText(other,{exact:true}).first().waitFor()
   record('A new unpaid buyer appears automatically on the next 30-second refresh without manual customer entry')
   pending=response('/api/admin/customers',null);await choose('所属店铺','全部自营店铺');data=await(await pending).json()
-  assert.equal(data.total,2);assert.equal(data.stats.order_count,3);assert.equal(data.stats.order_paid_cents,2480)
+  assert.equal(data.total,2);assert.equal(data.stats.order_count,3);assert.equal(data.stats.order_paid_cents,2330)
   const sharedRow=crm.locator('tbody tr').filter({hasText:shared}).first()
+  await sharedRow.getByText(couponCode,{exact:true}).waitFor()
+  const orderCell=sharedRow.getByRole('cell').nth(4)
+  assert.match(await orderCell.innerText(),/累计实付\s*¥23\.30/)
+  assert.equal(await orderCell.locator('time[datetime]').count(),1)
+  assert(!/笔订单|净消费|已退款/.test(await orderCell.innerText()))
+  const layout=await crm.getByRole('table',{name:'客户列表'}).evaluate(table=>{
+    const headers=[...table.querySelectorAll('th')]
+    return {fixed:getComputedStyle(table).tableLayout==='fixed',start:getComputedStyle(headers[0]).paddingInlineStart,
+      end:getComputedStyle(headers.at(-1)).paddingInlineEnd, fits:table.getBoundingClientRect().width<=table.parentElement.clientWidth+1}
+  })
+  assert.deepEqual(layout,{fixed:true,start:'24px',end:'24px',fits:true})
+  await page.screenshot({path:path.join(evidence,'customers-discounts.png'),fullPage:true})
+  await page.setViewportSize({width:1280,height:900})
+  assert(await crm.getByRole('table',{name:'客户列表'}).evaluate(table=>table.parentElement.scrollWidth<=table.parentElement.clientWidth+1))
+  record('Customer columns use planned widths and insets, display the applied coupon, and show just the paid amount and order time')
   await sharedRow.getByRole('button',{name:shared,exact:true}).click()
   const dialog=page.getByRole('dialog');await dialog.getByRole('region',{name:'客户订单记录'}).waitFor()
   await dialog.getByText(academic.id,{exact:true}).waitFor();await dialog.getByText(planet.id,{exact:true}).waitFor()
+  await dialog.getByText(couponCode,{exact:true}).waitFor()
   await page.screenshot({path:path.join(evidence,'customer-orders.png'),fullPage:true});await page.keyboard.press('Escape')
   record('Customer detail retains both shops’ order history and cash totals without creating membership expiry records')
   const exported=await api('/api/admin/customers/export?scope=owner&store=store-3&q='+prefix)

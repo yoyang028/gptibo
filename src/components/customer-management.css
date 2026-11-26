@@ -132,6 +132,68 @@
   overflow: hidden;
 }
 
+.crm-admin-table {
+  table-layout: fixed;
+  min-width: 60rem;
+}
+
+.crm-admin-table th,
+.crm-admin-table td {
+  padding-inline: 1rem;
+}
+
+.crm-admin-table th:first-child,
+.crm-admin-table td:first-child { padding-inline-start: 1.5rem; }
+.crm-admin-table th:last-child,
+.crm-admin-table td:last-child { padding-inline-end: 1.5rem; }
+
+.crm-admin-table th {
+  height: 2.75rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.crm-admin-table td {
+  padding-block: 0.875rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.crm-admin-table .crm-store-label,
+.crm-admin-table td:last-child [data-slot=badge] {
+  max-width: 100%;
+  min-height: 1.25rem;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.crm-order-discounts,
+.crm-order-summary {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.crm-discount-line,
+.crm-order-amount {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 0.5rem;
+}
+
+.crm-admin-table .crm-discount-line { justify-content: space-between; }
+.crm-discount-amount { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.crm-discount-code,
+.crm-order-time { color: var(--muted-foreground); }
+.crm-discount-code { font-size: 0.6875rem; }
+.crm-order-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.crm-order-amount span { color: var(--muted-foreground); }
+.crm-order-amount strong { font-size: 0.875rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
 .crm-avatar {
   width: 2.375rem;
   height: 2.375rem;

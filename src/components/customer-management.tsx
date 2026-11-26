@@ -48,6 +48,7 @@ import {
   type CustomerDetail,
   type CustomerList,
   type CustomerExport,
+  type CustomerOrderDiscounts,
   type CustomerOrderMembership,
 } from '../../shared/customers.ts'
 import './customer-management.css'
@@ -184,6 +185,25 @@ function OrderExpirySummary({ customer }: { customer: Customer }) {
     </div>
     {customer.expected_expiry && <div className="text-xs text-muted-foreground">预计到期 {formatDateOnly(customer.expected_expiry)}</div>}
   </div>
+}
+
+function OrderDiscountSummary({ discounts, emptyText }: { discounts?: CustomerOrderDiscounts; emptyText?: string }) {
+  const items = [
+    { label: '自设优惠码', amount: discounts?.coupon_cents ?? 0, code: discounts?.coupon_code },
+    { label: '邀新返券', amount: discounts?.reward_cents ?? 0 },
+    { label: '受邀新人优惠', amount: discounts?.newcomer_cents ?? 0 },
+  ].filter(item => item.amount > 0)
+
+  if (!items.length) return emptyText ? <span className="text-xs text-muted-foreground">{emptyText}</span> : null
+  return <ul className="crm-order-discounts">
+    {items.map(({ label, amount, code }) => <li key={label}>
+      <div className="crm-discount-line">
+        <span>{label}</span>
+        <span className="crm-discount-amount">{money(-amount)}</span>
+      </div>
+      {code && <code className="crm-discount-code">{code}</code>}
+    </li>)}
+  </ul>
 }
 
 /* =========================================================================
@@ -904,7 +924,13 @@ function CustomerInspector({
                   <p className="text-sm">实付 {money(data.orderStats.order_paid_cents)} · 退款 {money(data.orderStats.order_refunded_cents)} · 净消费 {money(data.orderStats.order_net_cents)}</p>
                   <p className="text-xs text-muted-foreground">首次下单 {formatDateTime(data.orderStats.first_order_at)} · 最近下单 {formatDateTime(data.orderStats.last_order_at)} · 展示最近 50 笔，统计包含全部正式订单。</p>
                   <div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>订单 / 商品</TableHead><TableHead>店铺</TableHead><TableHead>下单时间</TableHead><TableHead>实付 / 退款</TableHead><TableHead>支付状态</TableHead></TableRow></TableHeader><TableBody>
-                    {(data.orders ?? []).map(order=><TableRow key={order.id}><TableCell><code>{order.id}</code><p>{order.plan_name}</p></TableCell><TableCell>{order.store_name}</TableCell><TableCell>{formatDateTime(order.created_at)}</TableCell><TableCell>{money(order.paid_cents)} / {money(order.refunded_cents)}</TableCell><TableCell>{order.payment_status==='paid'?'已支付':'未支付'}</TableCell></TableRow>)}
+                    {(data.orders ?? []).map(order => <TableRow key={order.id}>
+                      <TableCell><code>{order.id}</code><p>{order.plan_name}</p><OrderDiscountSummary discounts={order} /></TableCell>
+                      <TableCell>{order.store_name}</TableCell>
+                      <TableCell>{formatDateTime(order.created_at)}</TableCell>
+                      <TableCell>{money(order.paid_cents)} / {money(order.refunded_cents)}</TableCell>
+                      <TableCell>{order.payment_status === 'paid' ? '已支付' : '未支付'}</TableCell>
+                    </TableRow>)}
                   </TableBody></Table></div>
                 </section>}
                 <Tabs defaultValue="accounts" className="w-full">
@@ -1621,17 +1647,25 @@ export default function CustomerManagement({
           </Card>
 
           {/* Customer Table */}
-          <Card className="crm-table-card">
-            <Table>
+          <Card className={admin ? 'crm-table-card gap-0 py-0' : 'crm-table-card'}>
+            <Table className={admin ? 'crm-admin-table' : undefined} aria-label={admin ? '客户列表' : undefined}>
+              {admin && <colgroup>
+                <col style={{ width: '24%' }} />
+                <col style={{ width: '11%' }} />
+                <col style={{ width: '18%' }} />
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '16%' }} />
+              </colgroup>}
               <TableHeader>
                 <TableRow className="bg-muted/40">
-                  <TableHead className="w-[200px]">客户资料</TableHead>
+                  <TableHead className={admin ? undefined : 'w-[200px]'}>客户资料</TableHead>
                   {!admin && <TableHead className="min-w-[190px]">联系方式</TableHead>}
-                  {admin && <TableHead className="w-[120px]">{audience === 'owner' ? '所属店铺' : '所属代理'}</TableHead>}
-                  <TableHead className="min-w-[170px]">绑定账号与套餐</TableHead>
-                  <TableHead className="min-w-[180px]">到期状态与提醒</TableHead>
-                  {admin && <TableHead className="min-w-[190px]">订单统计</TableHead>}
-                  <TableHead className="text-right w-[110px]">会员录入金额</TableHead>
+                  {admin && <TableHead>{audience === 'owner' ? '所属店铺' : '所属代理'}</TableHead>}
+                  <TableHead className={admin ? undefined : 'min-w-[170px]'}>绑定账号与套餐</TableHead>
+                  {admin && <><TableHead>优惠情况</TableHead><TableHead>订单统计</TableHead></>}
+                  <TableHead className={admin ? undefined : 'min-w-[180px]'}>到期状态与提醒</TableHead>
+                  {!admin && <TableHead className="text-right w-[110px]">会员录入金额</TableHead>}
                   {!admin && <TableHead className="w-[110px]">客户来源</TableHead>}
                   {!admin && <TableHead className="text-right w-[100px]">操作</TableHead>}
                 </TableRow>
@@ -1680,7 +1714,7 @@ export default function CustomerManagement({
                       {/* Channel (Admin only) */}
                       {admin && (
                         <TableCell>
-                          <Badge variant="secondary" className="font-normal text-xs">
+                          <Badge variant="secondary" className="crm-store-label font-normal text-xs">
                             {audience === 'agent' ? c.partner_name || '—' : c.order_stores?.split(',').join('、') || '暂无下单店铺'}
                           </Badge>
                         </TableCell>
@@ -1701,10 +1735,24 @@ export default function CustomerManagement({
                         </div>
                       </TableCell>
 
+                      {admin && <>
+                        <TableCell><OrderDiscountSummary discounts={c.order_discounts} emptyText={c.order_count ? '未用优惠' : '—'} /></TableCell>
+                        <TableCell>
+                          {c.last_order_at != null ? <div className="crm-order-summary">
+                            <div className="crm-order-amount">
+                              <span>{(c.order_count ?? 0) > 1 ? '累计实付' : '实付'}</span><strong>{money(c.order_paid_cents ?? 0)}</strong>
+                            </div>
+                            <time className="crm-order-time" dateTime={new Date(c.last_order_at).toISOString()} title="最近下单时间">
+                              <span className="sr-only">最近下单 </span>{formatDateTime(c.last_order_at)}
+                            </time>
+                          </div> : <span className="text-xs text-muted-foreground">暂无订单</span>}
+                        </TableCell>
+                      </>}
+
                       {/* Expiry Health */}
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          {(!c.membership_state || c.next_expiry) && <><div>
+                          {(!c.membership_state || c.next_expiry) && <><div className={admin ? 'flex flex-wrap gap-1' : undefined}>
                             {c.expired_count > 0 ? (
                               <Badge variant="destructive" className="text-[11px] gap-1">
                                 <AlertCircle className="size-3" />
@@ -1734,17 +1782,9 @@ export default function CustomerManagement({
                         </div>
                       </TableCell>
 
-                      {/* Total Paid */}
-                      {admin && <TableCell className="text-xs">
-                        <strong>{c.order_count ?? 0} 笔订单 · {c.paid_order_count ?? 0} 笔已支付</strong>
-                        <p>实付 {money(c.order_paid_cents ?? 0)} · 净消费 {money(c.order_net_cents ?? 0)}</p>
-                        {!!c.order_refunded_cents && <p>已退款 {money(c.order_refunded_cents)}</p>}
-                        {c.order_products && <p className="max-w-[220px] truncate" title={c.order_products}>{c.order_products}</p>}
-                        {c.last_order_at && <p>最近下单 {formatDateTime(c.last_order_at)}</p>}
-                      </TableCell>}
-                      <TableCell className="text-right font-mono font-semibold text-foreground">
+                      {!admin && <TableCell className="text-right font-mono font-semibold text-foreground">
                         {money(c.paid_cents)}
-                      </TableCell>
+                      </TableCell>}
 
                       {/* Source */}
                       {!admin && <TableCell className="text-xs text-muted-foreground">

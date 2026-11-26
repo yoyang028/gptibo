@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
 import { customerFixture } from './customer-fixture.ts'
-import { monthAfter } from '../shared/customers.ts'
+import { monthAfter, type CustomerOrderRecord } from '../shared/customers.ts'
 
 function order(db: DatabaseSync, patch: Record<string, unknown> = {}) {
   const row={id:'CRM-'+crypto.randomUUID().toUpperCase(),owner_hash:'fixture-owner',idempotency_key:crypto.randomUUID(),plan:'plus',plan_name:'Plus',price_cents:1000,mode:'live',payment_status:'unpaid',status:'pending',created_at:Date.now(),updated_at:Date.now(),last_event_id:crypto.randomUUID(),customer_email:'buyer@example.test',owner_store_id:'platform',partner_id:null,is_test:0,refunded_cents:0,...patch}
@@ -22,6 +22,16 @@ function rechargeReceipt(db: DatabaseSync, id: string, opened: number, accountHi
     .run(crypto.randomUUID(), id, accountHint, opened, opened - 60000)
   db.prepare("INSERT INTO order_events(id,order_id,actor,action,from_status,to_status,note,order_version,created_at) VALUES(?,?,'system','recharge-status','processing','success','fixture',1,?)")
     .run(crypto.randomUUID(), id, opened + 60000)
+}
+
+function couponFixture(db: DatabaseSync) {
+  const id = crypto.randomUUID()
+  const now = Date.now()
+  const settings = JSON.stringify({ active:true, discount_cents:275, starts_at:new Date(now - 60000).toISOString(),
+    ends_at:new Date(now + 3600000).toISOString(), max_uses:20, once_per_email:false, targets:[{ storeId:'platform', plan:'plus' }] })
+  db.prepare("INSERT INTO shop_coupons(id,code,settings,version,change_id,updated_at) VALUES(?,'OWNER-CODE',?,1,'fixture',?)").run(id, settings, now)
+  const statement = db.prepare("INSERT INTO shop_coupon_uses(order_id,coupon_id,email,coupon_version,discount_cents) VALUES(?,?,'buyer@example.test',?,275)")
+  return { id, use: (orderId: string, version = 1) => statement.run(orderId, id, version) }
 }
 
 test('existing order contacts backfill once, reuse manual CRM contacts and preserve every original order',()=>{
@@ -119,6 +129,80 @@ test('customer spending uses actual promotion cash and never treats zero-cash me
   assert.equal(view.stats.order_count,2)
   assert.equal(view.stats.order_paid_cents,600)
   assert.equal(view.stats.order_net_cents,600)
+})
+
+test('customer discounts show actual use by store and order, including the original code after a rename', async t => {
+  const f = await customerFixture()
+  t.after(() => f.db.close())
+  const now = Date.now()
+  const paid = { payment_status:'paid', status:'success' }
+  const coupon = couponFixture(f.db)
+  const couponOrder = order(f.db, { ...paid, price_cents:9725 })
+  const unpaid = order(f.db, { price_cents:9725 })
+  const refunded = order(f.db, { ...paid, price_cents:9725, refunded_cents:9725 })
+  for (const id of [couponOrder, unpaid, refunded]) coupon.use(id)
+  f.db.prepare("UPDATE shop_coupons SET code='RENAMED',version=2 WHERE id=?").run(coupon.id)
+
+  const buyer = crypto.randomUUID()
+  f.db.prepare("INSERT INTO member_platform_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,'会员','buyer@example.test',1,?,?)").run(buyer, now, now)
+  f.db.prepare("INSERT INTO member_platform_profiles(id,invite_code,created_at) VALUES(?,'BUYER-FIXTURE',?)").run(buyer, now)
+  const rewardOrder = order(f.db, { ...paid, price_cents:9000, member_promotion:1 })
+  const reservedOrder = order(f.db, { ...paid, price_cents:9000, member_promotion:1 })
+  const reward = f.db.prepare(`INSERT INTO member_platform_order_promotions(order_id,store_id,member_id,customer_key,original_cents,reward_cents,
+    cash_cents,supply_cents,supplier_snapshot,request_hash,review_status,procurement_status,allocation_status,created_at,updated_at)
+    VALUES(?,'platform',?,'fixture',10000,1000,9000,6000,'{}',?,'none','ready',?,?,?)`)
+  reward.run(rewardOrder, buyer, crypto.randomUUID(), 'captured', now, now)
+  reward.run(reservedOrder, buyer, crypto.randomUUID(), 'reserved', now, now)
+
+  const inviter = crypto.randomUUID()
+  f.db.prepare("INSERT INTO member_s3_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,'邀请人','inviter@example.test',1,?,?)").run(inviter, now, now)
+  f.db.prepare("INSERT INTO member_profiles(id,invite_code,created_at) VALUES(?,'INVITER-FIXTURE',?)").run(inviter, now)
+  const newcomerOrder = order(f.db, { ...paid, owner_store_id:'store-3', price_cents:9500, member_promotion:1 })
+  f.db.prepare(`INSERT INTO member_order_promotions(order_id,store_id,referrer_id,invite_code,customer_key,original_cents,newcomer_cents,
+    cash_cents,supply_cents,supplier_snapshot,request_hash,review_status,procurement_status,allocation_status,created_at,updated_at)
+    VALUES(?,'store-3',?,'INVITER-FIXTURE','fixture',10000,500,9500,6000,'{}',?,'none','ready','captured',?,?)`)
+    .run(newcomerOrder, inviter, crypto.randomUUID(), now, now)
+
+  const list = '/api/admin/customers?scope=owner'
+  const [customer] = (await json(f, list)).customers
+  assert.deepEqual(customer.order_discounts, { coupon_cents:275, coupon_code:'OWNER-CODE', reward_cents:1000, newcomer_cents:500 })
+  const [scholai] = (await json(f, list + '&store=platform')).customers
+  const [planet] = (await json(f, list + '&store=store-3')).customers
+  assert.deepEqual(scholai.order_discounts, { coupon_cents:275, coupon_code:'OWNER-CODE', reward_cents:1000, newcomer_cents:0 })
+  assert.deepEqual(planet.order_discounts, { coupon_cents:0, coupon_code:null, reward_cents:0, newcomer_cents:500 })
+  assert.equal(planet.order_paid_cents, 9500)
+
+  const detail = await json(f, `/api/admin/customers/${customer.id}?scope=owner`)
+  const orders = new Map((detail.orders as CustomerOrderRecord[]).map(row => [row.id, row]))
+  assert.equal(orders.get(couponOrder)?.coupon_code, 'OWNER-CODE')
+  assert.equal(orders.get(unpaid)?.coupon_cents, 0)
+  assert.equal(orders.get(refunded)?.coupon_cents, 0)
+  assert.equal(orders.get(rewardOrder)?.reward_cents, 1000)
+  assert.equal(orders.get(reservedOrder)?.reward_cents, 0)
+  assert.equal(orders.get(newcomerOrder)?.newcomer_cents, 500)
+})
+
+test('coupon snapshot migration preserves verifiable historical codes and future uses without guessing renamed codes', () => {
+  const db = new DatabaseSync(':memory:')
+  db.exec('PRAGMA foreign_keys=ON')
+  try {
+    const files = readdirSync(new URL('../migrations/', import.meta.url)).filter(file => file.endsWith('.sql')).sort()
+    const apply = (file: string) => db.exec(readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8'))
+    for (const file of files.filter(file => file < '0072')) apply(file)
+    const coupon = couponFixture(db)
+    const changed = order(db)
+    coupon.use(changed)
+    db.prepare("UPDATE shop_coupons SET code='CURRENT',version=2 WHERE id=?").run(coupon.id)
+    const verifiable = order(db)
+    coupon.use(verifiable, 2)
+
+    apply('0072_order_coupon_code_snapshot.sql')
+    const fresh = order(db)
+    coupon.use(fresh, 2)
+    db.prepare("UPDATE shop_coupons SET code='LATER',version=3 WHERE id=?").run(coupon.id)
+    const snapshot = db.prepare('SELECT code_snapshot FROM shop_coupon_uses WHERE order_id=?')
+    assert.deepEqual([changed, verifiable, fresh].map(id => snapshot.get(id)!.code_snapshot), [null, 'CURRENT', 'CURRENT'])
+  } finally { db.close() }
 })
 
 test('admin customer tabs, store detail, totals and export remain isolated even when the same contact uses both stores and an agent', async t => {
