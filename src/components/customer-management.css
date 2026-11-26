@@ -10,6 +10,10 @@
 
 .crm-container > * { min-width: 0; max-width: 100%; }
 .crm-table-card [data-slot=table-container] { min-width: 0; }
+.crm-audience { display: flex; flex-wrap: wrap; gap: 8px; }
+.crm-customer-name { color: inherit; cursor: pointer; text-align: left; border-radius: 3px; white-space: normal; overflow-wrap: anywhere; }
+.crm-customer-name:hover { text-decoration: underline; }
+.crm-customer-name:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
 
 /* Header & Actions */
 .crm-header-panel {

@@ -3,7 +3,6 @@ import {
   ArrowUpRight,
   Bell,
   ChartNoAxesCombined,
-  Contact,
   ReceiptText,
   Settings2,
   Store,
@@ -27,7 +26,6 @@ export default function MyShop({
   onStoreChange: setStoreId,
   onSaved,
   orders,
-  customers,
   accounting,
   refunds,
   onManageProducts,
@@ -37,7 +35,6 @@ export default function MyShop({
   onStoreChange: (id: string) => void
   onSaved: () => void
   orders: (store: string, stores: {id:string;name:string}[]) => ReactNode
-  customers: (store: string, stores: {id:string;name:string}[]) => ReactNode
   accounting: ReactNode
   refunds: ReactNode
   onManageProducts: () => void
@@ -145,7 +142,6 @@ export default function MyShop({
               />
             ),
           },
-          { value: 'customers', label: '我的客户', content: customers(storeId, data?.stores ?? []) },
           {
             value: 'visitors',
             label: '访客统计',
@@ -210,10 +206,6 @@ export default function MyShop({
         <Button variant="ghost" onClick={() => setTab('orders')}>
           <ReceiptText size={14} />
           订单
-        </Button>
-        <Button variant="ghost" onClick={() => setTab('customers')}>
-          <Contact size={14} />
-          客户
         </Button>
         <Button variant="ghost" onClick={() => setTab('visitors')}>
           <ChartNoAxesCombined size={14} />

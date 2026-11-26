@@ -42,11 +42,13 @@ import { WorkspaceSelect } from '@/partner/workspace-ui'
 import {
   monthAfter,
   MEMBERSHIP_PLANS,
+  orderMembershipStateLabels,
   type Customer,
   type CustomerAccount,
   type CustomerDetail,
   type CustomerList,
   type CustomerExport,
+  type CustomerOrderMembership,
 } from '../../shared/customers.ts'
 import './customer-management.css'
 
@@ -150,6 +152,40 @@ function AccountExpiryBadge({ value, now }: { value: number | null; now: number 
   )
 }
 
+function OrderMembershipRecords({ records, now }: { records: CustomerOrderMembership[]; now: number }) {
+  return <section className="rounded-xl border p-4 space-y-3" aria-label="订单自动记录">
+    <h3 className="font-semibold">订单自动记录</h3>
+    <div className="space-y-3">
+      {records.map(record => <article key={record.order_id} className="rounded-lg border p-3 text-xs space-y-1.5">
+        <div className="flex flex-wrap gap-2 items-center">
+          <strong>{record.plan_name}</strong><Badge variant="secondary">{record.store_name}</Badge>
+          <Badge variant="outline">{orderMembershipStateLabels[record.state]}</Badge>
+        </div>
+        <div>{record.account_hint ? `充值账号 ${record.account_hint}` : '账号待确认'} · <code>{record.order_id}</code></div>
+        {record.opened_at !== null && <p>确认开通 {formatDateTime(record.opened_at)}</p>}
+        {record.expected_expiry !== null && <div className="flex flex-wrap gap-2 items-center">
+          <span>预计到期 {formatDateTime(record.expected_expiry)}</span>
+          <AccountExpiryBadge value={record.expected_expiry} now={now} />
+        </div>}
+      </article>)}
+    </div>
+  </section>
+}
+
+function OrderExpirySummary({ customer }: { customer: Customer }) {
+  if (!customer.membership_state) return null
+  const soon = customer.membership_soon ?? 0
+  const expired = customer.membership_expired ?? 0
+  return <div className="flex flex-col gap-1">
+    <div className="flex flex-wrap gap-1">
+      {expired > 0 && <Badge variant="destructive" className="text-[11px]">{expired} 笔预计已到期</Badge>}
+      {soon > 0 && <Badge variant="secondary" className="text-[11px] border-amber-500/30 text-amber-600 dark:text-amber-300">{soon} 笔 7 天内预计到期</Badge>}
+      {!expired && !soon && <Badge variant="outline" className="text-[11px]">{orderMembershipStateLabels[customer.membership_state]}</Badge>}
+    </div>
+    {customer.expected_expiry && <div className="text-xs text-muted-foreground">预计到期 {formatDateOnly(customer.expected_expiry)}</div>}
+  </div>
+}
+
 /* =========================================================================
    Sub-Dialog 1: CustomerFormDialog (Add or Edit)
    ========================================================================= */
@@ -158,6 +194,7 @@ function CustomerFormDialog({
   endpoint,
   customer,
   partners,
+  hideSource = false,
   open,
   onClose,
   onSaved,
@@ -165,6 +202,7 @@ function CustomerFormDialog({
   endpoint: string
   customer?: Customer
   partners?: CustomerList['partners']
+  hideSource?: boolean
   open: boolean
   onClose: () => void
   onSaved: (id: string) => void
@@ -180,7 +218,7 @@ function CustomerFormDialog({
   const [chosen, setChosen] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(contacts.map(c => [c.key, customer ? Boolean(customer[c.key]) : c.key === 'wechat']))
   )
-  const [owner, setOwner] = useState('direct')
+  const [owner, setOwner] = useState('')
   const [key] = useState(() => crypto.randomUUID())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -189,6 +227,10 @@ function CustomerFormDialog({
 
   async function handleSave() {
     if (busy) return
+    if (partners && !customer && !partners.some(partner => partner.id === owner)) {
+      setError('请选择所属代理。')
+      return
+    }
     const selected = Object.fromEntries(
       contacts.map(c => [c.key, chosen[c.key] ? values[c.key].trim() : ''])
     )
@@ -261,7 +303,7 @@ function CustomerFormDialog({
                 />
               </div>
 
-              <div className="crm-control-group">
+              {!hideSource && <div className="crm-control-group">
                 <Label htmlFor="crm-input-source">客户来源</Label>
                 <Input
                   id="crm-input-source"
@@ -270,26 +312,24 @@ function CustomerFormDialog({
                   placeholder="例如：微信好友、朋友介绍、社群"
                   maxLength={100}
                 />
-              </div>
+              </div>}
             </div>
 
             {partners && !customer && (
               <div className="crm-control-group">
-                <Label>所属渠道 / 代理</Label>
+                <Label>所属代理</Label>
                 <Select
                   value={owner}
                   onValueChange={v => { if (v !== null) setOwner(String(v)) }}
                   items={[
-                    { value: 'direct', label: '平台直营' },
                     ...partners.map(p => ({ value: p.id, label: `代理 · ${p.name}` })),
                   ]}
                   disabled={busy}
                 >
-                  <SelectTrigger className="w-full" aria-label="所属渠道 / 代理">
-                    <SelectValue />
+                  <SelectTrigger className="w-full" aria-label="所属代理">
+                    <SelectValue placeholder="请选择代理" />
                   </SelectTrigger>
                   <SelectContent className="motion-popover" alignItemWithTrigger={false}>
-                    <SelectItem value="direct">平台直营</SelectItem>
                     {partners.map(p => (
                       <SelectItem value={p.id} key={p.id}>
                         代理 · {p.name}
@@ -371,7 +411,7 @@ function CustomerFormDialog({
             <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
               取消
             </Button>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || Boolean(partners && !owner)}>
               {busy ? '正在保存…' : isEdit ? '保存修改' : '确认添加客户'}
             </Button>
           </DialogFooter>
@@ -726,17 +766,26 @@ function CustomerInspector({
   endpoint,
   id,
   plans,
+  audience,
+  store,
+  refreshRevision,
   onClose,
   onUpdated,
 }: {
   endpoint: string
   id: string
   plans: CustomerList['plans']
+  audience?: 'owner' | 'agent'
+  store?: string
+  refreshRevision: number
   onClose: () => void
   onUpdated: () => void
 }) {
   const [revision, setRevision] = useState(0)
-  const { data, error, loading } = useResource<CustomerDetail>(`${endpoint}/${id}`, revision)
+  const params = new URLSearchParams()
+  if (audience) params.set('scope', audience)
+  if (store) params.set('store', store)
+  const { data, error, loading } = useResource<CustomerDetail>(`${endpoint}/${id}${params.size ? '?' + params : ''}`, revision + refreshRevision)
 
   // Sub-dialog states
   const [customerEditOpen, setCustomerEditOpen] = useState(false)
@@ -775,10 +824,10 @@ function CustomerInspector({
                     {c && (
                       <Badge variant="secondary" className="gap-1 font-normal">
                         <Building2 className="size-3" />
-                        {c.partner_name || '平台直营'}
+                        {c.partner_name || data?.orderStats?.order_stores?.split(',').join('、') || '直营客户'}
                       </Badge>
                     )}
-                    {c?.source && (
+                    {!audience && c?.source && (
                       <Badge variant="outline" className="text-xs font-normal">
                         来源: {c.source}
                       </Badge>
@@ -889,12 +938,13 @@ function CustomerInspector({
 
                   {/* Tab 1: Accounts List */}
                   <TabsContent value="accounts" className="pt-4 flex flex-col gap-3">
-                    {!data.accounts.length ? (
+                    {!!data.orderMemberships?.length && <OrderMembershipRecords records={data.orderMemberships} now={data.asOf} />}
+                    {!data.accounts.length && !data.orderMemberships?.length ? (
                       <div className="text-center py-12 border rounded-xl border-dashed bg-muted/10">
                         <Layers className="size-8 mx-auto text-muted-foreground mb-3 opacity-60" />
                         <h4 className="font-semibold text-sm mb-1">尚未添加会员账号</h4>
                         <p className="text-xs text-muted-foreground mb-4">
-                          添加客户实际使用的账号邮箱或标识后，即可为其录入首次开通。
+                          可补录客户实际使用的账号，记录开通或续费。
                         </p>
                         <Button
                           size="sm"
@@ -1118,6 +1168,7 @@ function CustomerInspector({
         <CustomerFormDialog
           endpoint={endpoint}
           customer={c}
+          hideSource={Boolean(audience)}
           open={customerEditOpen}
           onClose={() => setCustomerEditOpen(false)}
           onSaved={handleSavedRefresh}
@@ -1158,18 +1209,14 @@ function CustomerInspector({
 export default function CustomerManagement({
   admin = false,
   revision,
-  ownerStoreId,
-  ownerStores = [],
-  onOwnerStoreChange,
 }: {
   admin?: boolean
   revision: number
-  ownerStoreId?: string
-  ownerStores?: {id:string;name:string}[]
-  onOwnerStoreChange?: (id:string) => void
 }) {
   const endpoint = admin ? '/api/admin/customers' : '/api/partner/customers'
-  const [storeScope,setStoreScope] = useState(ownerStoreId ?? 'all')
+  const [audience, setAudience] = useState<'owner' | 'agent'>('owner')
+  const [storeScope, setStoreScope] = useState('all')
+  const selectedStore = admin && audience === 'owner' && storeScope !== 'all' ? storeScope : undefined
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -1189,7 +1236,8 @@ export default function CustomerManagement({
   },[])
   const query = new URLSearchParams(applied)
   query.set('page',String(page))
-  if(ownerStoreId){query.set('scope','owner');if(storeScope!=='all')query.set('store',storeScope)}
+  if (admin) query.set('scope', audience)
+  if (selectedStore) query.set('store', selectedStore)
 
   // Data resource
   const { data, error, loading } = useResource<CustomerList>(
@@ -1211,7 +1259,7 @@ export default function CustomerManagement({
     if (customFilters.q.trim()) params.set('q', customFilters.q.trim())
     if (customFilters.plan !== 'all') params.set('plan', customFilters.plan)
     if (customFilters.expiry !== 'all') params.set('expiry', customFilters.expiry)
-    if (admin && customFilters.partner !== 'all') params.set('partner', customFilters.partner)
+    if (admin && audience === 'agent' && customFilters.partner !== 'all') params.set('partner', customFilters.partner)
 
     setApplied(params.toString())
     setPage(1)
@@ -1232,6 +1280,14 @@ export default function CustomerManagement({
     setApplied('')
     setPage(1)
     updated()
+  }
+
+  function switchAudience(next: 'owner' | 'agent') {
+    if (audience === next) return
+    setAudience(next)
+    setDetailId(undefined)
+    setExportError('')
+    handleResetFilters()
   }
 
   // Export Excel
@@ -1261,11 +1317,11 @@ export default function CustomerManagement({
           <div>
             <CardTitle className="text-xl font-bold flex items-center gap-2">
               <Users className="size-5 text-primary" />
-              {ownerStoreId ? '我的客户' : admin ? '客户管理中心' : '我的客户管理'}
+              {admin ? '客户管理中心' : '我的客户管理'}
             </CardTitle>
             <CardDescription className="mt-1">
-              {ownerStoreId ? '店铺下单客户按邮箱自动归集，订单与消费统计每 30 秒更新；会员开通记录仍可手工补充。' : admin
-                ? '全站客户档案与会员账号集中管理，支持按渠道代理筛选、开通跟踪及多工作表 Excel 导出。'
+              {admin
+                ? '按店铺查看直营客户，订单与开通记录自动更新。'
                 : '自主管理所属客户的会员账号、开通续费记录与到期提醒，全流程清晰可查。'}
             </CardDescription>
           </div>
@@ -1293,8 +1349,11 @@ export default function CustomerManagement({
         </CardHeader>
       </Card>
 
+      {admin && <div className="crm-audience" role="group" aria-label="客户类型">
+        <Button size="sm" variant={audience === 'owner' ? 'default' : 'outline'} aria-pressed={audience === 'owner'} onClick={() => switchAudience('owner')}>直营客户</Button>
+        <Button size="sm" variant={audience === 'agent' ? 'default' : 'outline'} aria-pressed={audience === 'agent'} onClick={() => switchAudience('agent')}>代理客户</Button>
+      </div>}
       <Feedback error={error || exportError} loading={loading} data={data} />
-      {ownerStoreId && <WorkspaceSelect label="客户店铺范围" value={storeScope} options={[{value:'all',label:'全部自营店铺'},...ownerStores.map(s=>({value:s.id,label:s.name}))]} onValueChange={id=>{setStoreScope(id);setPage(1);if(id!=='all')onOwnerStoreChange?.(id)}} />}
 
       {data && (
         <>
@@ -1506,24 +1565,29 @@ export default function CustomerManagement({
                     </Select>
                   </div>
 
-                  {admin && !ownerStoreId && (
+                  {admin && audience === 'owner' && <div className="crm-control-group">
+                    <Label htmlFor="crm-store-scope">所属店铺</Label>
+                    <WorkspaceSelect id="crm-store-scope" label="所属店铺" value={storeScope}
+                      options={[{ value:'all', label:'全部自营店铺' }, ...(data.stores ?? []).map(store => ({ value:store.id, label:store.name }))]}
+                      onValueChange={store => { setStoreScope(store); setPage(1); setExportError('') }} />
+                  </div>}
+
+                  {admin && audience === 'agent' && (
                     <div className="crm-control-group">
-                      <Label>所属渠道 / 代理</Label>
+                      <Label>所属代理</Label>
                       <Select
                         value={filters.partner}
                         onValueChange={v => { if (v !== null) setFilters(old => ({ ...old, partner: String(v) })) }}
                         items={[
-                          { value: 'all', label: '全部渠道' },
-                          { value: 'direct', label: '平台直营' },
+                          { value: 'all', label: '全部代理' },
                           ...data.partners.map(p => ({ value: p.id, label: p.name })),
                         ]}
                       >
-                        <SelectTrigger className="w-full h-9" aria-label="所属渠道 / 代理">
+                        <SelectTrigger className="w-full h-9" aria-label="所属代理">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="motion-popover" alignItemWithTrigger={false}>
-                          <SelectItem value="all">全部渠道</SelectItem>
-                          <SelectItem value="direct">平台直营</SelectItem>
+                          <SelectItem value="all">全部代理</SelectItem>
                           {data.partners.map(p => (
                             <SelectItem value={p.id} key={p.id}>
                               代理 · {p.name}
@@ -1562,14 +1626,14 @@ export default function CustomerManagement({
               <TableHeader>
                 <TableRow className="bg-muted/40">
                   <TableHead className="w-[200px]">客户资料</TableHead>
-                  <TableHead className="min-w-[190px]">联系方式</TableHead>
-                  {admin && <TableHead className="w-[120px]">所属渠道</TableHead>}
+                  {!admin && <TableHead className="min-w-[190px]">联系方式</TableHead>}
+                  {admin && <TableHead className="w-[120px]">{audience === 'owner' ? '所属店铺' : '所属代理'}</TableHead>}
                   <TableHead className="min-w-[170px]">绑定账号与套餐</TableHead>
                   <TableHead className="min-w-[180px]">到期状态与提醒</TableHead>
                   {admin && <TableHead className="min-w-[190px]">订单统计</TableHead>}
                   <TableHead className="text-right w-[110px]">会员录入金额</TableHead>
-                  <TableHead className="w-[110px]">客户来源</TableHead>
-                  <TableHead className="text-right w-[100px]">操作</TableHead>
+                  {!admin && <TableHead className="w-[110px]">客户来源</TableHead>}
+                  {!admin && <TableHead className="text-right w-[100px]">操作</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1584,7 +1648,7 @@ export default function CustomerManagement({
                           </div>
                           <div className="min-w-0">
                             <div className="font-semibold text-foreground flex items-center gap-1.5">
-                              <span>{c.name}</span>
+                              {admin ? <button type="button" className="crm-customer-name" onClick={event => { event.stopPropagation(); setDetailId(c.id) }}>{c.name}</button> : <span>{c.name}</span>}
                             </div>
                             {c.note && (
                               <p className="text-xs text-muted-foreground truncate max-w-[160px] mt-0.5" title={c.note}>
@@ -1596,7 +1660,7 @@ export default function CustomerManagement({
                       </TableCell>
 
                       {/* Contact Info */}
-                      <TableCell onClick={e => e.stopPropagation()}>
+                      {!admin && <TableCell onClick={e => e.stopPropagation()}>
                         <div className="flex flex-col gap-1.5">
                           {contacts
                             .filter(v => c[v.key])
@@ -1611,13 +1675,13 @@ export default function CustomerManagement({
                               )
                             })}
                         </div>
-                      </TableCell>
+                      </TableCell>}
 
                       {/* Channel (Admin only) */}
                       {admin && (
                         <TableCell>
                           <Badge variant="secondary" className="font-normal text-xs">
-                            {c.partner_name || '平台直营'}
+                            {audience === 'agent' ? c.partner_name || '—' : c.order_stores?.split(',').join('、') || '暂无下单店铺'}
                           </Badge>
                         </TableCell>
                       )}
@@ -1625,21 +1689,22 @@ export default function CustomerManagement({
                       {/* Accounts & Plans */}
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <div className="font-medium text-xs text-foreground flex items-center gap-1.5">
+                          {(!c.membership_orders || c.account_count > 0) && <div className="font-medium text-xs text-foreground flex items-center gap-1.5">
                             <Badge variant="outline" className="px-1.5 py-0 text-[11px]">
                               {c.account_count} 个账号
                             </Badge>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {c.plan_names || '未开通会员'}
-                          </div>
+                          </div>}
+                          {c.plan_names && <div className="text-xs text-muted-foreground">{c.plan_names}</div>}
+                          {!!c.membership_orders && <div className="text-xs">{c.bound_account_hints?.split(',').join('、') || '账号待确认'}</div>}
+                          {(c.ordered_plans || c.order_products) && <div className="text-xs text-muted-foreground">订单套餐 {c.ordered_plans || c.order_products}</div>}
+                          {!c.plan_names && !c.order_products && <div className="text-xs text-muted-foreground">未开通会员</div>}
                         </div>
                       </TableCell>
 
                       {/* Expiry Health */}
                       <TableCell>
                         <div className="flex flex-col gap-1">
-                          <div>
+                          {(!c.membership_state || c.next_expiry) && <><div>
                             {c.expired_count > 0 ? (
                               <Badge variant="destructive" className="text-[11px] gap-1">
                                 <AlertCircle className="size-3" />
@@ -1664,7 +1729,8 @@ export default function CustomerManagement({
                           </div>
                           <div className="text-xs text-muted-foreground">
                             {c.next_expiry ? `最近到期: ${formatDateOnly(c.next_expiry)}` : '添加账号后录入'}
-                          </div>
+                          </div></>}
+                          <OrderExpirySummary customer={c} />
                         </div>
                       </TableCell>
 
@@ -1673,7 +1739,6 @@ export default function CustomerManagement({
                         <strong>{c.order_count ?? 0} 笔订单 · {c.paid_order_count ?? 0} 笔已支付</strong>
                         <p>实付 {money(c.order_paid_cents ?? 0)} · 净消费 {money(c.order_net_cents ?? 0)}</p>
                         {!!c.order_refunded_cents && <p>已退款 {money(c.order_refunded_cents)}</p>}
-                        {c.order_stores && <p>{c.order_stores}</p>}
                         {c.order_products && <p className="max-w-[220px] truncate" title={c.order_products}>{c.order_products}</p>}
                         {c.last_order_at && <p>最近下单 {formatDateTime(c.last_order_at)}</p>}
                       </TableCell>}
@@ -1682,12 +1747,12 @@ export default function CustomerManagement({
                       </TableCell>
 
                       {/* Source */}
-                      <TableCell className="text-xs text-muted-foreground">
+                      {!admin && <TableCell className="text-xs text-muted-foreground">
                         {c.source || '—'}
-                      </TableCell>
+                      </TableCell>}
 
                       {/* Action */}
-                      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                      {!admin && <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                         <Button
                           size="sm"
                           variant="outline"
@@ -1697,7 +1762,7 @@ export default function CustomerManagement({
                           管理详情
                           <ChevronRight className="size-3" />
                         </Button>
-                      </TableCell>
+                      </TableCell>}
                     </TableRow>
                   )
                 })}
@@ -1709,12 +1774,12 @@ export default function CustomerManagement({
               <div className="text-center py-16 px-4">
                 <Users className="size-12 mx-auto text-muted-foreground/50 mb-3" />
                 <h3 className="font-semibold text-base mb-1">
-                  {applied ? '没有找到匹配的客户档案' : '还没有录入客户记录'}
+                  {applied ? '没有找到匹配的客户档案' : selectedStore ? '该店铺暂无下单客户' : '还没有录入客户记录'}
                 </h3>
                 <p className="text-xs text-muted-foreground max-w-sm mx-auto mb-4">
                   {applied
                     ? '试试调整搜索关键词、套餐分类或清空到期状态筛选。'
-                    : '点击右上角“添加客户”，录入客户联系方式并绑定其会员账号。'}
+                    : selectedStore ? '该店铺的新订单会自动归入这里。' : '点击右上角“添加客户”，录入客户资料。'}
                 </p>
                 {applied ? (
                   <Button variant="outline" size="sm" onClick={handleResetFilters} className="gap-1.5">
@@ -1770,7 +1835,9 @@ export default function CustomerManagement({
           {/* Footnote */}
           <p className="text-xs text-muted-foreground leading-relaxed">
             💡 <strong>系统说明：</strong>
-            统计按已应用的筛选计算。实付金额为手动录入，包含历次开通、续费和升级。到期按开通时间加一个自然月计算，不支持提前续费。Excel 导出包含客户、全部账号及完整历史。
+            {admin && audience === 'owner'
+              ? '订单开通记录自动更新。月度充值确认完成后，按完成时间估算到期日。未回传账号或开通时间的订单会提示待确认。'
+              : '统计按已应用的筛选计算。会员录入金额包含手工记录的开通、续费和升级。'}
           </p>
         </>
       )}
@@ -1779,11 +1846,14 @@ export default function CustomerManagement({
       {createOpen && data && (
         <CustomerFormDialog
           endpoint={endpoint}
-          partners={admin ? data.partners : undefined}
+          partners={admin && audience === 'agent' ? data.partners : undefined}
+          hideSource={admin}
           open={createOpen}
           onClose={() => setCreateOpen(false)}
           onSaved={id => {
             setCreateOpen(false)
+            if (selectedStore) setStoreScope('all')
+            setPage(1)
             updated()
             setDetailId(id)
           }}
@@ -1797,6 +1867,9 @@ export default function CustomerManagement({
           endpoint={endpoint}
           id={detailId}
           plans={data.plans}
+          audience={admin ? audience : undefined}
+          store={selectedStore}
+          refreshRevision={revision + localRevision}
           onClose={() => setDetailId(undefined)}
           onUpdated={updated}
         />

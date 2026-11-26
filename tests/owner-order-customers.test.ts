@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync, readdirSync } from 'node:fs'
 import { customerFixture } from './customer-fixture.ts'
+import { monthAfter } from '../shared/customers.ts'
 
 function order(db: DatabaseSync, patch: Record<string, unknown> = {}) {
   const row={id:'CRM-'+crypto.randomUUID().toUpperCase(),owner_hash:'fixture-owner',idempotency_key:crypto.randomUUID(),plan:'plus',plan_name:'Plus',price_cents:1000,mode:'live',payment_status:'unpaid',status:'pending',created_at:Date.now(),updated_at:Date.now(),last_event_id:crypto.randomUUID(),customer_email:'buyer@example.test',owner_store_id:'platform',partner_id:null,is_test:0,refunded_cents:0,...patch}
@@ -13,6 +14,14 @@ async function json(f: Awaited<ReturnType<typeof customerFixture>>, path: string
   const response=await f.request(path,undefined,f.admin)
   assert.equal(response.status,200,await response.clone().text())
   return response.json() as Promise<any>
+}
+
+function rechargeReceipt(db: DatabaseSync, id: string, opened: number, accountHint: string | null) {
+  db.prepare("INSERT INTO recharge_orders(order_id,account,product_code,collection_mode,create_body,payment_status,updated_at) VALUES(?,'fixture','plus','platform_collect','{}','paid',?)").run(id, opened)
+  db.prepare("INSERT INTO recharge_redemptions(id,order_id,attempt_no,request_hash,credential_mode,status,account_email_masked,finished_at,created_at) VALUES(?,?,1,'fixture','session','succeeded',?,?,?)")
+    .run(crypto.randomUUID(), id, accountHint, opened, opened - 60000)
+  db.prepare("INSERT INTO order_events(id,order_id,actor,action,from_status,to_status,note,order_version,created_at) VALUES(?,?,'system','recharge-status','processing','success','fixture',1,?)")
+    .run(crypto.randomUUID(), id, opened + 60000)
 }
 
 test('existing order contacts backfill once, reuse manual CRM contacts and preserve every original order',()=>{
@@ -110,4 +119,83 @@ test('customer spending uses actual promotion cash and never treats zero-cash me
   assert.equal(view.stats.order_count,2)
   assert.equal(view.stats.order_paid_cents,600)
   assert.equal(view.stats.order_net_cents,600)
+})
+
+test('admin customer tabs, store detail, totals and export remain isolated even when the same contact uses both stores and an agent', async t => {
+  const f = await customerFixture()
+  t.after(() => f.db.close())
+  const partner = await f.agent('演示代理')
+  const agentCustomer = crypto.randomUUID()
+  await f.request('/api/partner/customers', { key:agentCustomer,name:'代理客户档案',email:'buyer@example.test' }, partner.cookie)
+  order(f.db, { owner_store_id:'store-3' })
+  order(f.db)
+  order(f.db, { customer_email:'other@example.test' })
+  const direct = await json(f, '/api/admin/customers?scope=owner')
+  assert.deepEqual(direct.stores.map((store:{name:string}) => store.name), ['ScholAI','AI星球','备用商店'])
+  assert.equal(direct.total, 2)
+  assert.equal(direct.stats.order_count, 3)
+  const selected = await json(f, '/api/admin/customers?scope=owner&store=store-3')
+  assert.equal(selected.total, 1)
+  const id = selected.customers[0].id
+  const detail = await json(f, `/api/admin/customers/${id}?scope=owner&store=store-3`)
+  assert.deepEqual(detail.orders.map((o:{store_name:string}) => o.store_name), ['AI星球'])
+  assert.equal((await json(f, `/api/admin/customers/${id}?scope=owner`)).orderStats.order_count, 2)
+  assert.equal((await f.request(`/api/admin/customers/${id}?scope=owner&store=store-2`, undefined, f.admin)).status, 404)
+  const agents = await json(f, '/api/admin/customers?scope=agent')
+  assert.deepEqual(agents.customers.map((c:{id:string}) => c.id),[agentCustomer])
+  const exported = await json(f, '/api/admin/customers/export?scope=agent')
+  assert.equal(exported.customers[0].id,agentCustomer)
+  assert.equal(exported.orderMemberships,undefined)
+  assert.equal((await f.request(`/api/admin/customers/${agentCustomer}?scope=owner`, undefined, f.admin)).status, 404)
+  assert.equal((await f.request(`/api/admin/customers/${id}?scope=agent`, undefined, f.admin)).status, 404)
+  assert.equal((await f.request('/api/admin/customers?scope=agent&store=store-3', undefined, f.admin)).status, 400)
+  assert.equal((await f.request('/api/partner/customers?scope=agent', undefined, partner.cookie)).status,403)
+})
+
+test('verified monthly orders appear in account, expiry and reminder filters without inventing accounts or overwriting manual records', async t => {
+  const f = await customerFixture()
+  t.after(() => f.db.close())
+  t.mock.timers.enable({ apis:['Date'], now:Date.parse('2026-02-24T00:00:00+08:00') })
+  const opened = Date.parse('2026-01-31T23:58:47.321+08:00')
+  const archivedOpened = Date.parse('2025-12-31T10:30:00+08:00')
+  const paid = { payment_status:'paid' }
+  const pending = order(f.db,{...paid,owner_store_id:'store-3',status:'session'})
+  const expired = order(f.db,{...paid,status:'success',created_at:archivedOpened-86400000})
+  rechargeReceipt(f.db,expired,archivedOpened,'z***@example.test')
+  const noEvidence = order(f.db,{...paid,customer_email:'unverified@example.test',status:'success'})
+  const noMask = order(f.db,{...paid,customer_email:'missing-account@example.test',status:'success',created_at:opened-86400000})
+  rechargeReceipt(f.db,noMask,opened,'plaintext-not-an-account-hint@example.test')
+  const refunded = order(f.db,{...paid,customer_email:'refund@example.test',status:'success',refunded_cents:1000,created_at:opened-86400000})
+  rechargeReceipt(f.db,refunded,opened,'r***@example.test')
+  const shop = '/api/admin/customers?scope=owner&store=store-3'
+  let rows = await json(f, shop)
+  assert.deepEqual([rows.customers[0].ordered_plans,rows.customers[0].membership_state,rows.customers[0].expected_expiry], ['Plus','pending',null])
+  assert.equal(rows.customers[0].bound_account_hints,null)
+
+  f.db.prepare("UPDATE orders SET status='success',created_at=? WHERE id=?").run(opened-86400000,pending)
+  rechargeReceipt(f.db,pending,opened,'b***@example.test')
+  rows = await json(f, shop + '&plan=plus&expiry=soon')
+  assert.equal(rows.total,1)
+  const customer = rows.customers[0]
+  assert.equal(customer.bound_account_hints,'b***@example.test')
+  assert.equal(customer.expected_expiry,monthAfter(opened))
+  assert.equal(customer.membership_soon,1)
+  assert.equal(customer.membership_expired,0)
+  assert.equal(rows.stats.soon,1)
+  assert.equal((await json(f, shop + '&expiry=expired')).total,0)
+  assert.equal((await json(f, shop + '&expiry=none')).total,0)
+  const scoped = await json(f, `/api/admin/customers/${customer.id}?scope=owner&store=store-3`)
+  assert.deepEqual(scoped.orderMemberships.map((record:{order_id:string}) => record.order_id),[pending])
+  assert.equal(scoped.accounts.length,0)
+  assert.equal(scoped.subscriptions.length,0)
+  const all = await json(f,`/api/admin/customers/${customer.id}?scope=owner`)
+  assert.equal(all.orderMemberships.length,2)
+  const missing = await json(f,'/api/admin/customers?scope=owner&q=missing-account')
+  assert.equal(missing.customers[0].bound_account_hints,null)
+  const exported = await json(f,'/api/admin/customers/export?scope=owner')
+  assert.equal(exported.orderMemberships.find((r:{order_id:string}) => r.order_id === noEvidence).state,'unverified')
+  assert.equal(exported.orderMemberships.find((r:{order_id:string}) => r.order_id === refunded).expected_expiry,null)
+  assert.equal(exported.orderMemberships.find((r:{order_id:string}) => r.order_id === refunded).state,'refunded')
+  assert(!JSON.stringify(exported).includes('plaintext-not-an-account-hint'))
+  assert.equal(f.db.prepare('SELECT COUNT(*) n FROM crm_subscriptions').get()!.n,0)
 })

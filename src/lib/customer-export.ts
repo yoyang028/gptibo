@@ -1,4 +1,4 @@
-import type { CustomerExport } from '../../shared/customers.ts'
+import { orderMembershipStateLabels, type CustomerExport } from '../../shared/customers.ts'
 
 const time=(v:number|null)=>v===null?'':new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})
 const kinds={open:'首次开通',renew:'续费',upgrade:'升级'}
@@ -15,6 +15,12 @@ export async function customerWorkbook(data:CustomerExport) {
   const history=workbook.addWorksheet('开通续费升级记录')
   history.addRow(['记录编号','客户编号','客户名称','所属代理','账号','记录类型','历史套餐','开通时间（北京时间）','到期时间（北京时间）','实付金额（元）','记录备注','录入时间（北京时间）'])
   data.subscriptions.forEach(s=>{const c=names.get(s.customer_id);history.addRow([s.id,s.customer_id,c?.name,c?.partner_name||'直营',s.account,kinds[s.kind],s.plan_name,time(s.opened_at),time(s.expires_at),s.paid_cents/100,s.note,time(s.created_at)])})
+  if (data.orderMemberships?.length) {
+    const source = workbook.addWorksheet('订单自动开通记录')
+    source.addRow(['订单编号','客户编号','客户名称','所属店铺','绑定账号（脱敏）','套餐','开通状态','确认开通（北京时间）','预计到期（北京时间）'])
+    data.orderMemberships.forEach(record => source.addRow([record.order_id,record.customer_id,names.get(record.customer_id)?.name,record.store_name,
+      record.account_hint ?? '',record.plan_name,orderMembershipStateLabels[record.state],time(record.opened_at),time(record.expected_expiry)]))
+  }
   for(const sheet of workbook.worksheets) {
     sheet.views=[{state:'frozen',ySplit:1}];sheet.autoFilter={from:{row:1,column:1},to:{row:sheet.rowCount,column:sheet.columnCount}}
     sheet.getRow(1).font={bold:true,color:{argb:'FFFFFFFF'}};sheet.getRow(1).fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF126BDE'}}
