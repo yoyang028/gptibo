@@ -1,6 +1,7 @@
 import { ApiError, body, hash, json, type Env } from './platform.ts'
 import { storefrontSelection, ownerStorefrontLinks } from './storefront-hosts.ts'
 import { readAdminStoreScope } from './admin-store-scope.ts'
+import { storefrontVisit } from '../shared/storefront-visit.ts'
 
 const localDay = (time: number) => new Date(time + 8 * 3600000).toISOString().slice(0, 10)
 
@@ -14,16 +15,14 @@ export async function recordVisitor(request: Request, env: Env) {
   if (request.method !== 'POST') throw new ApiError('请使用 POST 提交。', 405)
   const data = await body(request, 512)
   if (typeof data.visitorId !== 'string' || !/^[a-f0-9-]{36}$/.test(data.visitorId)) throw new ApiError('访客标识无效。')
-  if (typeof data.path !== 'string' || data.path.length > 120) throw new ApiError('页面路径无效。')
-  const path = data.path.replace(/\/$/, '') || '/'
-  const match = path.match(/^\/(?:r|s)\/([^/]+)(?:\/(?:orders|check|product\/[a-z0-9-]+))?$/)
-  if (!match && path !== '/' && path !== '/orders' && path !== '/check' && !/^\/product\/[a-z0-9-]+$/.test(path)) throw new ApiError('页面路径无效。')
+  const route = typeof data.path === 'string' ? storefrontVisit(data.path) : null
+  if (!route) throw new ApiError('页面路径无效。')
   let shopId = 'platform'
-  const selection = storefrontSelection(request, env, match?.[1])
+  const selection = storefrontSelection(request, env, route.shopSlug)
   if (selection) {
-    const partner = await env.INTEREST_DB.prepare('SELECT id FROM partners WHERE slug=?1 AND active=1 UNION ALL SELECT id FROM owner_shop_settings WHERE slug=?1').bind(String(selection)).first<{ id: string }>()
-    if (!partner) throw new ApiError('代理商店不可用。', 404)
-    shopId = partner.id
+    const shop = await env.INTEREST_DB.prepare('SELECT id FROM owner_shop_settings WHERE slug=?1 UNION ALL SELECT id FROM partners WHERE slug=?1 AND active=1').bind(String(selection)).first<{ id: string }>()
+    if (!shop) throw new ApiError('店铺不可用。', 404)
+    shopId = shop.id
   }
   await env.INTEREST_DB.prepare('INSERT INTO visitor_days(day,shop_id,visitor_hash,page_views) VALUES (?,?,?,1) ON CONFLICT(day,shop_id,visitor_hash) DO UPDATE SET page_views=page_views+1')
     .bind(localDay(Date.now()), shopId, await hash(data.visitorId)).run()

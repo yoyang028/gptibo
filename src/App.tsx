@@ -33,7 +33,7 @@ import { applyAppearance } from '@/lib/appearance'
 import { useScrollReveal } from '@/lib/use-scroll-reveal'
 import { useStore } from '@/lib/use-store'
 import { canonicalStorefrontUrl, storefrontHref, storefrontShopSlug } from '@/lib/storefront-routing'
-import { trackVisitor } from '@/lib/visitor-tracking'
+import { useStorefrontVisit } from '@/lib/visitor-tracking'
 import { isClosedHomepage } from '@/components/site-closed'
 import './App.css'
 import './styles/motion.css'
@@ -131,9 +131,7 @@ function App() {
     return () => { window.removeEventListener('hashchange', listener); window.removeEventListener('popstate', listener) }
   }, [])
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); if (!document.querySelector('[data-slot=dialog-content]')) document.getElementById('main-content')?.focus({ preventScroll: true }) }, [page])
-  useEffect(() => {
-    if (store.ready && !store.shopUnavailable && (!location.pathname.startsWith('/r/') && !location.pathname.startsWith('/s/') || partnerSlug)) trackVisitor(location.pathname)
-  }, [page, store.ready, store.shopUnavailable, partnerSlug])
+  useStorefrontVisit(page, store.catalogReady && !store.shopUnavailable && (!store.shopPaused || page === 'orders'))
   const navigate = (next: string) => {
     const href = storefrontHref(next)
     if (isClosedHomepage(new URL(href, location.href))) { location.assign(href); return }

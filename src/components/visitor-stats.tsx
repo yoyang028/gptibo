@@ -23,6 +23,10 @@ export type VisitorSummary = {
 }
 export type VisitorPeriod = 1 | 7 | 30 | 90
 
+const visitorTime = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+})
+
 const chartConfig = {
   visitors: {
     label: '独立访客 (UV)',
@@ -145,30 +149,34 @@ export function VisitorStats({
   className,
   selectedDays,
   onDaysChange,
+  pollInterval,
 }: VisitorStatsAppearance & {
   endpoint: string
   revision?: number
   selectedDays?: VisitorPeriod
   onDaysChange?: (days: VisitorPeriod) => void
+  pollInterval?: number
 }) {
   const [internalDays, setInternalDays] = useState<VisitorPeriod>(7)
   const days = selectedDays ?? internalDays
   const setDays = onDaysChange ?? setInternalDays
   const query = new URL(endpoint, location.origin)
   query.searchParams.set('days', String(days))
-  const resource = useResource<VisitorSummary>(query.pathname + query.search, revision)
-  return <VisitorStatsPanel {...resource} title={title} description={description} action={action} className={className} days={days} onDaysChange={setDays} />
+  const resource = useResource<VisitorSummary>(query.pathname + query.search, revision, { pollInterval, retainOnError: pollInterval !== undefined })
+  return <VisitorStatsPanel {...resource} updatedAt={pollInterval === undefined ? undefined : resource.fetchedAt} title={title} description={description} action={action} className={className} days={days} onDaysChange={setDays} />
 }
 
 export function VisitorStatsPanel({
-  title = '访客统计', description, action, className, days, onDaysChange: setDays, data, error, loading,
+  title = '访客统计', description, action, className, days, onDaysChange: setDays, data, error, loading, updatedAt,
 }: VisitorStatsAppearance & {
   days: VisitorPeriod
   onDaysChange: (days: VisitorPeriod) => void
   data?: VisitorSummary
   error: string
   loading: boolean
+  updatedAt?: number
 }) {
+  const updated = updatedAt === undefined ? undefined : new Date(updatedAt)
   const avgDailyVisitors = data
     ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(
       data.trend.reduce((sum, day) => sum + day.visitors, 0) / data.days
@@ -191,6 +199,7 @@ export function VisitorStatsPanel({
           <CardDescription>
             {description || `北京时间 · 最近 ${days} 天访问走势与流量分布`}
           </CardDescription>
+          {updated && <CardDescription>数据更新于 <time className="tabular-nums" dateTime={updated.toISOString()}>{visitorTime.format(updated)}</time>（北京时间）</CardDescription>}
         </div>
         <div className="visitor-stats-actions">
           {action}

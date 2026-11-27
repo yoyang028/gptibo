@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'
 import { readFileSync } from 'node:fs'
+import { STOREFRONT_GUIDE_PATHS } from '../shared/storefront-guides.ts'
+import { storefrontVisit } from '../shared/storefront-visit.ts'
 import { adminVisitorSummary, recordVisitor, visitorSummary } from '../worker/visitors.ts'
 import type { Env, Statement, Value } from '../worker/platform.ts'
 
@@ -74,6 +76,38 @@ test('storefront visits are scoped by partner and deduplicated across pages and 
   await assert.rejects(send('/admin'), { status: 400 })
   await assert.rejects(send('/', visitorId, 'https://evil.test'), { status: 403 })
   assert.equal(db.prepare('SELECT COUNT(*) n FROM visitor_days').get()!.n, 3)
+})
+
+test('member, guide and invitation visits count for the corresponding direct or partner shop', async t => {
+  const { db, env } = setup(); t.after(() => db.close())
+  const main = 'https://shop.example.invalid', vip = 'https://vip.example.invalid'
+  env.OWNER_STOREFRONT_HOSTS = JSON.stringify({ 'vip.example.invalid': 'store-3' })
+  const mainBrowser = crypto.randomUUID(), vipBrowser = crypto.randomUUID(), partnerBrowser = crypto.randomUUID()
+  const send = (origin: string, path: string, visitorId: string) => recordVisitor(new Request(origin + '/api/visitors', {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ path, visitorId }),
+  }), env)
+  for (const path of ['/', '/product/chatgpt', '/guides/apple-id']) assert.equal((await send(main, path, mainBrowser)).status, 200)
+  for (const path of ['/account', '/ref/xingqiu/guides/gemini-student', '/i/xingqiu/']) assert.equal((await send(vip, path, vipBrowser)).status, 200)
+  assert.equal((await send(main, '/s/store-3/guides/apple-id', vipBrowser)).status, 200)
+  assert.equal((await send(main, '/r/ABCDEF/guides/apple-id/', partnerBrowser)).status, 200)
+  await assert.rejects(send(vip, '/r/ABCDEF/guides/apple-id', partnerBrowser), { status: 404 })
+  await assert.rejects(send(main, '/r/GHIJKL/guides/apple-id', partnerBrowser), { status: 404 })
+  const summary = (scope: string) => adminVisitorSummary(env, new URL(`${main}/api/admin/visitors?days=1&${scope}`))
+  for (const [scope, uv, pv] of [['store=platform', 1, 3], ['store=store-3', 1, 4], ['scope=agent', 1, 1], ['scope=owner', 2, 7]] as const) {
+    const data = await summary(scope)
+    assert.deepEqual([data.visitors, data.pageViews], [uv, pv])
+  }
+})
+
+test('the shared visitor path rule recognizes every storefront guide and strips invitation aliases', () => {
+  for (const page of ['/account', ...STOREFRONT_GUIDE_PATHS]) {
+    assert.equal(storefrontVisit(page)?.path, page)
+    assert.equal(storefrontVisit(`/ref/tester${page}`)?.path, page)
+    assert.equal(storefrontVisit(`/s/store-3${page}`)?.shopSlug, 'store-3')
+  }
+  for (const path of ['/admin', '/api/orders', '/join', '/partner', '/guides/unknown', '/r/ABCDEF/admin', '/s/store-3/api/orders', '/ref/tester/partner']) {
+    assert.equal(storefrontVisit(path), null, path)
+  }
 })
 
 test('1-day range uses the current Beijing date and preserves visitor deduplication and shop attribution', async t => {

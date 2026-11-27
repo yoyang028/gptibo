@@ -9,6 +9,8 @@ import { WorkspaceSelect } from '@/partner/workspace-ui'
 import { ownerStoreOptions, storeScopeParams, type AdminAudience, type AdminStoreOption } from '../../shared/admin-store-scope'
 import { AdminAudienceSwitch } from './AdminAudienceSwitch'
 
+const VISITOR_POLL_INTERVAL = 60_000
+
 type StoreTraffic = { id: string; name: string; active: number; visitors: number; pageViews: number; storefront_url?: string }
 type AdminSummary = VisitorSummary & {
   platform: { visitors: number; pageViews: number }
@@ -24,7 +26,7 @@ export default function AdminVisitorsPage({ revision, stores }: { revision: numb
   const hasStoreReporting = stores.length > 0
   const scope = hasStoreReporting ? audience === 'owner' ? store : 'agent' : 'all'
   const query = storeScopeParams(scope, new URLSearchParams({ days:String(days) }))
-  const resource = useResource<AdminSummary>(`/api/admin/visitors?${query}`, revision)
+  const resource = useResource<AdminSummary>(`/api/admin/visitors?${query}`, revision, { pollInterval: VISITOR_POLL_INTERVAL, retainOnError: true })
   const { data } = resource
   const current = stores.find(store => store.id === scope)
   const title = current ? `${current.name}访问趋势` : scope === 'owner' ? '自营店访问趋势' : scope === 'agent' ? '代理店访问趋势' : '全站访问趋势'
@@ -35,6 +37,7 @@ export default function AdminVisitorsPage({ revision, stores }: { revision: numb
       {hasStoreReporting && <AdminAudienceSwitch label="访客渠道" ownerLabel="直营访客" agentLabel="代理访客" audience={audience} onChange={setAudience} />}
       <VisitorStatsPanel
         {...resource}
+        updatedAt={resource.fetchedAt}
         title={title}
         description={days === 1 ? '北京时间今日的访客与浏览量' : `北京时间 · 最近 ${days} 天的访客与浏览量`}
         action={hasStoreReporting && audience === 'owner' && <div className="admin-store-control"><label htmlFor="visitor-store">访问店铺</label><WorkspaceSelect id="visitor-store" label="访问店铺" value={store} options={ownerStoreOptions(stores)} onValueChange={setStore} /></div>}
@@ -114,6 +117,7 @@ export default function AdminVisitorsPage({ revision, stores }: { revision: numb
             </DialogHeader>
             <VisitorStats
               endpoint={selected.owner ? `/api/admin/my-shop/visitors?store=${selected.id}` : `/api/admin/partners/${selected.id}/visitors`}
+              pollInterval={VISITOR_POLL_INTERVAL}
               revision={revision}
               title={`${selected.name} 访客走势`}
               description={selected.owner ? '所选店铺独立访客与浏览量趋势' : '专属推广链接独立访客与浏览量趋势'}

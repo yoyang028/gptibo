@@ -4,10 +4,14 @@ import { failedQuery, mutationError } from '../src/lib/query-state.ts'
 import { RequestError } from '../src/lib/api.ts'
 
 test('a transient refresh failure can retain only the same query and never authorization-denied data', () => {
-  const previous = { path: '/api/orders/one/refunds', revision: 0, data: { cases: ['pending'] }, error: '' }
+  const previous = { path: '/api/orders/one/refunds', revision: 0, data: { cases: ['pending'] }, error: '', fetchedAt: 1234 }
   for (const error of [new TypeError('offline'), new RequestError('unavailable', 503), new RequestError('slow', 429)]) {
-    assert.deepEqual(failedQuery(previous, previous.path, 1, error, true).data, previous.data)
-    assert.equal(failedQuery(previous, '/api/orders/two/refunds', 1, error, true).data, undefined)
+    const retained = failedQuery(previous, previous.path, 1, error, true)
+    assert.deepEqual(retained.data, previous.data)
+    assert.equal(retained.fetchedAt, previous.fetchedAt)
+    const other = failedQuery(previous, '/api/orders/two/refunds', 1, error, true)
+    assert.equal(other.data, undefined)
+    assert.equal(other.fetchedAt, undefined)
     assert.equal(failedQuery(previous, previous.path, 1, error, false).data, undefined)
   }
   for (const status of [400, 401, 403, 404, 409]) assert.equal(failedQuery(previous, previous.path, 1, new RequestError('denied', status), true).data, undefined)
