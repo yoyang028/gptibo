@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { CopyButton } from '@/components/copy-button'
+import TicketWorkspace from '@/components/ticket-workspace'
 import { api, errorMessage } from '@/lib/api'
 import { CopyLink, Feedback, Pagination, Pricing } from '@/partner/shared'
 import { date, money, payoutLabel, usePartnerData, type Dashboard, type Partner, type Payout } from '@/partner/model'
@@ -17,6 +18,7 @@ import { PartnerOrders } from '@/partner/Partner'
 import PartnerDefaultPrices from './PartnerDefaultPrices'
 import { RecruitPermission, ParentRelationship } from './RecruitPermission'
 import { partnerStorefrontPath } from '../../shared/partner-link.ts'
+import { adminPartnerTab, type AdminPartnerTab } from '../../shared/admin-navigation.ts'
 import '@/partner/partner.css'
 
 function PartnerCreator({ onClose, onSaved }: { onClose: () => void; onSaved: (id?: string, message?: string, invitationSent?: boolean) => void }) {
@@ -444,15 +446,21 @@ function PayoutCooldownReset({ partner, onClose, onSaved }: { partner?: Partner;
     </DialogContent>
   </Dialog>
 }
-export default function PartnersPage({ revision: externalRevision }: { revision: number }) {
-  const [notice, setNotice] = useState<{ message: string; failed: boolean }>(); const [revision, setRevision] = useState(0); const [tab, setTab] = useState('partners'); const [payoutsVisited, setPayoutsVisited] = useState(false); const [create, setCreate] = useState(false); const [selected, setSelected] = useState<string>(); const [page, setPage] = useState(1); const [search, setSearch] = useState(''); const [q, setQ] = useState('')
+export default function PartnersPage({ revision: externalRevision, tab, onTabChange, onOrder }: {
+  revision: number
+  tab: AdminPartnerTab
+  onTabChange: (tab: AdminPartnerTab) => void
+  onOrder: (id: string) => void
+}) {
+  const [notice, setNotice] = useState<{ message: string; failed: boolean }>(); const [revision, setRevision] = useState(0); const [payoutsVisited, setPayoutsVisited] = useState(tab === 'payouts'); const [create, setCreate] = useState(false); const [selected, setSelected] = useState<string>(); const [page, setPage] = useState(1); const [search, setSearch] = useState(''); const [q, setQ] = useState('')
   const reload = () => setRevision(v => v + 1); const version = externalRevision + revision
   const [cooldownReset, setCooldownReset] = useState<{ partner?: Partner }>()
   const { data, error, loading } = usePartnerData<{ rows: (Partner & { wechat: string; qq: string })[]; total: number; mailReady: boolean }>(`/api/admin/partners?page=${page}&q=${encodeURIComponent(q)}`, version)
   return <>
-    <Tabs value={tab} onValueChange={v => { setTab(String(v)); if (v === 'payouts') setPayoutsVisited(true) }} className="partner-tabs">
-      <TabsList variant="line">
+    <Tabs value={tab} onValueChange={value => { if (value === 'payouts') setPayoutsVisited(true); onTabChange(adminPartnerTab(value)) }} className="partner-tabs">
+      <TabsList variant="line" aria-label="代理管理">
         <TabsTrigger value="partners">代理列表</TabsTrigger>
+        <TabsTrigger value="tickets">代理工单</TabsTrigger>
         <TabsTrigger value="payouts">结算申请</TabsTrigger>
         <TabsTrigger value="defaults">默认拿货价</TabsTrigger>
       </TabsList>
@@ -497,6 +505,7 @@ export default function PartnersPage({ revision: externalRevision }: { revision:
           </>}
         </section>
       </TabsContent>
+      <TabsContent value="tickets" className="workspace-enter"><TicketWorkspace admin revision={version} onOrder={onOrder} /></TabsContent>
       <TabsContent value="defaults" className="workspace-enter"><PartnerDefaultPrices revision={version} /></TabsContent>
       <TabsContent value="payouts" keepMounted={payoutsVisited} className="workspace-enter"><Payouts revision={version} onSaved={reload} /></TabsContent>
     </Tabs>

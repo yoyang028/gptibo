@@ -1,11 +1,11 @@
 import ProductCatalog from './ProductCatalog'
-import { ADMIN_SUPPLIERS, adminProductRoute, type ProductSection } from '../../shared/admin-suppliers'
+import { ADMIN_SUPPLIERS } from '../../shared/admin-suppliers'
+import { readAdminRoute, writeAdminRoute, type AdminRoute } from '../../shared/admin-navigation'
 import { ownerStoreOptions, storeScopeParams, type AdminAudience, type AdminStoreOption } from '../../shared/admin-store-scope'
 import { AdminAudienceSwitch } from './AdminAudienceSwitch'
 import MyShop from './MyShop'
 import ShopOrderActions from './ShopOrderActions'
 import { ShopBrand } from '@/components/shop-brand'
-import TicketWorkspace from '@/components/ticket-workspace'
 import { TicketAlerts } from './TicketAlerts'
 import { RechargeRecoveryPanel, type RechargeCredential } from './RechargeRecoveryPanel'
 import SecurityPage from './SecurityPage'
@@ -58,7 +58,6 @@ const views = [
   { id: 'products', label: '商品管理', icon: Package },
   { id: 'security', label: '安全审计', icon: ShieldCheck },
   { id: 'overview', label: '运营概览', icon: LayoutDashboard }, { id: 'orders', label: '订单管理', icon: ClipboardList },
-  { id: 'tickets', label: '代理工单', icon: MessageCircle },
   { id: 'refunds', label: '退款与售后', icon: ShieldCheck },
   { id: 'accounting', label: '清账统计', icon: ChartNoAxesCombined },
   { id: 'customers', label: '客户管理', icon: Users },
@@ -66,6 +65,10 @@ const views = [
   { id: 'interest', label: '上线提醒', icon: Mail },
   { id: 'contacts', label: '联系方式', icon: MessageCircle }, { id: 'integrations', label: '服务接入', icon: Plug }, { id: 'partners', label: '代理管理', icon: Users }, { id: 'visitors', label: '访客统计', icon: ChartNoAxesCombined },
 ]
+function currentAdminRoute() {
+  const route = readAdminRoute(location.search)
+  return views.some(item => item.id === route.view) ? route : readAdminRoute('')
+}
 type Session = { membershipEnabled?: boolean; membershipStores?: { id: string; name: string }[]; ownerStores?: AdminStoreOption[]; authenticated: boolean; configured: boolean; mailReady: boolean; username?: string }
 type AdminOrder = ServerOrder & { ownerStoreName?: string }
 type Overview = { stats: { total: number; pending: number; active: number; completed: number; refund_amount: number; paid_amount: number }; interest: { total: number }; recent: AdminOrder[] }
@@ -208,11 +211,8 @@ export default function Admin() {
   const { session, error: sessionError, setError: setSessionError, check: checkSession, clear: clearSession } = useSession<Session>('/api/admin/session', 'admin', !accessRequired)
   const [username, setUsername] = useState(''); const [code, setCode] = useState(''); const [busy, setBusy] = useState(false)
   const [emailCode, setEmailCode] = useState(''); const [challenge, setChallenge] = useState<{ id: string; username: string }>(); const [sending, setSending] = useState(false); const [cooldown, setCooldown] = useState(0); const [mailNotice, setMailNotice] = useState('')
-  const [route, setRoute] = useState(() => {
-    const initial = adminProductRoute(location.search)
-    return views.some(v => v.id === initial.view) ? initial : { view: 'overview', supplier: 'all' as ProductSection }
-  })
-  const view = route.view, supplier = route.supplier
+  const [route, setRoute] = useState(currentAdminRoute)
+  const { view, supplier, partnerTab } = route
   const [revision, setRevision] = useState(0)
   const [selectedStore, setSelectedStore] = useState(() => {
     const value = new URLSearchParams(location.search).get('store') || ''
@@ -225,12 +225,10 @@ export default function Admin() {
   const [detail, setDetail] = useState<{ id: string; scope: string }>()
   const [refundEntry, setRefundEntry] = useState<{ audience: AdminAudience; visit: number }>({ audience:'owner', visit:0 })
   function openOrder(id: string, scope = 'all') { setDetail({ id, scope }) }
-  function navigate(nextView: string, nextSupplier: ProductSection = 'all') {
-    const next = { view: nextView, supplier: nextView === 'products' ? nextSupplier : 'all' as ProductSection }
+  function navigate(view: string, { supplier = 'all', partnerTab = 'partners' }: Partial<Omit<AdminRoute, 'view'>> = {}) {
+    const next = { view, supplier, partnerTab }
     const url = new URL(location.href)
-    url.searchParams.set('view', next.view)
-    if (next.view === 'products' && next.supplier !== 'all') url.searchParams.set('supplier', next.supplier)
-    else url.searchParams.delete('supplier')
+    writeAdminRoute(url.searchParams, next)
     if (url.href !== location.href) history.pushState(null, '', url)
     setRoute(next)
   }
@@ -245,9 +243,9 @@ export default function Admin() {
   }
   useEffect(() => {
     const restore = () => {
-      const next = adminProductRoute(location.search)
+      const next = currentAdminRoute()
       if (next.view === 'refunds') setRefundEntry(entry => ({ audience:'owner', visit:entry.visit + 1 }))
-      setRoute(views.some(v => v.id === next.view) ? next : { view: 'overview', supplier: 'all' })
+      setRoute(next)
       const store = new URLSearchParams(location.search).get('store') || ''
       setSelectedStore(['platform','store-2','store-3'].includes(store) ? store : '')
     }
@@ -256,11 +254,9 @@ export default function Admin() {
   }, [])
   useEffect(() => {
     const url = new URL(location.href)
-    url.searchParams.set('view', view)
-    if (view === 'products' && supplier !== 'all') url.searchParams.set('supplier', supplier)
-    else url.searchParams.delete('supplier')
-    history.replaceState(null, '', url)
-  }, [view, supplier])
+    writeAdminRoute(url.searchParams, route)
+    if (url.href !== location.href) history.replaceState(null, '', url)
+  }, [route])
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
   type Identity = { shop: { id: string; name: string; brandName: string; logo: string }; storefront_url?: string }
   const {data: hostIdentity} = useResource<Identity>('/api/catalog?identity=1',revision)
@@ -321,19 +317,18 @@ export default function Admin() {
       <header className="admin-topbar"><span>{shopName} / {current.label}{view === 'products' ? ' / ' + productLabel : ''}</span><div><a href={storefrontUrl} target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
       <main className="admin-main">
         <div className="admin-page-heading"><div><span>WORKSPACE</span><h1 ref={heading} tabIndex={-1}>{current.label}</h1><p>{view === 'products' ? '按上游服务商统一管理商品、规格、定价与 API 配置。' : view === 'orders' ? '从创建到完成，查看订单与处理记录。' : view === 'accounting' ? '筛选订单查看净利润，按清账周期保存统计。' : view === 'invoices' ? '管理代理开票申请与手续费收款，登记平台提交进度。' : view === 'customers' ? '按店铺查看客户资料与会员到期记录。' : view === 'contacts' ? '设置平台商店向客户展示的联系方式。' : view === 'integrations' ? '管理收款方式、平台手续费与通知服务。' : '基于服务器记录，了解服务与订单进展。'}</p></div><Button variant="outline" onClick={() => { setRevision(v => v + 1); void checkSession() }}><RefreshCw size={15} />刷新</Button></div>
-        <TicketAlerts onOpen={() => setView('tickets')} onRefunds={openRefunds} />
+        <TicketAlerts onOpen={() => navigate('partners', { partnerTab: 'tickets' })} onRefunds={openRefunds} />
         <Feedback error={sessionError} />
-        {view === 'products' && <ProductCatalog key={supplier} revision={revision} supplier={supplier} onSupplier={next => navigate('products', next)} onSaved={() => setRevision(v => v + 1)} onOrder={openOrder} />}
-        {view === 'tickets' && <TicketWorkspace admin revision={revision} onOrder={openOrder} />}
+        {view === 'products' && <ProductCatalog key={supplier} revision={revision} supplier={supplier} onSupplier={supplier => navigate('products', { supplier })} onSaved={() => setRevision(v => v + 1)} onOrder={openOrder} />}
         {view === 'security' && <SecurityPage revision={revision} />}
         {view === 'overview' && <OverviewPage revision={revision} onSelect={openOrder} onOrders={() => setView('orders')} onVisitors={() => setView('visitors')} />}
-        {view === 'my-shop' && <MyShop storeId={storeId} onStoreChange={selectStore} revision={revision} onManageProducts={() => navigate('products')} onSaved={() => { setRevision(v => v + 1); void checkSession() }} />}
+        {view === 'my-shop' && <MyShop storeId={storeId} onStoreChange={selectStore} revision={revision} onSaved={() => { setRevision(v => v + 1); void checkSession() }} />}
         {view === 'orders' && <OrdersPage revision={revision} stores={ownerStores} onSelect={openOrder} />}
         {view === 'refunds' && <RefundsPage key={refundEntry.visit} initialAudience={refundEntry.audience} revision={revision} stores={ownerStores} />}
         {view === 'interest' && <InterestPage revision={revision} />}
         {view === 'contacts' && <SupportContactsPanel endpoint="/api/admin/support-contacts" revision={revision} />}
         {view === 'integrations' && <IntegrationsPage revision={revision} />}
-        {view === 'partners' && <PartnersPage revision={revision} />}
+        {view === 'partners' && <PartnersPage revision={revision} tab={partnerTab} onTabChange={partnerTab => navigate('partners', { partnerTab })} onOrder={openOrder} />}
         {view === 'visitors' && <AdminVisitorsPage revision={revision} stores={ownerStores} />}
         {view === 'accounting' && <AccountingPage revision={revision} stores={ownerStores} />}
         {view === 'invoices' && <InvoiceWorkspace admin revision={revision} />}

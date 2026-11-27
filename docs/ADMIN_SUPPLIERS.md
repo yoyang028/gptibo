@@ -7,7 +7,7 @@
 - Grizzly：保留原接码配置、三个项目、双号码池和订单资金核对。
 - Daju：通过 `hanfolk_product_links` 识别导入来源，人工交付商品也能正确归类。默认展示已整理商品，按九类分组；上游目录折叠显示，API 配置单独放置。
 
-新入口为 `/admin?view=products`，可带 `supplier=bugan|xiaojiu|grizzly|daju|other`。原 `view=sms`、`view=hanfolk`、`view=plans` 自动转入对应分类，刷新和浏览器后退保留位置。「我的店铺」中的商品发布入口统一转到商品管理。
+商品入口为 `/admin?view=products`，可带 `supplier=bugan|xiaojiu|grizzly|daju|other`。原 `view=sms`、`view=hanfolk`、`view=plans` 自动转入对应分类，刷新和浏览器后退保留位置。发布自营商品从侧边栏进入「商品管理 → 自营及其他」。
 
 库存总览的 `GET /api/admin/suppliers` 只查询本地数据库，不联系上游。接入检查和目录读取必须由管理员主动触发；迁移 `0056_catalog_deletions.sql` 记录删除标识；无历史引用的无效和旧重复商品从商品表、规格映射、套餐与配置中实际删除。订单或 CRM 引用的套餐只保留禁售的历史关联行，管理列表、价格选择和展示设置均不再返回它们。完整同步成功后才清理；上游请求失败或配置并发变化时不删除。导入拒绝无货规格，商品恢复库存后可重新导入。
 

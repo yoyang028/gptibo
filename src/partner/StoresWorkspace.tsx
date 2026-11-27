@@ -32,8 +32,10 @@ import {
 import { CopyButton } from '@/components/copy-button'
 import { api, errorMessage } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
-import { money, toCents } from './model'
+import { money, toCents, type Offer } from './model'
+import { ProductManagement } from './ProductManagement'
 import { partnerStorefrontPath } from '../../shared/partner-link'
+import type { StorefrontProductId } from '../../shared/product-order'
 import './stores-workspace.css'
 
 type Settings = {
@@ -157,7 +159,7 @@ export function StoresWorkspace({
   active = true,
   revision: parentRevision = 0,
   sortingContent,
-  publishingContent,
+  ownerSettings,
   owner = false,
   selectedStoreId,
   onStoreChange,
@@ -171,7 +173,7 @@ export function StoresWorkspace({
   active?: boolean
   revision?: number
   sortingContent?: ReactNode
-  publishingContent?: ReactNode
+  ownerSettings?: ReactNode
   owner?: boolean
   onSaved?: () => void
 }) {
@@ -289,7 +291,7 @@ export function StoresWorkspace({
   const storeContext = shop && (
     <div className="store-context">
       <WorkspaceSelect
-        label="选择商店"
+        label={owner ? '当前店铺' : '选择商店'}
         value={shop.id}
         onValueChange={setSelected}
         disabled={busy}
@@ -303,6 +305,7 @@ export function StoresWorkspace({
           <strong>{shop.name}</strong>
           <a
             href={storefrontUrl(shop)}
+            aria-label={owner ? '预览当前店铺' : undefined}
             target="_blank"
             rel="noreferrer"
           >
@@ -320,31 +323,49 @@ export function StoresWorkspace({
               编辑商店
             </Button>
           )}
+          {owner && data.capabilities?.bulkSettings && <StoreBulkSettings stores={data.stores} onSaved={reload} />}
         </div>
       </div>
     </div>
   )
+  const partnerStoreContext = !owner && storeContext
+  const ownerOffers: Offer[] = owner && shop ? data.prices.filter(price => price.store_id === shop.id).map(price => ({
+    ...price, id: price.plan, enabled: Number(price.enabled), renewal_only: 0,
+  })) : []
+  const customProducts = [...new Map(ownerOffers.filter(offer => offer.product_id.startsWith('custom-')).map(offer => [
+    offer.product_id, { id: offer.product_id as StorefrontProductId, name: offer.name },
+  ])).values()]
+  const sortingTab = {
+    value: 'sorting',
+    label: owner ? '商品上下架与排序' : '默认店排序',
+    content: owner && shop ? <ProductManagement
+      customProducts={customProducts}
+      endpoint={prefix + '/product-order?store=' + shop.id}
+      plans={ownerOffers}
+      storeUrl={storefrontUrl(shop)}
+      onSaved={reload}
+    /> : sortingContent,
+  }
   return (
     <section className="stores-workspace">
-      <div className="stores-heading">
+      {owner ? storeContext : <div className="stores-heading">
         <div>
           <h2>
             <Store size={21} />
-            {owner ? '我的店铺' : '我的商店'} <small>{data.stores.length}/{data.capabilities?.maxStores ?? (owner ? 1 : 5)}</small>
+            我的商店 <small>{data.stores.length}/{data.capabilities?.maxStores ?? 5}</small>
           </h2>
-          <p>{owner ? '编辑各店的形象与价格，也可同步选定参数。' : data.capabilities?.maxStores === 1 ? '管理自己的商店形象、售价和客户订单，商品与供货价由平台统一提供。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
+          <p>{data.capabilities?.maxStores === 1 ? '管理自己的商店形象、售价和客户订单，商品与供货价由平台统一提供。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
         </div>
-        {owner && data.capabilities?.bulkSettings && <StoreBulkSettings stores={data.stores} onSaved={reload} />}
-        {!readOnly && !owner && (
+        {!readOnly && (
           <Button
-            disabled={busy || owner || data.stores.length >= (data.capabilities?.maxStores ?? 5)}
+            disabled={busy || data.stores.length >= (data.capabilities?.maxStores ?? 5)}
             onClick={() => setEditor('new')}
           >
             <Plus size={15} />
             新增商店
           </Button>
         )}
-      </div>
+      </div>}
       {(error || resource.error || domainResource.error) && (
         <p className="stores-error" role="alert">
           {error || resource.error || domainResource.error}
@@ -361,13 +382,11 @@ export function StoresWorkspace({
           value={tab}
           onValueChange={setTab}
           items={[
-            ...(publishingContent ? [{value:'publishing',label:'商品发布',content:publishingContent}] : []),
             {
               value: 'overview',
               label: '商店概览',
               content: (
                 <div className="store-overview">
-                  {owner && storeContext}
                   <div className="store-overview-summary">
                     <div>
                       <span>营业中的商店</span>
@@ -430,7 +449,7 @@ export function StoresWorkspace({
                             setTab('prices')
                           }}
                         >
-                          管理商品
+                          {owner ? '调整售价' : '管理商品'}
                         </Button>
                         {!readOnly && (
                           <Button variant="ghost" onClick={() => setEditor(s)}>
@@ -448,7 +467,7 @@ export function StoresWorkspace({
               label: '商品售价',
               content: (
                 <>
-                  {storeContext}
+                  {partnerStoreContext}
                   <>
                     <div className="store-price-list">
                       <p className="stores-help">
@@ -576,18 +595,19 @@ export function StoresWorkspace({
                 </>
               ),
             },
+            ...(owner ? [sortingTab] : []),
             {
-              value: 'domains',
-              label: '域名与账单',
+              value: owner ? 'settings' : 'domains',
+              label: owner ? '账号设置' : '域名与账单',
               content: (
-                <>
-                  {storeContext}
-                  <>
+                <div className={owner ? 'owner-account-settings' : undefined}>
+                  {partnerStoreContext}
+                  {(!owner || data.capabilities?.customDomains !== false) && <section className={owner ? 'admin-panel owner-settings-card' : undefined}>
                     <div className="stores-heading">
                       <div>
                         <h3>
                           <Globe size={18} />
-                          域名与续费
+                          {owner ? '域名与账单' : '域名与续费'}
                         </h3>
                         <p>
                           {owner ? '查看当前店铺已绑定的正式域名与访问入口。' : monthlyFee === 0
@@ -778,8 +798,9 @@ export function StoresWorkspace({
                         ))}
                       </div>
                     )}
-                  </>
-                </>
+                  </section>}
+                  {owner && ownerSettings}
+                </div>
               ),
             },
             {
@@ -787,7 +808,7 @@ export function StoresWorkspace({
               label: '商店订单',
               content: (
                 <>
-                  {storeContext}
+                  {partnerStoreContext}
                   <StoreOrderList
                     key={shop.id}
                     prefix={prefix}
@@ -797,15 +818,7 @@ export function StoresWorkspace({
                 </>
               ),
             },
-            ...(sortingContent
-              ? [
-                  {
-                    value: 'sorting',
-                    label: owner ? '商品上下架与排序' : '默认店排序',
-                    content: sortingContent,
-                  },
-                ]
-              : []),
+            ...(!owner && sortingContent ? [sortingTab] : []),
           ].filter(item => (item.value !== 'orders' || !owner) && (item.value !== 'coupons' || data.capabilities?.coupons !== false) && (item.value !== 'domains' || data.capabilities?.customDomains !== false))}
         />
       )}

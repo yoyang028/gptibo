@@ -37,6 +37,10 @@
 .admin-panel-title { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:66px; padding:14px 22px; border-bottom:1px solid var(--border); }
 .admin-panel-title h2 { font-size:15px; font-weight:550; }
 .admin-panel-title>span { font-size:11px; color:var(--muted-foreground); }
+.owner-account-settings { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+.owner-account-settings .owner-settings-card { margin:0; padding:16px clamp(12px,2vw,20px); }
+.owner-settings-card .partner-notification-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.owner-settings-card .partner-notification-heading h3 { display:flex; align-items:center; gap:8px; font-size:17px; }
 .admin-table-scroll { position:relative; overflow-x:auto; }
 .admin-table { width:100%; border-collapse:collapse; text-align:left; white-space:nowrap; }
 .admin-table th { padding:14px 20px; font-size:11px; font-weight:400; color:var(--muted-foreground); background:var(--secondary); }

@@ -165,7 +165,7 @@ try {
     .first()
     .click()
   const storeDialog = adminPage.getByRole('dialog')
-  await storeDialog.getByLabel('品牌名称', { exact: true }).fill('本机验收商店')
+  await storeDialog.getByLabel('商店名称', { exact: true }).fill('本机验收商店')
   await storeDialog.getByLabel('Logo', { exact: true }).setInputFiles(imagePath)
   await storeDialog
     .getByRole('button', { name: '保存商店', exact: true })
@@ -177,9 +177,13 @@ try {
   record(
     'Original store editor saves root brand and logo; storefront title and header reflect it',
   )
-  await adminPage.getByRole('tab', { name: '商品发布', exact: true }).click()
+  const productNavigation = adminPage.getByRole('navigation', { name: '后台导航' })
+    .getByRole('button', { name: '商品管理', exact: true })
+  await productNavigation.click()
+  await adminPage.getByRole('navigation', { name: '商品服务商' })
+    .getByRole('button', { name: /^自营及其他/ }).click()
   await adminPage
-    .getByRole('button', { name: '发布新商品', exact: true })
+    .getByRole('button', { name: '新增自营商品', exact: true })
     .click()
   const dialog = adminPage.getByRole('dialog')
   await dialog.getByLabel('商品名称', { exact: true }).fill('本机验收自营订阅')
@@ -385,18 +389,15 @@ try {
     path: path.join(evidence, 'product-desktop.png'),
     fullPage: true,
   })
-  await adminPage
-    .getByRole('navigation', { name: '后台导航' })
-    .getByRole('button', { name: '我的店铺', exact: true })
-    .click()
-  await adminPage.getByRole('tab', { name: '商品发布', exact: true }).click()
+  await productNavigation.click()
+  await adminPage.getByRole('textbox', { name: '搜索商品或规格', exact: true }).fill('本机验收自营订阅')
   await adminPage
     .getByText('本机验收自营订阅', { exact: true })
     .first()
     .waitFor()
   await adminPage.waitForTimeout(350)
   await adminPage.screenshot({
-    path: path.join(evidence, 'my-shop-products.png'),
+    path: path.join(evidence, 'admin-products.png'),
     fullPage: true,
   })
   record(
@@ -426,10 +427,11 @@ try {
     )
   ).product
   xiaojiuId = draft.id
-  await adminPage.getByRole('button', { name: '重新读取', exact: true }).click()
+  await adminPage.getByRole('button', { name: '刷新', exact: true }).click()
+  await adminPage.getByRole('textbox', { name: '搜索商品或规格', exact: true }).fill(draft.name)
   await adminPage
-    .locator(`.owner-product-row[data-product-id="${xiaojiuId}"]`)
-    .getByRole('button', { name: '编辑商品', exact: true })
+    .locator(`[data-product-id="${xiaojiuId}"]`)
+    .getByRole('button', { name: '编辑与定价', exact: true })
     .click()
   const xiaojiuDialog = adminPage.getByRole('dialog')
   await xiaojiuDialog

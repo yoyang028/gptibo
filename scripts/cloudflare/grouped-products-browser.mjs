@@ -126,7 +126,7 @@ try {
       ),
     )
   await adminPage.getByRole('button', { name: '登录后台', exact: true }).click()
-  await adminPage.getByRole('tab', { name: '商品发布', exact: true }).waitFor()
+  await adminPage.getByRole('tab', { name: '商店概览', exact: true }).waitFor()
   const fixture = {
     id: '',
     version: 0,
@@ -320,10 +320,12 @@ try {
   record(
     'Owner product sorting contains two grouped rows with three and four independently editable prices',
   )
-  await adminPage.getByRole('tab', { name: '商品发布', exact: true }).click()
+  await adminPage.getByRole('navigation', { name: '后台导航' })
+    .getByRole('button', { name: '商品管理', exact: true }).click()
+  await adminPage.getByRole('textbox', { name: '搜索商品或规格', exact: true }).fill('Claude Pro')
   await adminPage
     .locator(`[data-product-id="${created[0]}"]`)
-    .getByRole('button', { name: '编辑商品', exact: true })
+    .getByRole('button', { name: '编辑与定价', exact: true })
     .click()
   const dialog = adminPage.getByRole('dialog')
   assert.equal(
