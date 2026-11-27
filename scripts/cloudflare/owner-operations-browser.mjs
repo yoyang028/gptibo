@@ -19,6 +19,8 @@ const buyer=await browser.newContext({baseURL:origin,ignoreHTTPSErrors:true})
 const result={checks:[],pageErrors:[],externalRequests:[],realPayments:0,realEmails:0}
 await admin.route('**/*',route=>{if(new URL(route.request().url()).origin===origin)return route.continue();result.externalRequests.push(new URL(route.request().url()).origin);return route.abort()})
 const page=await admin.newPage();page.on('pageerror',e=>result.pageErrors.push(e.message))
+const navigation=page.getByRole('navigation',{name:'后台导航'})
+const go=label=>navigation.getByRole('button',{name:label,exact:true}).click()
 const record=name=>{result.checks.push({name,passed:true});console.log(name)}
 async function api(url,data,context=admin,status=200){const r=await context.request.fetch(url,{method:data===undefined?'GET':'POST',headers:{Origin:origin},...(data===undefined?{}:{data})});assert.equal(r.status(),status,url+': '+await r.text());return r.json()}
 async function choose(label,name){await page.getByRole('combobox',{name:label,exact:true}).click();await page.getByRole('option',{name,exact:true}).click()}
@@ -37,8 +39,9 @@ try{
   const stores=(await api('/api/admin/my-shop/stores')).stores
   assert.deepEqual(stores.map(s=>[s.name,s.slot]),[['ScholAI',1],['AI星球',2],['备用商店',3]])
   assert.equal(stores[2].active,false)
-  assert.equal(await page.getByRole('tab',{name:'我的客户',exact:true}).count(),0)
-  assert.equal(await page.locator('.owner-shop-module').getByRole('button',{name:'客户',exact:true}).count(),0)
+  for(const label of ['我的客户','订单收益','订单明细','退款与售后','清账与结算','访客统计','商店订单']){
+    assert.equal(await page.getByRole('tab',{name:label,exact:true}).count(),0)
+  }
   record('Store order is ScholAI, AI星球, 备用商店 and the backup storefront remains closed')
   product=(await api('/api/admin/my-shop/products',{
     id:'',version:0,status:'published',pricePending:false,name:'客户自动归集验收 '+prefix,category:'工具服务',tagline:'本机模拟',description:'只用于本机自动验收，不产生真实付款。',
@@ -51,22 +54,48 @@ try{
   async function order(store,email,code){return(await api('/api/orders',{plan:product.id,partner:store==='platform'?undefined:store,
     expectedPrice:store==='platform'?(code?840:990):1490,couponCode:code,email,key:crypto.randomUUID()},buyer,201)).order}
   const academic=await order('platform',shared,couponCode),planet=await order('store-3',shared)
+  const paid=new Map()
   for(const order of [academic,planet]){
     await api('/api/orders/'+order.id+'/custom-action',{action:'claim-payment',version:order.version,reference:'LOCAL-FIXTURE-'+order.id},buyer)
-    await api('/api/admin/my-shop/orders/'+order.id,{action:'confirm-payment',version:order.version,note:'本机模拟到账记录，不实际收款'})
+    const confirmed=await api('/api/admin/my-shop/orders/'+order.id,{action:'confirm-payment',version:order.version,note:'本机模拟到账记录，不实际收款'})
+    paid.set(order.id,confirmed.order)
   }
-  await page.getByRole('tab',{name:'订单收益',exact:true}).click()
-  await page.getByRole('combobox',{name:'订单店铺范围',exact:true}).waitFor()
-  let pending=response('/api/admin/orders','store-3');await choose('当前店铺','AI星球');assert.equal((await pending).status(),200)
+  await go('订单管理')
+  await page.getByRole('combobox',{name:'订单店铺',exact:true}).waitFor()
+  let pending=response('/api/admin/orders','store-3');await choose('订单店铺','AI星球');assert.equal((await pending).status(),200)
   await page.getByRole('button',{name:planet.id,exact:true}).waitFor()
   assert.equal(await page.getByRole('button',{name:academic.id,exact:true}).count(),0)
-  pending=response('/api/admin/orders',null);await choose('订单店铺范围','全部自营店铺');assert.equal((await pending).status(),200)
+  pending=response('/api/admin/orders',null);await choose('订单店铺','全部自营店铺');assert.equal((await pending).status(),200)
   await page.getByRole('button',{name:academic.id,exact:true}).waitFor();await page.getByRole('button',{name:planet.id,exact:true}).waitFor()
   record('Order detail follows the selected store and can switch to the owner-wide overview')
-  pending=response('/api/admin/orders','store-2');await choose('订单店铺范围','备用商店');assert.equal((await pending).status(),200)
+  pending=response('/api/admin/orders','store-2');await choose('订单店铺','备用商店');assert.equal((await pending).status(),200)
   assert.equal(await page.getByRole('button',{name:academic.id,exact:true}).count(),0)
   record('The backup storefront order filter returns only that store without borrowing another store’s rows')
-  await page.getByRole('navigation',{name:'后台导航'}).getByRole('button',{name:'客户管理',exact:true}).click()
+  await api('/api/orders/'+planet.id+'/refunds',{version:paid.get(planet.id).version,key:crypto.randomUUID(),reason:'本机模拟售后申请'},buyer,201)
+  await go('退款与售后')
+  const refundFilter=page.getByRole('combobox',{name:'售后店铺',exact:true})
+  await refundFilter.getByText('全部渠道',{exact:true}).waitFor()
+  pending=response('/api/admin/refunds','store-3');await choose('售后店铺','AI星球')
+  const refunds=await(await pending).json()
+  assert(refunds.rows.some(row=>row.order_id===planet.id&&row.owner_store_name==='AI星球'))
+  const refundRow=page.locator('tbody tr').filter({hasText:planet.id})
+  await refundRow.getByRole('button',{name:'处理申请',exact:true}).click()
+  await page.getByRole('dialog').getByText('所属店铺：AI星球',{exact:true}).waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog').waitFor({state:'hidden'})
+  pending=response('/api/admin/refunds','platform');await choose('售后店铺','ScholAI')
+  assert(!(await(await pending).json()).rows.some(row=>row.order_id===planet.id))
+  record('Refunds have their own shop selection, scoped totals and matching detail dialog')
+
+  await go('清账统计')
+  await page.getByRole('combobox',{name:'账目店铺',exact:true}).getByText('全部渠道',{exact:true}).waitFor()
+  pending=response('/api/admin/accounting/report','platform');await choose('账目店铺','ScholAI');assert.equal((await pending).status(),200)
+  pending=response('/api/admin/accounting','platform');await page.getByRole('tab',{name:'清账与记录',exact:true}).click();assert.equal((await pending).status(),200)
+  await page.getByText('本期待清账',{exact:true}).waitFor()
+  assert.equal(await page.getByRole('button',{name:'记录本次清账',exact:true}).count(),0)
+  record('The independent accounting shop applies to profit and settlement reads without exposing a global close in a scoped view')
+
+  await go('客户管理')
   await choose('所属店铺','AI星球')
   const crm=page.locator('.crm-container')
   await crm.getByRole('columnheader',{name:'客户资料',exact:true}).waitFor()

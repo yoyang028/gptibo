@@ -332,7 +332,7 @@ export function StoresWorkspace({
             <Store size={21} />
             {owner ? '我的店铺' : '我的商店'} <small>{data.stores.length}/{data.capabilities?.maxStores ?? (owner ? 1 : 5)}</small>
           </h2>
-          <p>{owner ? '分别管理三家自营店的形象、价格与订单，也可统一同步选定参数。' : data.capabilities?.maxStores === 1 ? '管理自己的商店形象、售价和客户订单，商品与供货价由平台统一提供。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
+          <p>{owner ? '编辑各店的形象与价格，也可同步选定参数。' : data.capabilities?.maxStores === 1 ? '管理自己的商店形象、售价和客户订单，商品与供货价由平台统一提供。' : '各店独立定价和优惠，收益汇入同一个代理账户。'}</p>
         </div>
         {owner && data.capabilities?.bulkSettings && <StoreBulkSettings stores={data.stores} onSaved={reload} />}
         {!readOnly && !owner && (
@@ -806,7 +806,7 @@ export function StoresWorkspace({
                   },
                 ]
               : []),
-          ].filter(item => (item.value !== 'coupons' || data.capabilities?.coupons !== false) && (item.value !== 'domains' || data.capabilities?.customDomains !== false))}
+          ].filter(item => (item.value !== 'orders' || !owner) && (item.value !== 'coupons' || data.capabilities?.coupons !== false) && (item.value !== 'domains' || data.capabilities?.customDomains !== false))}
         />
       )}
       <Dialog

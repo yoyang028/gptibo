@@ -1,5 +1,6 @@
 import { ApiError, json, type Env, type Value } from './platform.ts'
 import { profitSql } from './finance.ts'
+import { readAdminStoreScope, scopedOrders } from './admin-store-scope.ts'
 import type { AccountingReport, AccountingReportTotals } from '../shared/accounting.ts'
 
 const statuses = ['all','pending','session','processing','success','failed','cancelled','refunded']
@@ -27,7 +28,8 @@ export async function accountingReport(env: Env, url: URL) {
   if (!statuses.includes(status)) throw new ApiError('订单状态无效。')
   if (start !== null && end !== null && start >= end) throw new ApiError('结束时间必须晚于开始时间。')
   if (!Number.isInteger(page) || page < 1 || page > 10000) throw new ApiError('页码无效。')
-  const clauses = ["o.mode='live'",'o.is_test=0']; const values: Value[] = []
+  const scope = scopedOrders(await readAdminStoreScope(env, url))
+  const clauses = ["o.mode='live'",'o.is_test=0',...scope.clauses]; const values: Value[] = [...scope.values]
   if (start !== null) { clauses.push('o.created_at>=?'); values.push(start) }
   if (end !== null) { clauses.push('o.created_at<?'); values.push(end) }
   if (status === 'refunded') clauses.push('MAX(o.refunded_cents,COALESCE(t.refunded_cents,0))>0')
@@ -37,6 +39,7 @@ export async function accountingReport(env: Env, url: URL) {
   // profitSql is the same earned commission used by the payout system, whether
   // that commission has already been withdrawn or is still owed to the agent.
   const source = `SELECT o.id,o.plan,o.plan_name,o.status,o.payment_status,o.partner_name,o.created_at,
+    CASE WHEN o.partner_id IS NULL THEN (SELECT json_extract(settings,'$.name') FROM owner_shop_settings WHERE id=o.owner_store_id) END store_name,
     CASE WHEN o.payment_status='paid' THEN 1 ELSE 0 END paid,
     CASE WHEN o.payment_status='paid' AND o.status='success' THEN 1 ELSE 0 END completed,
     CASE WHEN o.payment_status='paid' THEN o.price_cents ELSE 0 END paid_cents,

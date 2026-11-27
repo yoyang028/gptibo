@@ -50,6 +50,23 @@
 .admin-mode,.admin-pill { display:inline-flex; align-items:center; font-size:10px; padding:4px 7px; background:var(--secondary); color:var(--muted-foreground); border-radius:5px; white-space:nowrap; }
 .admin-pill.available { background:var(--success-bg); color:var(--success); }
 .admin-filters { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:18px 20px; border-bottom:1px solid var(--border); }
+.admin-store-control { display:flex; align-items:center; flex-wrap:wrap; gap:8px; color:var(--muted-foreground); font-size:12px; }
+.admin-store-control label { white-space:nowrap; }
+.admin-store-control .partner-select { min-width:9rem; }
+.admin-page-filters,.admin-accounting-controls { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.admin-accounting-controls { justify-content:space-between; margin-bottom:8px; }
+.admin-refunds-heading { flex-wrap:wrap; gap:12px; padding-block:12px; }
+.admin-order-table,.admin-refunds-table,.admin-traffic-table { table-layout:fixed; min-width:54rem; }
+:is(.admin-order-table,.admin-refunds-table,.admin-traffic-table) :is(th,td) { padding-inline:1rem; }
+:is(.admin-order-table,.admin-refunds-table,.admin-traffic-table) :is(th,td):first-child { padding-inline-start:1.5rem; }
+:is(.admin-order-table,.admin-refunds-table,.admin-traffic-table) :is(th,td):last-child { padding-inline-end:1.5rem; }
+:is(.admin-order-table,.admin-refunds-table,.admin-traffic-table) td { white-space:normal; overflow-wrap:anywhere; }
+.admin-order-table .admin-order-id,.admin-refunds-table .partner-order-id,.admin-traffic-table td:nth-child(2) a {
+  display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.admin-order-flags { display:flex; flex-wrap:wrap; gap:4px; }
+.admin-refunds-table .refund-list-reason { width:100%; }
+.admin-accounting-table td { padding-block:.75rem; font-variant-numeric:tabular-nums; }
 .admin-search { position:relative; flex:1; min-width:170px; }
 .admin-search>svg { position:absolute; top:13px; left:12px; color:var(--muted-foreground); }
 .admin-search input { padding-left:37px; height:42px; }

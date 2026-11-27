@@ -1,6 +1,7 @@
 import { ApiError, body, json, type Env } from './platform.ts'
 import type { AccountingCost, AccountingGroup, AccountingSettlement, AccountingTotals } from '../shared/accounting.ts'
 import { accountingReport } from './accounting-report.ts'
+import { readAdminStoreScope, scopedOrders } from './admin-store-scope.ts'
 
 const totalsSql = `COALESCE(SUM(CASE WHEN kind='order' THEN 1 ELSE 0 END),0) order_count,
   COALESCE(SUM(CASE WHEN kind='refund' THEN 1 ELSE 0 END),0) adjustment_count,
@@ -16,23 +17,36 @@ function pageParam(url: URL) {
 export async function accountingRoutes(request: Request, env: Env, url: URL) {
   const db = env.INTEREST_DB; const path = url.pathname
   if (path === '/api/admin/accounting/report' && request.method === 'GET') return accountingReport(env,url)
+  const scope = await readAdminStoreScope(env, url)
+  const { clauses, values } = scopedOrders(scope)
+  const scoped = scope.channel !== 'all'
+  const where = clauses.join(' AND ')
   if (path === '/api/admin/accounting' && request.method === 'GET') {
     const page = pageParam(url)
+    const candidates = scoped
+      ? `(SELECT c.* FROM accounting_candidates c JOIN orders o ON o.id=c.order_id WHERE ${where})`
+      : 'accounting_candidates'
+    const history = scoped ? `SELECT s.id,s.base_version,s.previous_id,s.from_at,s.closed_at,items.*
+      FROM accounting_settlements s JOIN (
+        SELECT settlement_id,${totalsSql}
+        FROM (SELECT i.* FROM accounting_items i JOIN orders o ON o.id=i.order_id WHERE ${where}) GROUP BY settlement_id
+      ) items ON items.settlement_id=s.id` : 'SELECT * FROM accounting_settlements'
     // One D1 batch provides a consistent preview even during another admin's close.
     const results = await db.batch([
       db.prepare('SELECT s.version,s.last_settlement_id,a.closed_at FROM accounting_state s LEFT JOIN accounting_settlements a ON a.id=s.last_settlement_id WHERE s.id=1'),
-      db.prepare(`SELECT ${totalsSql},MIN(created_at) first_at FROM accounting_candidates`),
-      db.prepare(`SELECT plan,MAX(plan_name) plan_name,${totalsSql} FROM accounting_candidates GROUP BY plan ORDER BY plan`),
+      db.prepare(`SELECT ${totalsSql},MIN(created_at) first_at FROM ${candidates}`).bind(...values),
+      db.prepare(`SELECT plan,MAX(plan_name) plan_name,${totalsSql} FROM ${candidates} GROUP BY plan ORDER BY plan`).bind(...values),
       db.prepare('SELECT p.id plan,p.name,c.cost_cents FROM catalog_plans p LEFT JOIN accounting_costs c ON c.plan=p.id WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=p.id) ORDER BY p.rowid'),
-      db.prepare('SELECT * FROM accounting_settlements ORDER BY closed_at DESC,base_version DESC LIMIT 10 OFFSET ?').bind((page-1)*10),
-      db.prepare('SELECT COUNT(*) total FROM accounting_settlements'),
-      db.prepare(`SELECT COUNT(*) total FROM orders o LEFT JOIN recharge_orders t ON t.order_id=o.id WHERE o.mode='live' AND o.is_test=0 AND o.payment_status='paid' AND (o.refund_hold=1 OR COALESCE(t.financial_hold,0)=1) AND (o.status='success' OR EXISTS(SELECT 1 FROM accounting_items i WHERE i.order_id=o.id))`),
+      db.prepare(history + ' ORDER BY closed_at DESC,base_version DESC LIMIT 10 OFFSET ?').bind(...values, (page-1)*10),
+      db.prepare(`SELECT COUNT(*) total FROM (${history})`).bind(...values),
+      db.prepare(`SELECT COUNT(*) total FROM orders o LEFT JOIN recharge_orders t ON t.order_id=o.id WHERE o.mode='live' AND o.is_test=0 AND o.payment_status='paid' AND (o.refund_hold=1 OR COALESCE(t.financial_hold,0)=1) AND (o.status='success' OR EXISTS(SELECT 1 FROM accounting_items i WHERE i.order_id=o.id))${where ? ' AND ' + where : ''}`).bind(...values),
     ]) as { results: unknown[] }[]
     const state = results[0].results[0] as State
     const totals = results[1].results[0] as AccountingTotals & { first_at: number | null }
     return json({ version: state.version, fromAt: state.closed_at ?? totals.first_at, asOf: Date.now(), totals, groups: results[2].results, costs: results[3].results, history: results[4].results, historyTotal: (results[5].results[0] as { total: number }).total, heldCount: (results[6].results[0] as { total: number }).total, page })
   }
   if (path === '/api/admin/accounting/costs' && request.method === 'POST') {
+    if (scoped) throw new ApiError('请切换到全部渠道后设置采购成本。', 409)
     const data = await body(request)
     if (!Number.isSafeInteger(data.version) || !Array.isArray(data.costs)) throw new ApiError('成本设置无效。')
     const plans = (await db.prepare('SELECT id plan FROM catalog_plans WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=catalog_plans.id)').all<{ plan: string }>()).results
@@ -48,6 +62,7 @@ export async function accountingRoutes(request: Request, env: Env, url: URL) {
     return json({ ok: true })
   }
   if (path === '/api/admin/accounting/close' && request.method === 'POST') {
+    if (scoped) throw new ApiError('请切换到全部渠道后记录本期清账。', 409)
     const data = await body(request)
     if (!Number.isSafeInteger(data.version) || typeof data.key !== 'string' || !/^[a-f0-9-]{36}$/.test(data.key)) throw new ApiError('清账请求无效。')
     const existing = await db.prepare('SELECT * FROM accounting_settlements WHERE id=?').bind(data.key).first<AccountingSettlement>()
@@ -89,9 +104,18 @@ export async function accountingRoutes(request: Request, env: Env, url: URL) {
     const page = pageParam(url); const id = match[1]
     const settlement = await db.prepare('SELECT * FROM accounting_settlements WHERE id=?').bind(id).first<AccountingSettlement>()
     if (!settlement) throw new ApiError('未找到清账记录。', 404)
-    const groups = (await db.prepare(`SELECT plan,MAX(plan_name) plan_name,${totalsSql} FROM accounting_items WHERE settlement_id=? GROUP BY plan ORDER BY plan`).bind(id).all<AccountingGroup>()).results
-    const items = (await db.prepare('SELECT * FROM accounting_items WHERE settlement_id=? ORDER BY created_at,order_id LIMIT 50 OFFSET ?').bind(id,(page-1)*50).all()).results
-    return json({ settlement, groups, items, total: settlement.order_count+settlement.adjustment_count, page })
+    const source = `SELECT i.*,COALESCE(o.partner_name,CASE WHEN o.partner_id IS NULL THEN json_extract(s.settings,'$.name') END) store_name
+      FROM accounting_items i LEFT JOIN orders o ON o.id=i.order_id LEFT JOIN owner_shop_settings s ON s.id=o.owner_store_id
+      WHERE i.settlement_id=?${where ? ' AND ' + where : ''}`
+    const [groups, items, totals] = await Promise.all([
+      db.prepare(`SELECT plan,MAX(plan_name) plan_name,${totalsSql} FROM (${source}) GROUP BY plan ORDER BY plan`).bind(id,...values).all<AccountingGroup>(),
+      db.prepare(`SELECT * FROM (${source}) ORDER BY created_at,order_id LIMIT 50 OFFSET ?`).bind(id,...values,(page-1)*50).all(),
+      scoped ? db.prepare(`SELECT ${totalsSql} FROM (${source})`).bind(id,...values).first<AccountingTotals>() : null,
+    ])
+    const summary = totals ? { ...settlement, ...totals } : settlement
+    const total = summary.order_count+summary.adjustment_count
+    if (scoped && !total) throw new ApiError('该范围内没有此清账记录。', 404)
+    return json({ settlement:summary, groups:groups.results, items:items.results, total, page })
   }
   throw new ApiError('未找到清账接口。', 404)
 }

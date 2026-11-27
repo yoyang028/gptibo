@@ -297,9 +297,6 @@
   object-fit: contain;
   border-radius: 24px;
 }
-.owner-shop-module {
-  margin-top: 20px;
-}
 .owner-publisher-toolbar {
   display: flex;
   justify-content: space-between;

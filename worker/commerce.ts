@@ -13,8 +13,9 @@ import { emailCheckoutEnabled, emailDeliveryRoute, emailDeliverySummary, members
 import { buyerAccess, recoveryRoutes } from './customer-auth.ts'
 import { adminRefunds, customerRefunds } from './refunds.ts'
 import { change, getOrder, settle, settleDue, type Order, type Status } from './order-state.ts'
-import { ApiError, body, cookie, hash, json, randomToken, readCookie, type Env, type Value } from './platform.ts'
+import { ApiError, body, cookie, hash, json, randomToken, readCookie, type Env } from './platform.ts'
 import { authRoute, requireAdmin } from './admin-auth.ts'
+import { adminOrderStoreName, orderInAdminScope, readAdminStoreScope, scopedOrders } from './admin-store-scope.ts'
 import { emailValue, mailConfigured, partnerAuth } from './partner-auth.ts'
 import { adminPartnerRoutes, partnerCatalog, partnerRoutes, resolvePartner } from './partners.ts'
 import { paymentAction, reconcilePayments } from './payments/service.ts'
@@ -62,7 +63,8 @@ type AdminOrder = Order & { settlement_status: 'pending' | 'paid' | null; owner_
 const adminOrder = async (env: Env, o: AdminOrder) => {
   const view = await customerOrder(env, o)
   if (view.custom?.sms) Object.assign(view.custom.sms, await smsAdminInfo(env,o.id))
-  return { ...view, platformStatus:await platformOrderStatus(env,o),settlementStatus:o.settlement_status }
+  return { ...view, platformStatus:await platformOrderStatus(env,o),settlementStatus:o.settlement_status,
+    ownerStoreId:o.partner_id ? null : o.owner_store_id, ownerStoreName:o.partner_id ? undefined : o.owner_store_name }
 }
 const plans = async (env: Env) => (await env.INTEREST_DB.prepare('SELECT * FROM catalog_plans WHERE NOT EXISTS(SELECT 1 FROM catalog_deletions d WHERE d.plan_id=catalog_plans.id) ORDER BY rowid').all<Plan>()).results
 const customerOrder = async (env: Env, o: Order, contacts = new Map<string, Promise<SupportContactsSettings>>(), syncError = false) => {
@@ -349,29 +351,29 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
     await settleDue(env)
     const stats = await db.prepare("SELECT COUNT(*) total, SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) pending, SUM(CASE WHEN status IN ('session','processing','failed') AND refunded_cents<price_cents THEN 1 ELSE 0 END) active, SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) completed, COALESCE(SUM(CASE WHEN mode='demo' AND payment_status='simulated' THEN price_cents ELSE 0 END),0) demo_amount, COALESCE(SUM(CASE WHEN mode='live' AND payment_status='paid' THEN price_cents-MAX(refunded_cents,COALESCE((SELECT t.refunded_cents FROM recharge_orders t WHERE t.order_id=orders.id),0)) ELSE 0 END),0) paid_amount, COALESCE(SUM(CASE WHEN mode='live' THEN MAX(refunded_cents,COALESCE((SELECT t.refunded_cents FROM recharge_orders t WHERE t.order_id=orders.id),0)) ELSE 0 END),0) refund_amount FROM orders WHERE is_test=0").first()
     const interest = await db.prepare('SELECT COUNT(*) total FROM launch_interest').first()
-    const recent = (await db.prepare('SELECT orders.*, (SELECT status FROM partner_payouts WHERE id=orders.payout_id) settlement_status FROM orders WHERE is_test=0 ORDER BY created_at DESC LIMIT 6').all<AdminOrder>()).results
+    const recent = (await db.prepare("SELECT orders.*, (SELECT json_extract(settings,'$.name') FROM owner_shop_settings WHERE id=orders.owner_store_id) owner_store_name,(SELECT status FROM partner_payouts WHERE id=orders.payout_id) settlement_status FROM orders WHERE is_test=0 ORDER BY created_at DESC LIMIT 6").all<AdminOrder>()).results
     return json({ stats, interest, recent: await Promise.all(recent.map(o => adminOrder(env, o))), integrations: { alipay: alipayConfigured(env), supplier: supplierConfigured(env), supplierCheckout: supplierCheckoutEnabled(env), resend: mailConfigured(env) }, mode: supplierCheckoutEnabled(env) ? 'live' : 'demo' })
   }
   if (path === '/api/admin/orders' && method === 'GET') {
     await settleDue(env)
     const { page, offset } = pageParams(url); const q = url.searchParams.get('q')?.trim() ?? ''; const status = url.searchParams.get('status') ?? ''; const plan = url.searchParams.get('plan') ?? ''
     if (q.length > 320 || (status && !statuses.includes(status as Status))) throw new ApiError('筛选条件无效。')
-    const values: Value[] = []; const clauses: string[] = []
-    const storeId=url.searchParams.get('store') || null
-    if(storeId) await ownerShop(env,storeId)
-    if(url.searchParams.get('scope')==='owner' || storeId) clauses.push('partner_id IS NULL','is_test=0')
-    if(storeId){clauses.push('owner_store_id=?');values.push(storeId)}
+    const { clauses, values } = scopedOrders(await readAdminStoreScope(env, url), 'orders')
     if (q) { clauses.push("(instr(id,?) > 0 OR instr(lower(COALESCE(customer_email,'')),?) > 0 OR EXISTS(SELECT 1 FROM recharge_orders t WHERE t.order_id=orders.id AND instr(lower(t.remote_id),?) > 0))"); values.push(q.toUpperCase(), q.toLowerCase(), q.toLowerCase()) }
     if (status) { clauses.push('status=?'); values.push(status) }
     if (plan) { clauses.push('plan=?'); values.push(plan) }
     const where = clauses.length ? ' WHERE ' + clauses.join(' AND ') : ''
     const count = await db.prepare('SELECT COUNT(*) total FROM orders' + where).bind(...values).first<{ total: number }>()
     const rows = (await db.prepare("SELECT orders.*, (SELECT json_extract(settings,'$.name') FROM owner_shop_settings WHERE id=orders.owner_store_id) owner_store_name,(SELECT status FROM partner_payouts WHERE id=orders.payout_id) settlement_status FROM orders" + where + ' ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET ?').bind(...values, offset).all<AdminOrder>()).results
-    return json({ orders: await Promise.all(rows.map(async o => ({...await adminOrder(env, o),ownerStoreId:o.partner_id?null:o.owner_store_id,ownerStoreName:o.partner_id?undefined:o.owner_store_name}))), total: count?.total ?? 0, page })
+    return json({ orders: await Promise.all(rows.map(o => adminOrder(env, o))), total: count?.total ?? 0, page })
   }
   const orderMatch = path.match(/^\/api\/admin\/orders\/([A-Z0-9-]+)(\/actions|\/platform-status|\/delivery|\/account_supplier|\/delivery_supplier)?$/)
   if (orderMatch) {
-    const o = await settle(env, await getOrder(env, orderMatch[1]))
+    const order = await getOrder(env, orderMatch[1])
+    if (!orderMatch[2] && method === 'GET' && !orderInAdminScope(await readAdminStoreScope(env, url), order)) {
+      throw new ApiError('该范围内没有此订单。', 404)
+    }
+    const o = await settle(env, order)
     if (orderMatch[2] === '/delivery') return emailDeliveryRoute(request, env, o)
     if (orderMatch[2] === '/delivery_supplier') {
       if (method === 'POST') {
@@ -397,8 +399,11 @@ async function admin(request: Request, env: Env, url: URL): Promise<Response> {
     }
     if (!orderMatch[2] && method === 'GET') {
       const events = (await db.prepare('SELECT id,actor,action,from_status,to_status,note,created_at FROM order_events WHERE order_id=? ORDER BY order_version').bind(o.id).all()).results
-      const settlement = await db.prepare('SELECT ps.status settlement_status FROM orders o LEFT JOIN partner_payouts ps ON ps.id=o.payout_id WHERE o.id=?').bind(o.id).first<{ settlement_status: 'pending' | 'paid' | null }>()
-      return json({ order: { ...(await adminOrder(env, { ...o, settlement_status:settlement?.settlement_status ?? null })), partnerSource: await orderPartnerSource(env, o) }, events })
+      const [settlement, ownerStoreName, partnerSource] = await Promise.all([
+        db.prepare('SELECT ps.status settlement_status FROM orders o LEFT JOIN partner_payouts ps ON ps.id=o.payout_id WHERE o.id=?').bind(o.id).first<{ settlement_status: 'pending' | 'paid' | null }>(),
+        adminOrderStoreName(env, o), orderPartnerSource(env, o),
+      ])
+      return json({ order: { ...(await adminOrder(env, { ...o, settlement_status:settlement?.settlement_status ?? null, owner_store_name:ownerStoreName ?? undefined })), partnerSource }, events })
     }
     if (orderMatch[2] === '/platform-status' && method === 'POST') {
       await body(request)

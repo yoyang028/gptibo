@@ -1,18 +1,14 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import {
   ArrowUpRight,
   Bell,
-  ChartNoAxesCombined,
-  ReceiptText,
   Settings2,
-  Store,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StoresWorkspace } from '@/partner/StoresWorkspace'
 import { ProductManagement } from '@/partner/ProductManagement'
 import { NotificationSettings } from '@/partner/NotificationSettings'
 import { WorkspaceTabs, WorkspaceSelect } from '@/partner/workspace-ui'
-import { VisitorStats } from '@/components/visitor-stats'
 import { useResource } from '@/lib/use-resource'
 import type { StorefrontProductId } from '../../shared/product-order'
 import type { Offer } from '@/partner/model'
@@ -25,18 +21,12 @@ export default function MyShop({
   storeId,
   onStoreChange: setStoreId,
   onSaved,
-  orders,
-  accounting,
-  refunds,
   onManageProducts,
 }: {
   revision: number
   storeId: string
   onStoreChange: (id: string) => void
   onSaved: () => void
-  orders: (store: string, stores: {id:string;name:string}[]) => ReactNode
-  accounting: ReactNode
-  refunds: ReactNode
   onManageProducts: () => void
 }) {
   const [tab, setTab] = useState('stores')
@@ -68,7 +58,7 @@ export default function MyShop({
       <div className="partner-section-heading">
         <div>
           <h2>店铺管理</h2>
-          <p>三家自营店共用商品资料，分别管理店铺参数、售价与经营数据。</p>
+          <p>管理自营店铺的形象、售价、商品排序和通知。</p>
         </div>
         <a href={storeUrl} target="_blank" rel="noreferrer">
           预览当前店铺 <ArrowUpRight size={14} />
@@ -118,43 +108,6 @@ export default function MyShop({
             ),
           },
           {
-            value: 'orders',
-            label: '订单收益',
-            content: (
-              <WorkspaceTabs
-                label="订单与收益"
-                items={[
-                  { value: 'orders', label: '订单明细', content: orders(storeId, data?.stores ?? []) },
-                  {
-                    value: 'accounting',
-                    label: '清账与结算',
-                    content: (
-                      <>
-                        <p className="stores-help">
-                          平台代收的实际利润结算与提现在供货平台核对；这里展示本店订单账目，不生成虚拟提现记录。
-                        </p>
-                        {accounting}
-                      </>
-                    ),
-                  },
-                  { value: 'refunds', label: '退款与售后', content: refunds },
-                ]}
-              />
-            ),
-          },
-          {
-            value: 'visitors',
-            label: '访客统计',
-            content: (
-              <VisitorStats
-                endpoint={'/api/admin/my-shop/visitors?store=' + storeId}
-                revision={revision}
-                title={(selected?.name ?? '店铺') + '访问趋势'}
-                description="统计当前所选店铺及商品详情页的访客与浏览量"
-              />
-            ),
-          },
-          {
             value: 'settings',
             label: '账号设置',
             content: (
@@ -198,20 +151,6 @@ export default function MyShop({
           },
         ]}
       />
-      <div className="owner-shop-module">
-        <Button variant="ghost" onClick={() => setTab('stores')}>
-          <Store size={14} />
-          商店
-        </Button>
-        <Button variant="ghost" onClick={() => setTab('orders')}>
-          <ReceiptText size={14} />
-          订单
-        </Button>
-        <Button variant="ghost" onClick={() => setTab('visitors')}>
-          <ChartNoAxesCombined size={14} />
-          访客
-        </Button>
-      </div>
     </div>
   )
 }

@@ -95,6 +95,7 @@ function TrendChart({ trend }: { trend: VisitorSummary['trend'] }) {
             stroke="var(--color-pageViews)"
             strokeWidth={2}
             fill={`url(#fill-pageViews-${chartId})`}
+            isAnimationActive={trend.length > 1}
             dot={trend.length === 1 ? { r: 4, fill: 'var(--color-pageViews)' } : false}
             activeDot={{ r: 5, strokeWidth: 1.5, stroke: 'var(--card)' }}
           />
@@ -104,6 +105,7 @@ function TrendChart({ trend }: { trend: VisitorSummary['trend'] }) {
             stroke="var(--color-visitors)"
             strokeWidth={2.5}
             fill={`url(#fill-visitors-${chartId})`}
+            isAnimationActive={trend.length > 1}
             dot={trend.length === 1 ? { r: 5, fill: 'var(--color-visitors)' } : false}
             activeDot={{ r: 6, strokeWidth: 2, stroke: 'var(--card)' }}
           />
@@ -132,22 +134,20 @@ function TrendChart({ trend }: { trend: VisitorSummary['trend'] }) {
   )
 }
 
+type VisitorStatsAppearance = { title?: string; description?: string; action?: ReactNode; className?: string }
+
 export function VisitorStats({
   endpoint,
   revision = 0,
-  title = '访客统计',
+  title,
   description,
   action,
   className,
   selectedDays,
   onDaysChange,
-}: {
+}: VisitorStatsAppearance & {
   endpoint: string
   revision?: number
-  title?: string
-  description?: string
-  action?: ReactNode
-  className?: string
   selectedDays?: VisitorPeriod
   onDaysChange?: (days: VisitorPeriod) => void
 }) {
@@ -156,8 +156,19 @@ export function VisitorStats({
   const setDays = onDaysChange ?? setInternalDays
   const query = new URL(endpoint, location.origin)
   query.searchParams.set('days', String(days))
-  const { data, error, loading } = useResource<VisitorSummary>(query.pathname + query.search, revision)
+  const resource = useResource<VisitorSummary>(query.pathname + query.search, revision)
+  return <VisitorStatsPanel {...resource} title={title} description={description} action={action} className={className} days={days} onDaysChange={setDays} />
+}
 
+export function VisitorStatsPanel({
+  title = '访客统计', description, action, className, days, onDaysChange: setDays, data, error, loading,
+}: VisitorStatsAppearance & {
+  days: VisitorPeriod
+  onDaysChange: (days: VisitorPeriod) => void
+  data?: VisitorSummary
+  error: string
+  loading: boolean
+}) {
   const avgDailyVisitors = data
     ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(
       data.trend.reduce((sum, day) => sum + day.visitors, 0) / data.days

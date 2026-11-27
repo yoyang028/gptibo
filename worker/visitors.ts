@@ -1,8 +1,8 @@
 import { ApiError, body, hash, json, type Env } from './platform.ts'
 import { storefrontSelection, ownerStorefrontLinks } from './storefront-hosts.ts'
+import { readAdminStoreScope } from './admin-store-scope.ts'
 
 const localDay = (time: number) => new Date(time + 8 * 3600000).toISOString().slice(0, 10)
-const daysAgo = (days: number) => localDay(Date.now() - (days - 1) * 86400000)
 
 function period(url: URL) {
   const value = url.searchParams.get('days') ?? '7'
@@ -30,31 +30,41 @@ export async function recordVisitor(request: Request, env: Env) {
   return json({ ok: true })
 }
 
-export async function visitorSummary(env: Env, url: URL, shopId?: string) {
-  const days = period(url)
-  const since = daysAgo(days)
-  const filter = shopId ? 'day>=? AND shop_id=?' : 'day>=?'
-  const args = shopId ? [since, shopId] : [since]
-  const rows = (await env.INTEREST_DB.prepare(`SELECT day,SUM(page_views) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE ${filter} GROUP BY day ORDER BY day`).bind(...args).all<{ day: string; pageViews: number; visitors: number }>()).results
-  const total = await env.INTEREST_DB.prepare(`SELECT COALESCE(SUM(page_views),0) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE ${filter}`).bind(...args).first<{ pageViews: number; visitors: number }>()
-  const byDay = new Map(rows.map(row => [row.day, row]))
+async function summarizeVisitors(env: Env, days: number, now: number, shopFilter = '', shopIds: string[] = []) {
+  const filter = 'day>=?' + (shopFilter ? ' AND ' + shopFilter : '')
+  const args = [localDay(now - (days - 1) * 86400000), ...shopIds]
+  const [daily, total] = await Promise.all([
+    env.INTEREST_DB.prepare(`SELECT day,SUM(page_views) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE ${filter} GROUP BY day ORDER BY day`).bind(...args).all<{ day: string; pageViews: number; visitors: number }>(),
+    env.INTEREST_DB.prepare(`SELECT COALESCE(SUM(page_views),0) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE ${filter}`).bind(...args).first<{ pageViews: number; visitors: number }>(),
+  ])
+  const byDay = new Map(daily.results.map(row => [row.day, row]))
   const trend = Array.from({ length: days }, (_, index) => {
-    const day = localDay(Date.now() - (days - 1 - index) * 86400000)
+    const day = localDay(now - (days - 1 - index) * 86400000)
     return byDay.get(day) ?? { day, pageViews: 0, visitors: 0 }
   })
   return { days, pageViews: total?.pageViews ?? 0, visitors: total?.visitors ?? 0, trend }
 }
 
+export async function visitorSummary(env: Env, url: URL, shopId?: string) {
+  return summarizeVisitors(env, period(url), Date.now(), shopId ? 'shop_id=?' : '', shopId ? [shopId] : [])
+}
+
 export async function adminVisitorSummary(env: Env, url: URL) {
-  const summary = await visitorSummary(env, url)
-  const since = daysAgo(summary.days)
-  const platform = await env.INTEREST_DB.prepare("SELECT COALESCE(SUM(page_views),0) pageViews,COUNT(DISTINCT visitor_hash) visitors FROM visitor_days WHERE day>=? AND shop_id='platform'").bind(since).first<{ pageViews: number; visitors: number }>()
-  const partners = (await env.INTEREST_DB.prepare(`SELECT p.id,p.name,p.slug,p.active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
-    FROM partners p LEFT JOIN visitor_days v ON v.shop_id=p.id AND v.day>=? GROUP BY p.id ORDER BY visitors DESC,pageViews DESC,p.created_at DESC`).bind(since).all<{ id: string; name: string; slug: string; active: number; pageViews: number; visitors: number }>()).results
-  const stores = (await env.INTEREST_DB.prepare(`SELECT s.id,s.slug,COALESCE(NULLIF(json_extract(s.settings,'$.name'),''),'GPTibo') name,
-    COALESCE(json_extract(s.settings,'$.active'),1) active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
-    FROM owner_shop_settings s LEFT JOIN visitor_days v ON v.shop_id=s.id AND v.day>=? GROUP BY s.id ORDER BY COALESCE(json_extract(s.settings,'$.displayOrder'),s.slot)`)
-    .bind(since).all<{ id: string; slug: string; name: string; active: number; pageViews: number; visitors: number }>()).results
-  const ownerStores = stores.map(store => ({ ...store, ...ownerStorefrontLinks(env, url.origin, store.id, store.slug) }))
-  return { ...summary, platform: platform ?? { pageViews: 0, visitors: 0 }, ownerStores, partners }
+  const { channel, storeId } = await readAdminStoreScope(env, url)
+  const now = Date.now(), days = period(url), since = localDay(now - (days - 1) * 86400000)
+  const shopFilter = storeId ? 'shop_id=?' : channel === 'owner' ? 'shop_id IN (SELECT id FROM owner_shop_settings)'
+    : channel === 'agent' ? 'shop_id IN (SELECT id FROM partners)' : ''
+  type Traffic = { id: string; name: string; slug: string; active: number; pageViews: number; visitors: number }
+  const [summary, partners, stores] = await Promise.all([
+    summarizeVisitors(env, days, now, shopFilter, storeId ? [storeId] : []),
+    channel !== 'owner' ? env.INTEREST_DB.prepare(`SELECT p.id,p.name,p.slug,p.active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
+      FROM partners p LEFT JOIN visitor_days v ON v.shop_id=p.id AND v.day>=? GROUP BY p.id ORDER BY visitors DESC,pageViews DESC,p.created_at DESC`).bind(since).all<Traffic>() : null,
+    channel !== 'agent' ? env.INTEREST_DB.prepare(`SELECT s.id,s.slug,COALESCE(NULLIF(json_extract(s.settings,'$.name'),''),'GPTibo') name,
+      COALESCE(json_extract(s.settings,'$.active'),1) active,COALESCE(SUM(v.page_views),0) pageViews,COUNT(DISTINCT v.visitor_hash) visitors
+      FROM owner_shop_settings s LEFT JOIN visitor_days v ON v.shop_id=s.id AND v.day>=? ${storeId ? 'WHERE s.id=?' : ''}
+      GROUP BY s.id ORDER BY COALESCE(json_extract(s.settings,'$.displayOrder'),s.slot)`).bind(since, ...(storeId ? [storeId] : [])).all<Traffic>() : null,
+  ])
+  const ownerStores = (stores?.results ?? []).map(store => ({ ...store, ...ownerStorefrontLinks(env, url.origin, store.id, store.slug) }))
+  const platform = ownerStores.find(store => store.id === 'platform')
+  return { ...summary, platform: { pageViews: platform?.pageViews ?? 0, visitors: platform?.visitors ?? 0 }, ownerStores, partners: partners?.results ?? [] }
 }

@@ -23,22 +23,23 @@ await context.route('**/*',route=>{
   proof.externalRequests.push(new URL(route.request().url()).origin);return route.abort()
 })
 const page=await context.newPage();page.on('pageerror',e=>proof.pageErrors.push(e.message))
+const go=label=>page.getByRole('navigation',{name:'后台导航'}).getByRole('button',{name:label,exact:true}).click()
 page.on('response',response=>{
   const url=new URL(response.url())
-  if(url.pathname==='/api/admin/my-shop/visitors')proof.visitorRequests.push({store:url.searchParams.get('store'),days:url.searchParams.get('days'),status:response.status()})
+  if(url.pathname==='/api/admin/visitors'&&url.searchParams.has('store'))proof.visitorRequests.push({store:url.searchParams.get('store'),days:url.searchParams.get('days'),status:response.status()})
 })
 const record=name=>{proof.checks.push({name,passed:true});console.log(name)}
 async function api(url,data){
   const response=await context.request.fetch(url,{method:data===undefined?'GET':'POST',headers:{Origin:origin},...(data===undefined?{}:{data})})
   assert.equal(response.status(),200,url);return response.json()
 }
-async function choose(store){
-  await page.getByRole('combobox',{name:'当前店铺',exact:true}).click()
+async function choose(store,label='当前店铺'){
+  await page.getByRole('combobox',{name:label,exact:true}).click()
   await page.getByRole('option',{name:store.name,exact:true}).click()
 }
 async function period(store,days){
   const pending=page.waitForResponse(r=>{
-    const url=new URL(r.url());return url.pathname==='/api/admin/my-shop/visitors'&&url.searchParams.get('store')===store&&url.searchParams.get('days')===String(days)
+    const url=new URL(r.url());return url.pathname==='/api/admin/visitors'&&url.searchParams.get('store')===store&&url.searchParams.get('days')===String(days)
   })
   await page.locator('.visitor-stats').getByRole('button',{name:days+' 天',exact:true}).click()
   const response=await pending;assert.equal(response.status(),200)
@@ -67,22 +68,25 @@ try{
     baseline[store.id]=await api('/api/admin/my-shop/visitors?store='+store.id+'&days=1')
     await api('/api/visitors',{visitorId:crypto.randomUUID(),path:store.slug?'/s/'+store.slug:'/'})
   }
-  await page.getByRole('tab',{name:'访客统计',exact:true}).click()
+  assert.equal(await page.getByRole('tab',{name:'访客统计',exact:true}).count(),0)
+  await go('访客统计')
+  await page.getByRole('combobox',{name:'访问店铺',exact:true}).getByText('全部渠道',{exact:true}).waitFor()
   for(const store of data.stores){
-    await choose(store)
+    await choose(store,'访问店铺')
     const today=await period(store.id,1)
     assert.equal(today.pageViews,baseline[store.id].pageViews+1)
     assert.equal(today.visitors,baseline[store.id].visitors+1)
     for(const days of [7,30,90])await period(store.id,days)
     record(store.id+' visitor statistics retain separate store and period parameters for 1/7/30/90 days')
   }
-  await choose(general)
+  await choose(general,'访问店铺')
   await period(general.id,1)
-  assert.equal(await page.getByRole('link',{name:'预览当前店铺',exact:true}).getAttribute('href'),general.storefront_url)
   await page.screenshot({path:path.join(evidence,'general-visitors.png'),fullPage:true})
-  await page.getByRole('tab',{name:'我的商店',exact:true}).click()
+  await go('我的店铺')
+  await choose(general)
+  assert.equal(await page.getByRole('link',{name:'预览当前店铺',exact:true}).getAttribute('href'),general.storefront_url)
   await page.getByRole('tab',{name:'域名与账单',exact:true}).click()
-  assert.equal(await page.locator('.store-current a').getAttribute('href'),general.storefront_url)
+  assert.equal(await page.locator('.store-current a:visible').getAttribute('href'),general.storefront_url)
   const cards=page.locator('.store-domain')
   assert.equal(await cards.count(),2)
   for(let index=0;index<2;index++){
@@ -97,8 +101,10 @@ try{
   await page.getByText('当前店铺尚未绑定独立域名，可使用上方的店铺访问入口。',{exact:true}).waitFor()
   assert.equal(await page.getByRole('link',{name:'预览当前店铺',exact:true}).getAttribute('href'),origin+'/s/store-2')
   record('The reserved store keeps its legacy path and is not presented as having a domain binding')
-  await choose(general);await page.getByRole('tab',{name:'访客统计',exact:true}).click()
+  await go('访客统计');await choose(general,'访问店铺');await period(general.id,1)
   await page.setViewportSize({width:390,height:844})
+  await page.locator('.admin-topbar').getByText('ScholAI / 访客统计',{exact:true}).waitFor()
+  await page.locator('.visitor-chart .recharts-area-dot').first().waitFor()
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
   assert.equal(await page.locator('.visitor-stats [aria-pressed="true"]').textContent(),'1 天')
   await page.screenshot({path:path.join(evidence,'general-mobile.png'),fullPage:true})
@@ -111,10 +117,11 @@ try{
   assert.equal(summary.ownerStores.length,3)
   const generalRow=page.locator('.visitor-shops-panel tbody tr').filter({hasText:general.name})
   await generalRow.waitFor()
-  const drill=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/admin/my-shop/visitors'&&new URL(r.url()).searchParams.get('store')==='store-3'&&new URL(r.url()).searchParams.get('days')==='1')
+  const drill=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/admin/visitors'&&new URL(r.url()).searchParams.get('store')==='store-3'&&new URL(r.url()).searchParams.get('days')==='1')
   await generalRow.getByRole('button',{name:'查看趋势',exact:true}).click()
   assert.equal((await drill).status(),200)
-  await page.getByRole('dialog').locator('.visitor-kpi-value').first().waitFor()
+  await page.locator('.visitor-kpi-value').first().waitFor()
+  assert.equal(await page.getByRole('button',{name:'1 天',exact:true}).getAttribute('aria-pressed'),'true')
   await page.screenshot({path:path.join(evidence,'general-global-drilldown.png'),fullPage:true})
   record('Global source distribution includes every owner shop and opens the general store with the selected period')
   assert(proof.visitorRequests.length>=12)

@@ -28,6 +28,28 @@ function setup() {
   return { db, env: { INTEREST_DB: database } as Env }
 }
 
+test('sidebar visitor totals deduplicate within the selected shop or channel and scope the shop table', async t => {
+  const { db, env } = setup()
+  t.after(() => db.close())
+  const day = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)
+  const record = db.prepare('INSERT INTO visitor_days(day,shop_id,visitor_hash,page_views) VALUES(?,?,?,?)')
+  record.run(day,'platform','same-browser',2)
+  record.run(day,'store-3','same-browser',3)
+  record.run(day,'store-3','other-browser',1)
+  record.run(day,'partner-a','same-browser',4)
+  const summary = (params:string) => adminVisitorSummary(env,new URL('https://shop.example.invalid/api/admin/visitors?days=1&' + params))
+  const all = await summary('scope=all')
+  assert.deepEqual([all.visitors,all.pageViews],[2,10])
+  const owner = await summary('scope=owner')
+  assert.deepEqual([owner.visitors,owner.pageViews,owner.partners.length],[2,6,0])
+  const store = await summary('store=store-3')
+  assert.deepEqual([store.visitors,store.pageViews,store.trend.length],[2,4,1])
+  assert.deepEqual(store.ownerStores.map(s => s.id),['store-3'])
+  const agent = await summary('scope=agent')
+  assert.deepEqual([agent.visitors,agent.pageViews,agent.ownerStores.length],[1,4,0])
+  assert.deepEqual((await summary('store=store-2')).trend,[{day,visitors:0,pageViews:0}])
+})
+
 test('storefront visits are scoped by partner and deduplicated across pages and shops', async t => {
   const { db, env } = setup(); t.after(() => db.close())
   const visitorId = crypto.randomUUID()

@@ -119,6 +119,69 @@ test('presentation order changes without reassigning store IDs, domain ownership
   assert.equal(f.db.prepare("SELECT slot FROM owner_shop_settings WHERE id='store-3'").get()!.slot,3)
 })
 
+test('operations pages isolate direct stores and agents in orders, refunds, and profit analysis', async t => {
+  const f = await customerFixture()
+  t.after(() => f.db.close())
+  const agent = await f.agent('测试代理')
+  const paid = { status:'success', payment_status:'paid' }
+  const root = order(f.db, { ...paid, price_cents:14000 })
+  const planet = order(f.db, { ...paid, owner_store_id:'store-3', price_cents:16000 })
+  const resale = order(f.db, { ...paid, partner_id:agent.id, partner_name:'测试代理', price_cents:19000, cost_cents:15000 })
+  order(f.db, { owner_store_id:'store-3', is_test:1 })
+  const session = await json(f, '/api/admin/session')
+  assert.deepEqual(session.ownerStores.map((s:{ name:string }) => s.name), ['ScholAI','AI星球','备用商店'])
+
+  const createRefund = f.db.prepare(`INSERT INTO refund_cases(id,order_id,request_key,reason,requested_cents,created_at,updated_at,last_event_id)
+    VALUES(?,?,?,'本机验收',1000,?,?,?)`)
+  const now = Date.now()
+  const cases = new Map([root,planet,resale].map(id => [id,crypto.randomUUID()]))
+  for (const [id, refund] of cases) createRefund.run(refund,id,refund,now,now,refund)
+
+  for (const [params, ids] of [['store=store-3',[planet]], ['scope=owner',[root,planet]], ['scope=agent',[resale]], ['store=store-2',[]]] as const) {
+    const sorted = [...ids].sort()
+    const orders = await json(f, '/api/admin/orders?' + params)
+    const refunds = await json(f, '/api/admin/refunds?status=pending&' + params)
+    const report = await json(f, '/api/admin/accounting/report?' + params)
+    assert.equal(orders.total, sorted.length)
+    assert.equal(refunds.total, sorted.length)
+    assert.equal(report.totals.order_count, sorted.length)
+    assert.deepEqual(orders.orders.map((row:{id:string}) => row.id).sort(), sorted)
+    assert.deepEqual(refunds.rows.map((row:{order_id:string}) => row.order_id).sort(), sorted)
+    assert.deepEqual(report.orders.map((row:{id:string}) => row.id).sort(), sorted)
+  }
+  assert.equal((await json(f, '/api/admin/orders/' + planet + '?store=store-3')).order.ownerStoreName, 'AI星球')
+  assert.equal((await json(f, '/api/admin/refunds/' + cases.get(planet) + '?store=store-3')).order.owner_store_name, 'AI星球')
+  assert.equal((await f.request('/api/admin/orders/' + root + '?store=store-3', undefined, f.admin)).status, 404)
+  assert.equal((await f.request('/api/admin/refunds/' + cases.get(root) + '?store=store-3', undefined, f.admin)).status, 404)
+  assert.equal((await f.request('/api/admin/refunds/' + cases.get(root) + '?store=store-3', {action:'reject',version:0,note:'错误店铺验收'}, f.admin)).status, 404)
+  assert.equal((await f.request('/api/admin/accounting/report?scope=agent&store=store-3', undefined, f.admin)).status, 400)
+})
+
+test('shop accounting filters calculate pending and saved totals from the same order ownership', async t => {
+  const f = await customerFixture()
+  t.after(() => f.db.close())
+  const paid = { status:'success', payment_status:'paid' }
+  const root = order(f.db, { ...paid, price_cents:14000 })
+  const planet = order(f.db, { ...paid, owner_store_id:'store-3', price_cents:16000, refunded_cents:700 })
+  const global = await json(f, '/api/admin/accounting')
+  const scoped = await json(f, '/api/admin/accounting?store=store-3')
+  assert.equal(global.totals.sale_cents, 30000)
+  assert.equal(scoped.totals.sale_cents, 16000)
+  assert.equal(scoped.totals.refund_cents, 700)
+  const key = crypto.randomUUID()
+  assert.equal((await f.request('/api/admin/accounting/close?store=store-3', {key,version:global.version}, f.admin)).status, 409)
+  assert.equal((await f.request('/api/admin/accounting/close', {key,version:global.version}, f.admin)).status, 201)
+  const full = await json(f, '/api/admin/accounting/' + key)
+  const detail = await json(f, '/api/admin/accounting/' + key + '?store=store-3')
+  assert.deepEqual(full.items.map((item:{order_id:string}) => item.order_id).sort(), [root,planet].sort())
+  assert.deepEqual(detail.items.map((item:{order_id:string;store_name:string}) => [item.order_id,item.store_name]), [[planet,'AI星球']])
+  assert.equal(detail.settlement.sale_cents, 16000)
+  assert.equal(detail.total, 1)
+  assert.equal((await json(f, '/api/admin/accounting?store=store-3')).history[0].sale_cents, 16000)
+  assert.equal((await json(f, '/api/admin/accounting?store=store-2')).historyTotal, 0)
+  assert.equal((await f.request('/api/admin/accounting/' + key + '?store=store-2', undefined, f.admin)).status, 404)
+})
+
 test('customer spending uses actual promotion cash and never treats zero-cash member credit as cash received',async t=>{
   const f=await customerFixture();t.after(()=>f.db.close())
   for(const cash of [600,0]){

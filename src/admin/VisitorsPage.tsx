@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { ArrowUpRight } from 'lucide-react'
-import { VisitorStats, type VisitorPeriod, type VisitorSummary } from '@/components/visitor-stats'
-import { Feedback } from '@/components/workspace-loading'
+import { VisitorStats, VisitorStatsPanel, type VisitorPeriod, type VisitorSummary } from '@/components/visitor-stats'
 import { useResource } from '@/lib/use-resource'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { partnerStorefrontPath } from '../../shared/partner-link.ts'
+import { WorkspaceSelect } from '@/partner/workspace-ui'
+import { adminStoreOptions, storeScopeParams, type AdminStoreOption } from '../../shared/admin-store-scope'
 
 type StoreTraffic = { id: string; name: string; active: number; visitors: number; pageViews: number; storefront_url?: string }
 type AdminSummary = VisitorSummary & {
@@ -14,34 +15,39 @@ type AdminSummary = VisitorSummary & {
   partners: { id: string; name: string; slug: string; active: number; visitors: number; pageViews: number }[]
 }
 
-export default function AdminVisitorsPage({ revision }: { revision: number }) {
+export default function AdminVisitorsPage({ revision, stores }: { revision: number; stores: AdminStoreOption[] }) {
   const [selected, setSelected] = useState<{ id: string; name: string; owner: boolean }>()
   const [days, setDays] = useState<VisitorPeriod>(7)
-  const { data, error, loading } = useResource<AdminSummary>(`/api/admin/visitors?days=${days}`, revision)
+  const [scope, setScope] = useState('all')
+  const query = storeScopeParams(scope, new URLSearchParams({ days:String(days) }))
+  const resource = useResource<AdminSummary>(`/api/admin/visitors?${query}`, revision)
+  const { data } = resource
+  const current = stores.find(store => store.id === scope)
+  const title = current ? `${current.name}访问趋势` : scope === 'owner' ? '自营店访问趋势' : scope === 'agent' ? '代理店访问趋势' : '全站访问趋势'
   const ownerStores: StoreTraffic[] = data?.ownerStores ?? (data ? [{ id: 'platform', name: '平台直营', active: 1, storefront_url: '/', ...data.platform }] : [])
 
   return (
     <>
-      <VisitorStats
-        endpoint="/api/admin/visitors"
-        revision={revision}
-        title="全站访问趋势"
-        description="全平台直营与所有代理商店的综合访问与页面浏览走势"
-        selectedDays={days}
+      <VisitorStatsPanel
+        {...resource}
+        title={title}
+        description={days === 1 ? '北京时间今日的访客与浏览量' : `北京时间 · 最近 ${days} 天的访客与浏览量`}
+        action={stores.length > 0 && <div className="admin-store-control"><label htmlFor="visitor-store">访问店铺</label><WorkspaceSelect id="visitor-store" label="访问店铺" value={scope} options={adminStoreOptions(stores)} onValueChange={setScope} /></div>}
+        days={days}
         onDaysChange={setDays}
       />
-      <section className="admin-panel visitor-shops-panel">
+      {!current && data && <section className="admin-panel visitor-shops-panel" aria-label="各店访问分布">
         <div className="admin-panel-title">
           <div>
-            <h2>各商店渠道访客</h2>
-            <span>最近 {days} 天 · 独立访客按商店分别去重统计</span>
+            <h2>各店访问分布</h2>
+            <span>{days === 1 ? '今天' : `最近 ${days} 天`} · 独立访客按店去重</span>
           </div>
-          {data && <span>共 {data.partners.length + ownerStores.length} 个访问来源</span>}
+          <span>{data.partners.length + ownerStores.length} 家店铺</span>
         </div>
-        <Feedback error={error} loading={loading} data={data} shape="compact" />
-        {data && (
+        {data.partners.length + ownerStores.length > 0 ? (
           <div className="admin-table-scroll">
-            <table className="admin-table">
+            <table className="admin-table admin-traffic-table">
+              <colgroup>{[18,26,14,14,15,13].map((width,index) => <col key={index} style={{ width:width+'%' }} />)}</colgroup>
               <thead>
                 <tr>
                   <th>商店渠道</th>
@@ -64,7 +70,7 @@ export default function AdminVisitorsPage({ revision }: { revision: number }) {
                   <td className="admin-numeric">
                     {store.visitors > 0 ? (store.pageViews / store.visitors).toFixed(1) : '0.0'} 页/人
                   </td>
-                  <td><Button variant="ghost" size="sm" onClick={() => setSelected({ ...store, owner: true })}>查看趋势 <ArrowUpRight size={13} /></Button></td>
+                  <td><Button variant="ghost" size="sm" onClick={() => stores.length ? setScope(store.id) : setSelected({ ...store, owner:true })}>查看趋势 <ArrowUpRight size={13} /></Button></td>
                 </tr>)}
                 {data.partners.map((partner) => (
                   <tr key={partner.id}>
@@ -90,8 +96,8 @@ export default function AdminVisitorsPage({ revision }: { revision: number }) {
               </tbody>
             </table>
           </div>
-        )}
-      </section>
+        ) : <div className="admin-empty"><h3>此范围暂无店铺</h3></div>}
+      </section>}
       {selected && (
         <Dialog open onOpenChange={(open) => { if (!open) setSelected(undefined) }}>
           <DialogContent className="motion-dialog visitor-detail-dialog">

@@ -7,7 +7,7 @@ export type AccountingCost = { plan: string; name: string; cost_cents: number | 
 export type AccountingSummary = {
   version: number; fromAt: number | null; asOf: number; costs: AccountingCost[]; totals: AccountingTotals; groups: AccountingGroup[]; heldCount: number; history: AccountingSettlement[]; historyTotal: number; page: number
 }
-export type AccountingItem = { order_id: string; plan_name: string; kind: 'order' | 'refund'; sale_cents: number; cost_cents: number; refund_cents: number; created_at: number }
+export type AccountingItem = { order_id: string; plan_name: string; store_name?: string | null; kind: 'order' | 'refund'; sale_cents: number; cost_cents: number; refund_cents: number; created_at: number }
 export type AccountingDetail = { settlement: AccountingSettlement; groups: AccountingGroup[]; items: AccountingItem[]; total: number; page: number }
 
 export type AccountingReportTotals = {
@@ -16,7 +16,7 @@ export type AccountingReportTotals = {
   missing_cost_count: number; missing_commission_count: number; held_count: number
 }
 export type AccountingReportOrder = {
-  id: string; plan_name: string; status: string; payment_status: string; partner_name: string | null; created_at: number
+  id: string; plan_name: string; status: string; payment_status: string; partner_name: string | null; store_name?: string | null; created_at: number
   paid_cents: number; refund_cents: number; cost_cents: number | null; commission_cents: number | null; profit_cents: number | null; held: number
 }
 export type AccountingReport = {
