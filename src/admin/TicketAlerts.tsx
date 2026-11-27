@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Bell, Volume2, VolumeX } from 'lucide-react'
 import { api, errorMessage } from '@/lib/api'
 import { Button } from '@/components/ui/button'
+import type { AdminAudience } from '../../shared/admin-store-scope'
 import '@/components/ticket-workspace.css'
 
-type Summary = { version: number; pending: number; enabled?: boolean }
+type Summary = { version: number; pending: number; enabled?: boolean; ownerPending?: number; agentPending?: number }
 
-export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefunds: () => void }) {
+export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefunds: (audience: AdminAudience) => void }) {
   const [summary, setSummary] = useState<Summary>()
   const [refunds, setRefunds] = useState<Summary>()
   const [enabled, setEnabled] = useState(false)
@@ -74,7 +75,7 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
     const timers: ReturnType<typeof setTimeout>[] = []
     async function poll(kind: 'tickets' | 'refunds') {
       try {
-        const next = await api<Summary>(`/api/admin/${kind}/notifications`, undefined, controller.signal)
+        const next = await api<Summary>(`/api/admin/${kind}/notifications${kind === 'refunds' ? '?channels=1' : ''}`, undefined, controller.signal)
         if (stopped) return
         const previous = versions.current[kind]
         const changed = previous !== undefined && next.version > previous
@@ -114,5 +115,25 @@ export function TicketAlerts({ onOpen, onRefunds }: { onOpen: () => void; onRefu
   }
   const ticketsSupported = summary?.enabled !== false
   const connectionError = [ticketsSupported && errors.tickets && `工单提醒连接中断：${errors.tickets}`, errors.refunds && `退款提醒连接中断：${errors.refunds}`].filter(Boolean).join('；')
-  return <section className="ticket-alert" aria-label="工单与退款提醒"><div><strong><Bell size={15} className="inline" /> {ticketsSupported && <>{unseen ? '收到新的代理工单消息' : summary ? `待处理工单 ${summary.pending} 条` : '工单提醒'} · </>}{unseenRefund ? '收到新的退款申请' : refunds ? `待处理退款 ${refunds.pending} 单` : '退款提醒'}</strong><p role="status">{connectionError || audioError || (enabled ? `${ticketsSupported ? '声音已开启 · 工单响铃、' : '声音已开启 · '}退款语音播报；保持后台打开，约 15 秒检查一次。` : `${ticketsSupported ? '点击开启并试听：工单响铃，' : '点击开启并试听：'}退款播报「您有一单退款待处理」。`)}</p></div><div className="ticket-alert-actions"><Button variant="outline" size="sm" onClick={toggle}>{enabled ? <VolumeX size={14} /> : <Volume2 size={14} />}{enabled ? '关闭声音' : '开启声音提醒'}</Button>{ticketsSupported && <Button size="sm" onClick={() => { setUnseen(false); onOpen() }}>查看工单{summary ? ` (${summary.pending})` : ''}</Button>}<Button variant="outline" size="sm" onClick={() => { setUnseenRefund(false); onRefunds() }}>查看退款{refunds ? ` (${refunds.pending})` : ''}</Button></div></section>
+  const scopes: { audience: AdminAudience; label: string; count: number }[] = [
+    { audience:'owner', label:'查看直营退款', count:refunds?.ownerPending ?? 0 },
+    { audience:'agent', label:'查看代理退款', count:refunds?.agentPending ?? 0 },
+  ]
+  const actions = scopes.filter(item => item.count > 0)
+  function openRefunds(audience: AdminAudience) {
+    setUnseenRefund(false)
+    onRefunds(audience)
+  }
+  return <section className="ticket-alert" aria-label="工单与退款提醒">
+    <div>
+      <strong><Bell size={15} className="inline" /> {ticketsSupported && <>{unseen ? '收到新的代理工单消息' : summary ? `待处理工单 ${summary.pending} 条` : '工单提醒'} · </>}{unseenRefund ? '收到新的退款申请' : refunds ? `待处理退款 ${refunds.pending} 单` : '退款提醒'}</strong>
+      <p role="status">{connectionError || audioError || (enabled ? `${ticketsSupported ? '声音已开启 · 工单响铃、' : '声音已开启 · '}退款语音播报；保持后台打开，约 15 秒检查一次。` : `${ticketsSupported ? '点击开启并试听：工单响铃，' : '点击开启并试听：'}退款播报「您有一单退款待处理」。`)}</p>
+    </div>
+    <div className="ticket-alert-actions">
+      <Button variant="outline" size="sm" onClick={toggle}>{enabled ? <VolumeX size={14} /> : <Volume2 size={14} />}{enabled ? '关闭声音' : '开启声音提醒'}</Button>
+      {ticketsSupported && <Button size="sm" onClick={() => { setUnseen(false); onOpen() }}>查看工单{summary ? ` (${summary.pending})` : ''}</Button>}
+      {actions.length ? actions.map(item => <Button key={item.audience} variant="outline" size="sm" onClick={() => openRefunds(item.audience)}>{item.label} ({item.count})</Button>)
+        : <Button variant="outline" size="sm" onClick={() => openRefunds('owner')}>查看退款{refunds ? ` (${refunds.pending})` : ''}</Button>}
+    </div>
+  </section>
 }

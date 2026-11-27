@@ -136,6 +136,8 @@ test('operations pages isolate direct stores and agents in orders, refunds, and 
   const now = Date.now()
   const cases = new Map([root,planet,resale].map(id => [id,crypto.randomUUID()]))
   for (const [id, refund] of cases) createRefund.run(refund,id,refund,now,now,refund)
+  assert.deepEqual(await json(f, '/api/admin/refunds/notifications?channels=1'), {version:3,pending:3,ownerPending:2,agentPending:1})
+  assert.deepEqual(await json(f, '/api/admin/refunds/notifications'), {version:3,pending:3})
 
   for (const [params, ids] of [['store=store-3',[planet]], ['scope=owner',[root,planet]], ['scope=agent',[resale]], ['store=store-2',[]]] as const) {
     const sorted = [...ids].sort()

@@ -58,7 +58,12 @@ export async function customerRefunds(request: Request, env: Env, order: Order) 
 export async function adminRefunds(request: Request, env: Env, url: URL) {
   const db = env.INTEREST_DB; const path = url.pathname
   if (path === '/api/admin/refunds/notifications' && request.method === 'GET') {
-    const summary = await db.prepare("SELECT COUNT(*) version,COALESCE(SUM(CASE WHEN status IN ('pending','approved') THEN 1 ELSE 0 END),0) pending FROM refund_cases").first<{version: number; pending: number}>()
+    const byChannel = url.searchParams.get('channels') === '1'
+    const open = "r.status IN ('pending','approved')"
+    const summary = await db.prepare(`SELECT COUNT(*) version,COUNT(CASE WHEN ${open} THEN 1 END) pending
+      ${byChannel ? `,COUNT(CASE WHEN ${open} AND o.is_test=0 AND o.partner_id IS NULL THEN 1 END) ownerPending,
+      COUNT(CASE WHEN ${open} AND o.is_test=0 AND o.partner_id IS NOT NULL THEN 1 END) agentPending` : ''}
+      FROM refund_cases r${byChannel ? ' JOIN orders o ON o.id=r.order_id' : ''}`).first()
     return json(summary)
   }
   if (path === '/api/admin/refunds' && request.method === 'GET') {

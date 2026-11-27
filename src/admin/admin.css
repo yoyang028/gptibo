@@ -50,6 +50,7 @@
 .admin-mode,.admin-pill { display:inline-flex; align-items:center; font-size:10px; padding:4px 7px; background:var(--secondary); color:var(--muted-foreground); border-radius:5px; white-space:nowrap; }
 .admin-pill.available { background:var(--success-bg); color:var(--success); }
 .admin-filters { display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:18px 20px; border-bottom:1px solid var(--border); }
+.admin-audience-switch { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
 .admin-store-control { display:flex; align-items:center; flex-wrap:wrap; gap:8px; color:var(--muted-foreground); font-size:12px; }
 .admin-store-control label { white-space:nowrap; }
 .admin-store-control .partner-select { min-width:9rem; }

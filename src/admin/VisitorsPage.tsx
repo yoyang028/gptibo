@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { partnerStorefrontPath } from '../../shared/partner-link.ts'
 import { WorkspaceSelect } from '@/partner/workspace-ui'
-import { adminStoreOptions, storeScopeParams, type AdminStoreOption } from '../../shared/admin-store-scope'
+import { ownerStoreOptions, storeScopeParams, type AdminAudience, type AdminStoreOption } from '../../shared/admin-store-scope'
+import { AdminAudienceSwitch } from './AdminAudienceSwitch'
 
 type StoreTraffic = { id: string; name: string; active: number; visitors: number; pageViews: number; storefront_url?: string }
 type AdminSummary = VisitorSummary & {
@@ -18,7 +19,10 @@ type AdminSummary = VisitorSummary & {
 export default function AdminVisitorsPage({ revision, stores }: { revision: number; stores: AdminStoreOption[] }) {
   const [selected, setSelected] = useState<{ id: string; name: string; owner: boolean }>()
   const [days, setDays] = useState<VisitorPeriod>(7)
-  const [scope, setScope] = useState('all')
+  const [audience, setAudience] = useState<AdminAudience>('owner')
+  const [store, setStore] = useState('owner')
+  const hasStoreReporting = stores.length > 0
+  const scope = hasStoreReporting ? audience === 'owner' ? store : 'agent' : 'all'
   const query = storeScopeParams(scope, new URLSearchParams({ days:String(days) }))
   const resource = useResource<AdminSummary>(`/api/admin/visitors?${query}`, revision)
   const { data } = resource
@@ -28,18 +32,19 @@ export default function AdminVisitorsPage({ revision, stores }: { revision: numb
 
   return (
     <>
+      {hasStoreReporting && <AdminAudienceSwitch label="访客渠道" ownerLabel="直营访客" agentLabel="代理访客" audience={audience} onChange={setAudience} />}
       <VisitorStatsPanel
         {...resource}
         title={title}
         description={days === 1 ? '北京时间今日的访客与浏览量' : `北京时间 · 最近 ${days} 天的访客与浏览量`}
-        action={stores.length > 0 && <div className="admin-store-control"><label htmlFor="visitor-store">访问店铺</label><WorkspaceSelect id="visitor-store" label="访问店铺" value={scope} options={adminStoreOptions(stores)} onValueChange={setScope} /></div>}
+        action={hasStoreReporting && audience === 'owner' && <div className="admin-store-control"><label htmlFor="visitor-store">访问店铺</label><WorkspaceSelect id="visitor-store" label="访问店铺" value={store} options={ownerStoreOptions(stores)} onValueChange={setStore} /></div>}
         days={days}
         onDaysChange={setDays}
       />
       {!current && data && <section className="admin-panel visitor-shops-panel" aria-label="各店访问分布">
         <div className="admin-panel-title">
           <div>
-            <h2>各店访问分布</h2>
+            <h2>{scope === 'owner' ? '自营店访问分布' : scope === 'agent' ? '代理店访问分布' : '各店访问分布'}</h2>
             <span>{days === 1 ? '今天' : `最近 ${days} 天`} · 独立访客按店去重</span>
           </div>
           <span>{data.partners.length + ownerStores.length} 家店铺</span>
@@ -70,7 +75,7 @@ export default function AdminVisitorsPage({ revision, stores }: { revision: numb
                   <td className="admin-numeric">
                     {store.visitors > 0 ? (store.pageViews / store.visitors).toFixed(1) : '0.0'} 页/人
                   </td>
-                  <td><Button variant="ghost" size="sm" onClick={() => stores.length ? setScope(store.id) : setSelected({ ...store, owner:true })}>查看趋势 <ArrowUpRight size={13} /></Button></td>
+                  <td><Button variant="ghost" size="sm" onClick={() => hasStoreReporting ? setStore(store.id) : setSelected({ ...store, owner:true })}>查看趋势 <ArrowUpRight size={13} /></Button></td>
                 </tr>)}
                 {data.partners.map((partner) => (
                   <tr key={partner.id}>

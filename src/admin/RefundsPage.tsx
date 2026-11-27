@@ -13,7 +13,8 @@ import { mutationError } from '@/lib/query-state'
 import { money, date, toCents } from '@/partner/model'
 import { Pagination } from '@/partner/shared'
 import { WorkspaceSelect } from '@/partner/workspace-ui'
-import { adminStoreOptions, storeScopeParams, type AdminStoreOption } from '../../shared/admin-store-scope'
+import { ownerStoreOptions, storeScopeParams, type AdminAudience, type AdminStoreOption } from '../../shared/admin-store-scope'
+import { AdminAudienceSwitch } from './AdminAudienceSwitch'
 
 type Row = RefundCase & { order_id: string; plan_name: string; customer_email: string; mode: string; partner_name: string | null; owner_store_name?: string | null }
 const orderLabels: Record<string, string> = { pending: '待付款', session: '待交付 / 待提交资料', processing: '处理中', success: '已完成', failed: '交付失败 / 待处理', cancelled: '已关闭' }
@@ -52,21 +53,25 @@ function RefundDetail({ id, scope, open, onClose, onClosed, onUpdated }: { id: s
   }
   return <Dialog open={open} onOpenChange={value => { if (!value && !busy && !submitting.current) onClose() }} onOpenChangeComplete={value => { if (!value) onClosed() }}><DialogContent className="motion-dialog service-dialog" showCloseButton={!busy}><DialogHeader><DialogTitle>处理售后</DialogTitle><DialogDescription>审核金额，确认退款结果，保留完整记录。</DialogDescription></DialogHeader><Feedback {...resource} shape="detail" />{resource.stale && <p className="service-stale">显示上次读取的记录。刷新成功后可继续操作。</p>}{data && <><article className="refund-record"><div><strong>{data.order.plan}</strong><span>{refundLabel(data.refund.status)}</span></div><p>本站订单：{data.order.id}</p><p>所属店铺：{data.order.partner_name || data.order.owner_store_name || '直营'}</p><p>订单状态：{orderLabels[data.order.status] ?? data.order.status} · 支付状态：{paymentLabels[data.order.payment_status ?? ''] ?? '待核对'}{Boolean(data.order.refund_hold) && ' · 售后冻结'}</p>{data.order.created_at && <p>下单时间：{date(data.order.created_at)}</p>}{data.order.updated_at && <p>订单更新：{date(data.order.updated_at)}</p>}{data.platformStatus?.remote_id && <p>上游订单：{data.platformStatus.remote_id}</p>}{data.platformStatus?.paymentStatus && <p>上游支付状态：{paymentLabels[data.platformStatus.paymentStatus] ?? data.platformStatus.paymentStatus}{data.platformStatus.financialHold && ' · 账务待核对'}</p>}{data.redemption && <p>最近充值任务：{redemptionLabels[data.redemption.status] ?? data.redemption.status} · {date(data.redemption.updated_at)}</p>}{data.order.purchase_note && <p>下单备注：{data.order.purchase_note}</p>}<p>客户下单邮箱：{data.order.customer_email || '旧订单未留邮箱'}</p><p>原金额 {money(data.order.price_cents)} · 本站已记账退款 {money(data.order.refunded_cents)}</p>{data.platformStatus && <p>上游累计已退 {money(data.platformStatus.refundedCents)}{data.platformStatus.checkedAt && ` · 核对于 ${date(data.platformStatus.checkedAt)}`}</p>}<p>{data.order.mode === 'demo' ? '历史测试记录 · 无资金往来' : '正式订单'}{data.order.partner_name && ` · 代理 ${data.order.partner_name}`}</p>{data.upstreamRefund && <p role="status">上游退款：{upstreamRefundLabels[data.upstreamRefund.status] ?? '待核对'}{data.upstreamRefund.remote_id && ` · ${data.upstreamRefund.remote_id}`} · {date(data.upstreamRefund.updated_at)}</p>}<p>申请原因：{data.refund.reason}</p></article><PartnerRefundImpact data={data} />{blocked && <p className="service-policy">关联提现已审核，需先在代理管理中核对转账结果并登记已付款或退回，再确认退款完成。</p>}{(isPending || isApproved) && <form className="service-form" onSubmit={e => { e.preventDefault(); void save() }}>{isPending ? <><label htmlFor="refund-action">审核结果</label><select id="refund-action" value={action} onChange={e => setAction(e.target.value)} disabled={busy}><option value="approve">同意退款</option><option value="reject">拒绝申请</option></select>{action === 'approve' && <><label htmlFor="refund-amount">商品退款金额（元，不含手续费）</label><Input id="refund-amount" inputMode="decimal" value={amount ?? (data.refund.requested_cents / 100).toFixed(2)} onChange={e => setAmount(e.target.value)} disabled={busy || data.order.status !== 'success'} /><p>{data.order.status === 'success' ? '已完成订单可审核部分退款；最高为剩余已付金额。' : '未交付或交付失败，按剩余已付金额全额退款。'}</p></>}</> : <><strong>待退款 {money(data.refund.approved_cents! + (data.refundFeeCents ?? 0))}</strong><p>商品款 {money(data.refund.approved_cents!)} + 平台手续费 {money(data.refundFeeCents ?? 0)}</p><p>{data.order.mode === 'demo' ? '仅结束这条历史售后记录，不涉及收款或转账。' : data.paymentProvider ? channelRefundCopy : '请先完成实际退款，核实成功后登记流水。本操作仅记账，不会自动转账。'}</p>{data.order.mode !== 'demo' && (!data.paymentProvider || manualPayment) && <>{manualPayment && <><label htmlFor="refund-confirm-amount">核实后的实际退款总额（含手续费，元）</label><Input id="refund-confirm-amount" required inputMode="decimal" value={amount ?? ''} onChange={e => setAmount(e.target.value)} disabled={busy} /></>}<label htmlFor="refund-reference">实际退款流水号</label><Input id="refund-reference" value={reference} onChange={e => setReference(e.target.value)} required maxLength={100} disabled={busy} /></>}</>}<label htmlFor="refund-note">处理说明（客户可见）</label><textarea id="refund-note" required rows={3} maxLength={500} value={note} onChange={e => setNote(e.target.value)} disabled={busy} /><Feedback error={error} /><Button type="submit" disabled={busy || resource.loading || resource.stale || !note.trim() || (Boolean(isApproved) && blocked)}>{busy ? '保存中…' : isPending ? action === 'approve' ? (data.approvalSubmitsRefund !== false && data.paymentProvider === 'recharge' && !upstreamRefund ? '审核通过并提交上游退款' : '审核通过，进入退款') : '拒绝申请' : data.order.mode === 'demo' ? '结束售后记录' : manualPayment ? '确认卓付已退款，完成工单' : upstreamRefund ? '核对上游已退款，完成工单' : data.paymentProvider === 'recharge' ? '提交 / 核对平台退款' : data.paymentProvider ? '执行原路退款' : '确认实际退款已完成'}</Button></form>}<h3>售后记录</h3><ol className="admin-timeline">{data.events.map((e,i) => <li key={e.id ?? i}><div><strong>{refundLabel(e.status)}</strong><time>{date(e.created_at)}</time></div><span>{activityCopy(e.note)}</span></li>)}</ol></>}<Button variant="outline" disabled={busy || resource.loading} onClick={() => setRevision(v => v + 1)}>{resource.error ? '重新读取详情' : '刷新详情'}</Button></DialogContent></Dialog>
 }
-export default function RefundsPage({ revision, stores }: { revision: number; stores: AdminStoreOption[] }) {
+export default function RefundsPage({ revision, stores, initialAudience }: { revision: number; stores: AdminStoreOption[]; initialAudience: AdminAudience }) {
   const [local, setLocal] = useState(0)
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('')
-  const [scope, setScope] = useState('all')
+  const [audience, setAudience] = useState(initialAudience)
+  const [store, setStore] = useState('owner')
   const [selected, setSelected] = useState<string>()
   const [detailOpen, setDetailOpen] = useState(false)
+  const hasStoreReporting = stores.length > 0
+  const scope = hasStoreReporting ? audience === 'owner' ? store : 'agent' : 'all'
   const query = storeScopeParams(scope, new URLSearchParams({ page:String(page), status }))
   const resource = useResource<{ rows: Row[]; total: number }>(`/api/admin/refunds?${query}`, revision + local)
   return <>
+    {hasStoreReporting && <AdminAudienceSwitch label="售后渠道" ownerLabel="直营售后" agentLabel="代理售后" audience={audience} onChange={value => { setAudience(value); setPage(1) }} />}
     <section className="admin-panel" aria-label="售后申请列表">
       <div className="admin-panel-title admin-refunds-heading">
         <h2>售后申请</h2>
         <div className="admin-page-filters">
-          {stores.length > 0 && <div className="admin-store-control"><label htmlFor="refund-store">售后店铺</label><WorkspaceSelect id="refund-store" label="售后店铺" value={scope} options={adminStoreOptions(stores)} onValueChange={value => { setScope(value); setPage(1) }} /></div>}
+          {hasStoreReporting && audience === 'owner' && <div className="admin-store-control"><label htmlFor="refund-store">售后店铺</label><WorkspaceSelect id="refund-store" label="售后店铺" value={store} options={ownerStoreOptions(stores)} onValueChange={value => { setStore(value); setPage(1) }} /></div>}
           <select aria-label="售后状态" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}>
             <option value="">全部申请</option>{['pending','approved','refunded','rejected','cancelled'].map(s => <option key={s} value={s}>{refundLabel(s)}</option>)}
           </select>
@@ -77,17 +82,17 @@ export default function RefundsPage({ revision, stores }: { revision: number; st
         {resource.data.rows.length ? <div className="admin-table-scroll">
           <table className="admin-table admin-refunds-table">
             <colgroup>{[24,14,24,15,11,12].map((width,index) => <col key={index} style={{ width:width+'%' }} />)}</colgroup>
-            <thead><tr><th>订单 / 邮箱</th><th>所属店铺 / 渠道</th><th>原因</th><th>申请 / 核准金额</th><th>状态</th><th>操作</th></tr></thead>
+            <thead><tr><th>订单 / 邮箱</th><th>{hasStoreReporting ? audience === 'agent' ? '代理商' : '所属店铺' : '所属店铺 / 渠道'}</th><th>原因</th><th>申请 / 核准金额</th><th>状态</th><th>操作</th></tr></thead>
             <tbody>{resource.data.rows.map(r => <tr key={r.id}>
               <td><span className="partner-order-id">{r.order_id}</span><small>{r.customer_email || '未留邮箱'}</small><small>{date(r.created_at)} · {r.mode === 'demo' ? '历史测试记录' : '正式'}</small></td>
-              <td><strong>{r.partner_name || r.owner_store_name || '直营'}</strong><small>{r.partner_name ? '代理渠道' : '自营店铺'}</small></td>
+              <td><strong>{r.partner_name || r.owner_store_name || (audience === 'agent' ? '代理商' : '直营')}</strong></td>
               <td><span className="refund-list-reason" title={r.reason}>{r.reason}</span></td>
               <td className="admin-numeric">{money(r.requested_cents)}<small>{r.approved_cents ? `核准 ${money(r.approved_cents)}` : '尚未核准'}</small></td>
               <td><Badge variant={r.status === 'pending' || r.status === 'approved' ? 'secondary' : 'outline'}>{refundLabel(r.status)}</Badge></td>
               <td><Button variant="outline" size="sm" onClick={() => { setSelected(r.id); setDetailOpen(true) }}>{['pending','approved'].includes(r.status) ? '处理申请' : '查看记录'}</Button></td>
             </tr>)}</tbody>
           </table>
-        </div> : <div className="admin-empty"><h3>此范围暂无售后申请</h3><p>可切换店铺或申请状态查看其他记录。</p></div>}
+        </div> : <div className="admin-empty"><h3>此范围暂无售后申请</h3><p>{audience === 'owner' ? '可切换自营店铺或申请状态查看其他记录。' : '可切换申请状态查看其他代理售后记录。'}</p></div>}
         <Pagination page={page} total={resource.data.total} onPage={setPage} />
       </>}
     </section>

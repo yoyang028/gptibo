@@ -1,6 +1,7 @@
 import ProductCatalog from './ProductCatalog'
 import { ADMIN_SUPPLIERS, adminProductRoute, type ProductSection } from '../../shared/admin-suppliers'
-import { adminStoreOptions, storeScopeParams, type AdminStoreOption } from '../../shared/admin-store-scope'
+import { ownerStoreOptions, storeScopeParams, type AdminAudience, type AdminStoreOption } from '../../shared/admin-store-scope'
+import { AdminAudienceSwitch } from './AdminAudienceSwitch'
 import MyShop from './MyShop'
 import ShopOrderActions from './ShopOrderActions'
 import { ShopBrand } from '@/components/shop-brand'
@@ -73,14 +74,15 @@ function SettlementBadge({ status }: { status?: 'pending' | 'paid' | null }) {
   if (!status) return null
   return <Badge variant="outline" className="admin-settlement-badge" data-state={status}>{status === 'paid' ? '已结算' : '结算处理中'}</Badge>
 }
-function OrderTable({ orders, onSelect, showStore = false }: { orders: AdminOrder[]; onSelect: (id: string) => void; showStore?: boolean }) {
+function OrderTable({ orders, onSelect, audience }: { orders: AdminOrder[]; onSelect: (id: string) => void; audience?: AdminAudience }) {
+  const showStore = audience !== undefined
   if (!orders.length) return <div className="admin-empty"><ClipboardList size={28} /><h3>还没有订单</h3><p>前台创建的订单会显示在这里。</p><a href="/" target="_blank" rel="noreferrer">打开商店 <ArrowUpRight size={14} /></a></div>
   return <div className="admin-table-scroll"><table className={showStore ? 'admin-table admin-order-table' : 'admin-table'}>
     {showStore && <colgroup>{[22,12,18,12,14,11,11].map((width,index) => <col key={index} style={{ width:width+'%' }} />)}</colgroup>}
-    <thead><tr><th>订单 / 创建时间</th>{showStore && <th>所属店铺 / 渠道</th>}<th>商品套餐</th><th>订单金额</th><th>状态</th><th>类型</th><th><span className="sr-only">操作</span></th></tr></thead>
+    <thead><tr><th>订单 / 创建时间</th>{showStore && <th>{audience === 'agent' ? '代理商' : '所属店铺'}</th>}<th>商品套餐</th><th>订单金额</th><th>状态</th><th>类型</th><th><span className="sr-only">操作</span></th></tr></thead>
     <tbody>{orders.map(o => <tr key={o.id}>
       <td><button className="admin-order-id" onClick={() => onSelect(o.id)} title={o.id}>{o.id}</button><small>{time(o.createdAt)}</small></td>
-      {showStore && <td><strong>{o.partnerName || o.ownerStoreName || '直营'}</strong><small>{o.partnerName ? '代理渠道' : '自营店铺'}</small></td>}
+      {showStore && <td><strong>{audience === 'agent' ? o.partnerName || '代理商' : o.ownerStoreName || '直营'}</strong></td>}
       <td>{o.isTest ? '支付联调测试' : o.custom?.productName ?? productName(o.plan)}<small>{o.planName}{!showStore && (o.partnerName || o.ownerStoreName) && ` · ${o.partnerName || o.ownerStoreName}`}</small></td>
       <td className="admin-numeric">{money(o.paymentSummary?.amountCents ?? Math.round(o.price * 100))}<small>{o.paymentStatus === 'simulated' ? '无实际收款' : o.paymentStatus === 'paid' ? '已到账' : '未付款'}</small></td>
       <td><div className="admin-order-flags"><span className={`status-pill status-${o.status}`}><span />{orderLabel(o)}</span><SettlementBadge status={o.settlementStatus} /></div></td>
@@ -94,24 +96,30 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
 }
 function OverviewPage({ revision, onSelect, onOrders, onVisitors }: { revision: number; onSelect: (id: string) => void; onOrders: () => void; onVisitors?: () => void }) {
   const { data, error, loading } = useResource<Overview>('/api/admin/overview', revision)
-  return <><Feedback error={error} loading={loading} data={data} shape="overview" />{data && <><div className="admin-metrics">{[['全部订单', data.stats.total], ['待付款', data.stats.pending ?? 0], ['处理中 / 需处理', data.stats.active ?? 0], ['已完成', data.stats.completed ?? 0]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><div className="admin-summary"><div><span>净收款（扣退款）</span><strong>{money(data.stats.paid_amount)}</strong></div><div><span>累计退款</span><strong>{money(data.stats.refund_amount ?? 0)}</strong></div><div><span>上线提醒登记</span><strong>{data.interest.total}<small>条</small></strong></div></div><div className="admin-overview-charts"><VisitorStats endpoint="/api/admin/visitors" revision={revision} title="全站访客与流量趋势" description="全站各渠道与直营商店的独立访客走势" action={onVisitors && <Button variant="ghost" size="sm" onClick={onVisitors}>各商店分布 <ArrowUpRight size={14} /></Button>} /><PartnerRankingChart revision={revision} /></div><section className="admin-panel"><div className="admin-panel-title"><h2>最近订单</h2><Button variant="ghost" onClick={onOrders}>全部订单 <ArrowUpRight size={15} /></Button></div><OrderTable orders={data.recent} onSelect={onSelect} /></section></>}</>
+  return <><Feedback error={error} loading={loading} data={data} shape="overview" />{data && <><div className="admin-metrics">{[['全部订单', data.stats.total], ['待付款', data.stats.pending ?? 0], ['处理中 / 需处理', data.stats.active ?? 0], ['已完成', data.stats.completed ?? 0]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><div className="admin-summary"><div><span>净收款（扣退款）</span><strong>{money(data.stats.paid_amount)}</strong></div><div><span>累计退款</span><strong>{money(data.stats.refund_amount ?? 0)}</strong></div><div><span>上线提醒登记</span><strong>{data.interest.total}<small>条</small></strong></div></div><div className="admin-overview-charts"><VisitorStats endpoint="/api/admin/visitors" revision={revision} title="全站访客与流量趋势" description="全站各渠道与直营商店的独立访客走势" action={onVisitors && <Button variant="ghost" size="sm" onClick={onVisitors}>各商店分布 <ArrowUpRight size={14} /></Button>} /><PartnerRankingChart revision={revision} /></div><section className="admin-panel"><div className="admin-panel-title"><h2>最近订单</h2><Button variant="ghost" onClick={onOrders}>订单管理 <ArrowUpRight size={15} /></Button></div><OrderTable orders={data.recent} onSelect={onSelect} /></section></>}</>
 }
 function OrdersPage({ revision, onSelect, stores }: { revision: number; onSelect: (id: string, scope: string) => void; stores: AdminStoreOption[] }) {
-  const [scope,setScope] = useState('all')
+  const [audience, setAudience] = useState<AdminAudience>('owner')
+  const [store, setStore] = useState('owner')
   const [search, setSearch] = useState(''); const [q, setQ] = useState(''); const [status, setStatus] = useState(''); const [plan, setPlan] = useState(''); const [page, setPage] = useState(1)
+  const hasStoreReporting = stores.length > 0
+  const scope = hasStoreReporting ? audience === 'owner' ? store : 'agent' : 'all'
   const params = storeScopeParams(scope, new URLSearchParams({ q, status, plan, page: String(page) }))
   const { data, error, loading } = useResource<{ orders: AdminOrder[]; total: number }>(`/api/admin/orders?${params}`, revision)
-  return <section className="admin-panel" aria-label="订单列表">
-    <form className="admin-filters" onSubmit={e => { e.preventDefault(); setQ(search); setPage(1) }}>
-      {stores.length > 0 && <div className="admin-store-control"><label htmlFor="order-store">订单店铺</label><WorkspaceSelect id="order-store" label="订单店铺" value={scope} options={adminStoreOptions(stores)} onValueChange={value => { setScope(value); setPage(1) }} /></div>}
-      <div className="admin-search"><Search size={16} /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索本站 / 上游单号或客户邮箱" aria-label="搜索本站 / 上游单号或客户邮箱" /></div>
-      <select aria-label="订单状态" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">全部状态</option>{Object.entries(ORDER_LABELS).map(([value, label]) => <option key={value} value={value}>{value === 'session' ? '待交付 / 待提交资料' : value === 'processing' ? '处理中' : label}</option>)}</select>
-      <select aria-label="商品套餐" value={plan} onChange={e => { setPlan(e.target.value); setPage(1) }}><option value="">全部套餐</option><option value="plus">Plus</option><option value="pro-5x">Pro 5×</option><option value="pro-20x">Pro 10×</option><option value="pro-25x">Pro 25×</option><option value="gemini-pro-18m">Gemini Pro 18 个月</option><option value="duolingo-12m">多邻国 1 年</option><option value="codex-sms-once">Codex 接码</option></select>
-      <Button type="submit" variant="outline">查询</Button>
-    </form>
-    <Feedback error={error} loading={loading} data={data} />
-    {data && <>{data.orders.length ? <OrderTable orders={data.orders} showStore={stores.length > 0} onSelect={id => onSelect(id, scope)} /> : <div className="admin-empty"><Search size={25} /><h3>没有符合条件的订单</h3><p>试试其他订单号或筛选条件。</p></div>}<Pagination page={page} total={data.total} onChange={setPage} /></>}
-  </section>
+  return <>
+    {hasStoreReporting && <AdminAudienceSwitch label="订单渠道" ownerLabel="直营订单" agentLabel="代理订单" audience={audience} onChange={value => { setAudience(value); setPage(1) }} />}
+    <section className="admin-panel" aria-label="订单列表">
+      <form className="admin-filters" onSubmit={e => { e.preventDefault(); setQ(search); setPage(1) }}>
+        {hasStoreReporting && audience === 'owner' && <div className="admin-store-control"><label htmlFor="order-store">订单店铺</label><WorkspaceSelect id="order-store" label="订单店铺" value={store} options={ownerStoreOptions(stores)} onValueChange={value => { setStore(value); setPage(1) }} /></div>}
+        <div className="admin-search"><Search size={16} /><Input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索本站 / 上游单号或客户邮箱" aria-label="搜索本站 / 上游单号或客户邮箱" /></div>
+        <select aria-label="订单状态" value={status} onChange={e => { setStatus(e.target.value); setPage(1) }}><option value="">全部状态</option>{Object.entries(ORDER_LABELS).map(([value, label]) => <option key={value} value={value}>{value === 'session' ? '待交付 / 待提交资料' : value === 'processing' ? '处理中' : label}</option>)}</select>
+        <select aria-label="商品套餐" value={plan} onChange={e => { setPlan(e.target.value); setPage(1) }}><option value="">全部套餐</option><option value="plus">Plus</option><option value="pro-5x">Pro 5×</option><option value="pro-20x">Pro 10×</option><option value="pro-25x">Pro 25×</option><option value="gemini-pro-18m">Gemini Pro 18 个月</option><option value="duolingo-12m">多邻国 1 年</option><option value="codex-sms-once">Codex 接码</option></select>
+        <Button type="submit" variant="outline">查询</Button>
+      </form>
+      <Feedback error={error} loading={loading} data={data} />
+      {data && <>{data.orders.length ? <OrderTable orders={data.orders} audience={hasStoreReporting ? audience : undefined} onSelect={id => onSelect(id, scope)} /> : <div className="admin-empty"><Search size={25} /><h3>没有符合条件的订单</h3><p>试试其他订单号或筛选条件。</p></div>}<Pagination page={page} total={data.total} onChange={setPage} /></>}
+    </section>
+  </>
 }
 function OrderDetail({ id, scope, onClose, onUpdated }: { id: string; scope: string; onClose: () => void; onUpdated: () => void }) {
   const [revision, setRevision] = useState(0)
@@ -215,6 +223,7 @@ export default function Admin() {
     const url = new URL(location.href); url.searchParams.set('store', id); history.replaceState(null, '', url)
   }
   const [detail, setDetail] = useState<{ id: string; scope: string }>()
+  const [refundEntry, setRefundEntry] = useState<{ audience: AdminAudience; visit: number }>({ audience:'owner', visit:0 })
   function openOrder(id: string, scope = 'all') { setDetail({ id, scope }) }
   function navigate(nextView: string, nextSupplier: ProductSection = 'all') {
     const next = { view: nextView, supplier: nextView === 'products' ? nextSupplier : 'all' as ProductSection }
@@ -225,10 +234,19 @@ export default function Admin() {
     if (url.href !== location.href) history.pushState(null, '', url)
     setRoute(next)
   }
-  const setView = (nextView: string) => navigate(nextView)
+  function setView(nextView: string) {
+    if (nextView === 'refunds' && view !== nextView) setRefundEntry(entry => ({ audience:'owner', visit:entry.visit + 1 }))
+    navigate(nextView)
+  }
+  function openRefunds(audience: AdminAudience) {
+    setRefundEntry(entry => ({ audience, visit:entry.visit + 1 }))
+    navigate('refunds')
+    setRevision(v => v + 1)
+  }
   useEffect(() => {
     const restore = () => {
       const next = adminProductRoute(location.search)
+      if (next.view === 'refunds') setRefundEntry(entry => ({ audience:'owner', visit:entry.visit + 1 }))
       setRoute(views.some(v => v.id === next.view) ? next : { view: 'overview', supplier: 'all' })
       const store = new URLSearchParams(location.search).get('store') || ''
       setSelectedStore(['platform','store-2','store-3'].includes(store) ? store : '')
@@ -303,7 +321,7 @@ export default function Admin() {
       <header className="admin-topbar"><span>{shopName} / {current.label}{view === 'products' ? ' / ' + productLabel : ''}</span><div><a href={storefrontUrl} target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
       <main className="admin-main">
         <div className="admin-page-heading"><div><span>WORKSPACE</span><h1 ref={heading} tabIndex={-1}>{current.label}</h1><p>{view === 'products' ? '按上游服务商统一管理商品、规格、定价与 API 配置。' : view === 'orders' ? '从创建到完成，查看订单与处理记录。' : view === 'accounting' ? '筛选订单查看净利润，按清账周期保存统计。' : view === 'invoices' ? '管理代理开票申请与手续费收款，登记平台提交进度。' : view === 'customers' ? '按店铺查看客户资料与会员到期记录。' : view === 'contacts' ? '设置平台商店向客户展示的联系方式。' : view === 'integrations' ? '管理收款方式、平台手续费与通知服务。' : '基于服务器记录，了解服务与订单进展。'}</p></div><Button variant="outline" onClick={() => { setRevision(v => v + 1); void checkSession() }}><RefreshCw size={15} />刷新</Button></div>
-        <TicketAlerts onOpen={() => setView('tickets')} onRefunds={() => { setView('refunds'); setRevision(v => v + 1) }} />
+        <TicketAlerts onOpen={() => setView('tickets')} onRefunds={openRefunds} />
         <Feedback error={sessionError} />
         {view === 'products' && <ProductCatalog key={supplier} revision={revision} supplier={supplier} onSupplier={next => navigate('products', next)} onSaved={() => setRevision(v => v + 1)} onOrder={openOrder} />}
         {view === 'tickets' && <TicketWorkspace admin revision={revision} onOrder={openOrder} />}
@@ -311,7 +329,7 @@ export default function Admin() {
         {view === 'overview' && <OverviewPage revision={revision} onSelect={openOrder} onOrders={() => setView('orders')} onVisitors={() => setView('visitors')} />}
         {view === 'my-shop' && <MyShop storeId={storeId} onStoreChange={selectStore} revision={revision} onManageProducts={() => navigate('products')} onSaved={() => { setRevision(v => v + 1); void checkSession() }} />}
         {view === 'orders' && <OrdersPage revision={revision} stores={ownerStores} onSelect={openOrder} />}
-        {view === 'refunds' && <RefundsPage revision={revision} stores={ownerStores} />}
+        {view === 'refunds' && <RefundsPage key={refundEntry.visit} initialAudience={refundEntry.audience} revision={revision} stores={ownerStores} />}
         {view === 'interest' && <InterestPage revision={revision} />}
         {view === 'contacts' && <SupportContactsPanel endpoint="/api/admin/support-contacts" revision={revision} />}
         {view === 'integrations' && <IntegrationsPage revision={revision} />}
