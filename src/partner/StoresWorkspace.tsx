@@ -11,7 +11,8 @@ import {
 import { prepareLogo } from '@/lib/prepare-logo'
 import { synchronizeOwnerIdentity } from '../../shared/owner-identity'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Plus, Store, Ticket, Globe, ArrowUpRight } from 'lucide-react'
+import { Plus, Store, Ticket, Globe, ArrowUpRight, Shuffle } from 'lucide-react'
+import { addMonths } from 'date-fns'
 import QRCode from 'qrcode'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -537,7 +538,7 @@ export function StoresWorkspace({
                       <div>
                         <h3>
                           <Ticket size={18} />
-                          代理优惠码
+                          {owner ? '店铺优惠码' : '代理优惠码'}
                         </h3>
                         <p>
                           只在勾选的商店商品生效。邮箱限次在同一码绑定的所有商店之间共用。
@@ -1200,7 +1201,7 @@ function StoreEditor({
       }}
     >
       <DialogContent
-        className="store-editor motion-dialog"
+        className={`store-editor motion-dialog${owner ? ' store-settings-dialog' : ''}`}
         showCloseButton={!busy}
       >
         <DialogHeader>
@@ -1268,7 +1269,7 @@ function StoreEditor({
                 onChange={(e) => setName(e.target.value)}
               />
             </label>
-            {owner && <p className="stores-hint">店名同步用于前台、管理后台和邮件发送人；页面标题可单独填写，留空时使用店名。</p>}
+            {owner && <p className="stores-hint">店名用于前台和邮件发送人。页面标题可单独填写，留空时使用店名。</p>}
             {(
               [
                 [
@@ -1373,27 +1374,28 @@ function CouponEditor({
   const [start, setStart] = useState(() =>
     localDate(coupon?.starts_at ?? new Date().toISOString()),
   )
-  const [end, setEnd] = useState(() =>
-    localDate(
-      coupon?.ends_at ?? new Date(Date.now() + 30 * 86400000).toISOString(),
-    ),
-  )
-  const [count, setCount] = useState(String(coupon?.max_uses ?? 100))
+  const [customEnd, setCustomEnd] = useState(() => coupon ? localDate(coupon.ends_at) : undefined)
+  const [count, setCount] = useState(coupon ? String(coupon.max_uses) : '')
   const [once, setOnce] = useState(coupon?.once_per_email ?? true)
   const [active, setActive] = useState(coupon?.active ?? true)
   const [targets, setTargets] = useState<Target[]>(coupon?.targets ?? [])
-  const validDates =
-    Number.isFinite(Date.parse(start)) &&
-    Number.isFinite(Date.parse(end)) &&
-    Date.parse(end) > Date.parse(start)
-  const invalid =
+  const startsAt = new Date(start)
+  const end = customEnd ?? (Number.isFinite(startsAt.getTime()) ? localDate(addMonths(startsAt, 2).toISOString()) : '')
+  const endsAt = new Date(end)
+  const validDates = endsAt.getTime() > startsAt.getTime()
+  const maxUses = Number(count)
+  const validCount = Number.isInteger(maxUses) && maxUses >= 1 && maxUses <= 1_000_000
+  const discountCents = toCents(amount)
+  const belowCost =
     active &&
     targets.some((t) => {
       const p = prices.find(
         (p) => p.store_id === t.storeId && p.plan === t.plan,
       )
-      return !p || p.price_cents - toCents(amount) < p.cost_cents
+      return !p || p.price_cents - discountCents < p.cost_cents
     })
+  const canSave = !busy && validDates && validCount && !belowCost && targets.length > 0 &&
+    Number.isSafeInteger(discountCents) && discountCents > 0
   return (
     <Dialog
       open
@@ -1402,27 +1404,27 @@ function CouponEditor({
       }}
     >
       <DialogContent
-        className="store-editor motion-dialog"
+        className="store-editor store-settings-dialog store-coupon-dialog motion-dialog"
         showCloseButton={!busy}
       >
         <DialogHeader>
           <DialogTitle>{coupon ? '编辑优惠码' : '新增优惠码'}</DialogTitle>
           <DialogDescription>
-            固定减金额；未勾选的商店商品不能使用。
+            优惠码仅适用于勾选的店铺套餐，每次抵扣固定金额。
           </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            if (busy || invalid || !validDates) return
+            if (!canSave) return
             void save({
               id: coupon?.id ?? '',
               version: coupon?.version ?? 0,
               code,
-              discountCents: toCents(amount),
-              startsAt: new Date(start).toISOString(),
-              endsAt: new Date(end).toISOString(),
-              maxUses: Number(count),
+              discountCents,
+              startsAt: startsAt.toISOString(),
+              endsAt: endsAt.toISOString(),
+              maxUses,
               oncePerEmail: once,
               active,
               targets,
@@ -1435,17 +1437,23 @@ function CouponEditor({
                 {error}
               </p>
             )}
-            <label>
-              优惠码
-              <Input
-                required
-                maxLength={32}
-                pattern="[A-Za-z0-9_-]{3,32}"
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase())}
-              />
-            </label>
-            <div className="store-form-grid">
+            <div className="coupon-code-field">
+              <label htmlFor="store-coupon-code">优惠码</label>
+              <div className="coupon-code-controls">
+                <Input
+                  id="store-coupon-code"
+                  required
+                  maxLength={32}
+                  pattern="[A-Z0-9_\-]{3,32}"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                />
+                {!coupon && <Button type="button" variant="outline" onClick={() => setCode(crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase())}>
+                  <Shuffle size={15} aria-hidden="true" />随机生成
+                </Button>}
+              </div>
+            </div>
+            <div className="store-form-grid coupon-form-grid">
               <label>
                 减免金额（元）
                 <Input
@@ -1461,7 +1469,10 @@ function CouponEditor({
                   type="number"
                   required
                   min={1}
-                  max={1000000}
+                  max={1_000_000}
+                  step={1}
+                  inputMode="numeric"
+                  placeholder="请输入次数"
                   value={count}
                   onChange={(e) => setCount(e.target.value)}
                 />
@@ -1476,91 +1487,66 @@ function CouponEditor({
                 id="coupon-end"
                 label="失效时间"
                 value={end}
-                onChange={setEnd}
+                onChange={setCustomEnd}
               />
             </div>
-            <label className="store-check">
-              <Checkbox checked={once} onCheckedChange={setOnce} />
-              每个邮箱限用一次（跨选中商店合计）
-            </label>
-            <label className="store-check">
-              <Checkbox checked={active} onCheckedChange={setActive} />
-              启用优惠码
-            </label>
-            <fieldset>
+            <div className="coupon-options">
+              <label className="store-check">
+                <Checkbox checked={once} onCheckedChange={setOnce} />
+                每个邮箱限用一次（跨选中商店合计）
+              </label>
+              <label className="store-check">
+                <Checkbox checked={active} onCheckedChange={setActive} />
+                启用优惠码
+              </label>
+            </div>
+            <fieldset className="coupon-targets">
               <legend>适用商店与套餐 · 已选 {targets.length} 项</legend>
-              {shops.map((s) => (
-                <WorkspaceDisclosure
-                  key={s.id}
-                  defaultOpen={s.id === selected}
-                  title={s.name}
-                >
-                  {prices
-                    .filter((p) => p.store_id === s.id)
-                    .map((p) => {
-                      const checked = targets.some(
-                        (t) => t.storeId === s.id && t.plan === p.plan,
-                      )
-                      return (
-                        <label
-                          className="store-check store-target"
-                          key={p.plan}
-                        >
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(checked) =>
-                              setTargets(
-                                checked
-                                  ? [
-                                      ...targets,
-                                      { storeId: s.id, plan: p.plan },
-                                    ]
-                                  : targets.filter(
-                                      (t) =>
-                                        !(
-                                          t.storeId === s.id &&
-                                          t.plan === p.plan
-                                        ),
-                                    ),
-                              )
-                            }
-                          />
-                          <span>
-                            {p.name}
-                            <small>
-                              售价 {money(p.price_cents)} · 最多可减{' '}
-                              {money(p.price_cents - p.cost_cents)}
-                            </small>
-                          </span>
-                        </label>
-                      )
-                    })}
-                </WorkspaceDisclosure>
-              ))}
+              <div className="coupon-target-list" role="region" aria-label="选择适用商店和套餐" tabIndex={0}>
+                {shops.map((shop) => (
+                  <WorkspaceDisclosure
+                    key={shop.id}
+                    defaultOpen={shop.id === selected}
+                    title={shop.name}
+                  >
+                    <div className="coupon-target-grid">
+                      {prices.filter(price => price.store_id === shop.id).map(price => {
+                        const target = { storeId: shop.id, plan: price.plan }
+                        const matches = (entry: Target) => entry.storeId === target.storeId && entry.plan === target.plan
+                        return (
+                          <label className="store-check store-target" key={price.plan}>
+                            <Checkbox
+                              checked={targets.some(matches)}
+                              onCheckedChange={checked => setTargets(previous =>
+                                checked ? [...previous, target] : previous.filter(entry => !matches(entry)),
+                              )}
+                            />
+                            <span>
+                              {price.name}
+                              <small>售价 {money(price.price_cents)} · 最多可减 {money(price.price_cents - price.cost_cents)}</small>
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </WorkspaceDisclosure>
+                ))}
+              </div>
             </fieldset>
             {!validDates && (
               <p className="stores-error" role="alert">
                 请选择生效与失效时间，失效时间需晚于生效时间。
               </p>
             )}
-            {invalid && (
+            {belowCost && (
               <p className="stores-error">
                 所选商品优惠后低于拿货价，请调整金额或选择范围。
               </p>
             )}
-            <Button
-              type="submit"
-              disabled={
-                busy ||
-                !validDates ||
-                invalid ||
-                !targets.length ||
-                !Number.isFinite(toCents(amount)) ||
-                toCents(amount) <= 0
-              }
-            >
-              {busy ? '保存中…' : '保存优惠码'}
-            </Button>
+            <div className="store-actions coupon-actions">
+              <Button type="button" variant="outline" onClick={onClose}>取消</Button>
+              <Button type="submit" disabled={!canSave}>{busy ? '保存中…' : '保存优惠码'}</Button>
+            </div>
           </fieldset>
         </form>
       </DialogContent>

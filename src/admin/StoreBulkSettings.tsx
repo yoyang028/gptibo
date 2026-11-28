@@ -35,7 +35,7 @@ function BulkForm({ stores, onClose, onSaved }: { stores: Store[]; onClose: () =
       onSaved(); onClose()
     } catch (e) { setError(errorMessage(e)) } finally { setBusy(false) }
   }
-  return <Dialog open onOpenChange={v => { if (!v && !busy) onClose() }}><DialogContent className="store-editor motion-dialog"><DialogHeader><DialogTitle>统一修改店铺参数</DialogTitle><DialogDescription>先在一间店保存需要的参数，再选择同步字段和目标店铺。未勾选的参数保留各店原值。</DialogDescription></DialogHeader>
+  return <Dialog open onOpenChange={v => { if (!v && !busy) onClose() }}><DialogContent className="store-editor store-settings-dialog motion-dialog"><DialogHeader><DialogTitle>统一修改店铺参数</DialogTitle><DialogDescription>先在一间店保存需要的参数，再选择同步字段和目标店铺。未勾选的参数保留各店原值。</DialogDescription></DialogHeader>
     <form onSubmit={e => { e.preventDefault(); void save() }}><fieldset className="store-editor-fieldset" disabled={busy}>
       <WorkspaceSelect label="复制参数的店铺" value={sourceId} options={stores.map(s => ({ value: s.id, label: s.name }))} onValueChange={id => { setSourceId(id); setTargets(stores.filter(s => s.id !== id).map(s => s.id)) }} />
       <h3>目标店铺</h3><div className="store-editor-fields">{stores.filter(s => s.id !== sourceId).map(s => <label className="store-check" key={s.id}><input type="checkbox" checked={targets.includes(s.id)} onChange={() => setTargets(toggle(targets, s.id))} />{s.name}</label>)}</div>
