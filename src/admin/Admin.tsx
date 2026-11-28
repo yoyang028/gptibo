@@ -49,6 +49,7 @@ import '../App.css'
 import '../styles/motion.css'
 import './admin.css'
 
+const ADMIN_TITLE = '管理后台'
 const money = (cents: number) => new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(cents / 100)
 const time = (value: number | string) => new Date(typeof value === 'string' && !value.includes('T') ? value.replace(' ', 'T') + 'Z' : value).toLocaleString('zh-CN', { hour12: false })
 const productName = (plan: string) => emailProduct(plan) ? productNameForId(emailProduct(plan)!.productId) : productNameForPlan(plan)
@@ -266,7 +267,14 @@ export default function Admin() {
   const shopIdentity = independentPage ? hostIdentity : selectedIdentity || hostIdentity
   const shopName = shopIdentity?.shop.brandName || '商店'
   const storefrontUrl = shopIdentity?.storefront_url || '/'
-  useEffect(() => { document.title=shopName+' · 管理后台'; const icon=document.querySelector<HTMLLinkElement>('link[rel=icon]'); if(icon)icon.href=shopIdentity?.shop.logo||'/favicon.svg' }, [shopName,shopIdentity?.shop.logo])
+  const workspaceOpen = session?.authenticated && !accessRequired
+  const pageTitle = workspaceOpen ? ADMIN_TITLE : `${shopName} · ${ADMIN_TITLE}`
+  const favicon = workspaceOpen ? '/favicon.svg' : shopIdentity?.shop.logo || '/favicon.svg'
+  useEffect(() => {
+    document.title = pageTitle
+    const icon = document.querySelector<HTMLLinkElement>('link[rel=icon]')
+    if (icon) icon.href = favicon
+  }, [pageTitle, favicon])
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => { heading.current?.focus() }, [view, supplier])
   useEffect(() => applyAppearance(dark), [dark])
@@ -308,13 +316,13 @@ export default function Admin() {
   const ownerStores = session.ownerStores ?? []
   return <div className="admin-shell">
     <aside className="admin-sidebar">
-      <a className="admin-brand" href="/admin"><ShopBrand platform name={shopName} logo={shopIdentity?.shop.logo} /></a>
+      <a className="admin-brand" href="/admin"><ShopBrand platform name={ADMIN_TITLE} /></a>
       <span className="admin-workspace-label">管理工作台</span>
       <nav aria-label="后台导航">{views.filter(item => item.id !== 'members' || session.membershipEnabled).map(item => <Button variant="ghost" key={item.id} aria-current={view === item.id ? 'page' : undefined} onClick={() => setView(item.id)}><item.icon size={17} />{item.label}</Button>)}</nav>
       <div className="admin-sidebar-bottom"><span><ShieldCheck size={15} />{session.username}</span><Button variant="ghost" onClick={() => void logout()} disabled={busy}><LogOut size={15} />退出登录</Button></div>
     </aside>
     <div className="admin-workspace">
-      <header className="admin-topbar"><span>{shopName} / {current.label}{view === 'products' ? ' / ' + productLabel : ''}</span><div><a href={storefrontUrl} target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
+      <header className="admin-topbar"><span>{ADMIN_TITLE} / {current.label}{view === 'products' ? ' / ' + productLabel : ''}</span><div><a href={storefrontUrl} target="_blank" rel="noreferrer">查看前台 <ArrowUpRight size={14} /></a><Button variant="ghost" size="icon" aria-label={dark ? '切换亮色模式' : '切换暗色模式'} onClick={() => setDark(v => !v)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div></header>
       <main className="admin-main">
         <div className="admin-page-heading"><div><span>WORKSPACE</span><h1 ref={heading} tabIndex={-1}>{current.label}</h1><p>{view === 'products' ? '按上游服务商统一管理商品、规格、定价与 API 配置。' : view === 'orders' ? '从创建到完成，查看订单与处理记录。' : view === 'accounting' ? '筛选订单查看净利润，按清账周期保存统计。' : view === 'invoices' ? '管理代理开票申请与手续费收款，登记平台提交进度。' : view === 'customers' ? '按店铺查看客户资料与会员到期记录。' : view === 'contacts' ? '设置平台商店向客户展示的联系方式。' : view === 'integrations' ? '管理收款方式、平台手续费与通知服务。' : '基于服务器记录，了解服务与订单进展。'}</p></div><Button variant="outline" onClick={() => { setRevision(v => v + 1); void checkSession() }}><RefreshCw size={15} />刷新</Button></div>
         <TicketAlerts onOpen={() => navigate('partners', { partnerTab: 'tickets' })} onRefunds={openRefunds} />
