@@ -330,7 +330,7 @@ export default function Admin() {
         {view === 'products' && <ProductCatalog key={supplier} revision={revision} supplier={supplier} onSupplier={supplier => navigate('products', { supplier })} onSaved={() => setRevision(v => v + 1)} onOrder={openOrder} />}
         {view === 'security' && <SecurityPage revision={revision} />}
         {view === 'overview' && <OverviewPage revision={revision} onSelect={openOrder} onOrders={() => setView('orders')} onVisitors={() => setView('visitors')} />}
-        {view === 'my-shop' && <MyShop storeId={storeId} onStoreChange={selectStore} revision={revision} onSaved={() => { setRevision(v => v + 1); void checkSession() }} />}
+        {view === 'my-shop' && <MyShop storeId={storeId} onStoreChange={selectStore} onOrder={openOrder} revision={revision} onSaved={() => { setRevision(v => v + 1); void checkSession() }} />}
         {view === 'orders' && <OrdersPage revision={revision} stores={ownerStores} onSelect={openOrder} />}
         {view === 'refunds' && <RefundsPage key={refundEntry.visit} initialAudience={refundEntry.audience} revision={revision} stores={ownerStores} />}
         {view === 'interest' && <InterestPage revision={revision} />}

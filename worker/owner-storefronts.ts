@@ -1,6 +1,7 @@
 import { ApiError, body, json, type Env, type Statement } from './platform.ts'
 import { ownerShop, ownerShopRoutes, ownerSupplyPrices, ownerProductIds } from './owner-shop.ts'
 import { ownerStoreOffer } from './owner-store-prices.ts'
+import { ownerStoreOrderStats } from './owner-orders.ts'
 import { supportContactsSettings } from './support-contacts.ts'
 import { safeImage, hasControlCharacters } from '../shared/shop-products.ts'
 import { emailValue } from './partner-auth.ts'
@@ -71,7 +72,7 @@ export async function ownerStorefrontRoutes(request: Request, env: Env, url: URL
     for (const record of stores.filter(s => s.id !== 'platform')) {
       const [settings, rows, stats, visits] = await Promise.all([
         storedSettings(env, record.id), prices(env, record.id),
-        db.prepare("SELECT COUNT(*) order_count,COALESCE(SUM(CASE WHEN o.mode='live' AND o.payment_status='paid' AND o.status='success' AND o.refund_hold=0 AND COALESCE(r.supply_cents,o.cost_cents) IS NOT NULL THEN MAX(0,o.price_cents-MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))-COALESCE(r.supply_cents,o.cost_cents,0)) ELSE 0 END),0) earned_cents FROM orders o LEFT JOIN recharge_orders r ON r.order_id=o.id WHERE o.partner_id IS NULL AND o.owner_store_id=? AND o.is_test=0").bind(record.id).first<Record<string, number>>(),
+        ownerStoreOrderStats(env, record.id),
         visitorSummary(env, new URL('?days=30', url), record.id),
       ])
       base.stores.push({ ...record, name: settings.name, active: settings.active, settings, ...stats, visitors: visits.visitors })

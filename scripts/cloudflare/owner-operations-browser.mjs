@@ -41,9 +41,10 @@ try{
   const stores=(await api('/api/admin/my-shop/stores')).stores
   assert.deepEqual(stores.map(s=>[s.name,s.slot]),[['ScholAI',1],['AI星球',2],['备用商店',3]])
   assert.equal(stores[2].active,false)
-  for(const label of ['我的客户','订单收益','订单明细','退款与售后','清账与结算','访客统计','商店订单']){
+  for(const label of ['我的客户','订单收益','订单明细','退款与售后','清账与结算','访客统计']){
     assert.equal(await page.getByRole('tab',{name:label,exact:true}).count(),0)
   }
+  assert.equal(await page.getByRole('tab',{name:'商店订单',exact:true}).count(),1)
   record('Store order is ScholAI, AI星球, 备用商店 and the backup storefront remains closed')
   product=(await api('/api/admin/my-shop/products',{
     id:'',version:0,status:'published',pricePending:false,name:'客户自动归集验收 '+prefix,category:'工具服务',tagline:'本机模拟',description:'只用于本机自动验收，不产生真实付款。',

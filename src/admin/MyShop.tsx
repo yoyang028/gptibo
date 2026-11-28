@@ -5,10 +5,11 @@ import '@/partner/partner.css'
 import '@/partner/workspace.css'
 import '@/components/shop-products.css'
 
-export default function MyShop({ revision, storeId, onStoreChange, onSaved }: {
+export default function MyShop({ revision, storeId, onStoreChange, onOrder, onSaved }: {
   revision: number
   storeId: string
   onStoreChange: (id: string) => void
+  onOrder: (id: string, storeId: string) => void
   onSaved: () => void
 }) {
   return (
@@ -17,6 +18,7 @@ export default function MyShop({ revision, storeId, onStoreChange, onSaved }: {
         owner
         selectedStoreId={storeId}
         onStoreChange={onStoreChange}
+        onOrder={onOrder}
         prefix="/api/admin/my-shop"
         revision={revision}
         onSaved={onSaved}

@@ -4,6 +4,9 @@
   min-width: 0;
   padding-block: 16px;
 }
+.store-order-list {
+  min-width: 0;
+}
 .stores-heading,
 .store-current,
 .store-actions {

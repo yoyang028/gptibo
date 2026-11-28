@@ -11,6 +11,7 @@ import { supportContactsSettings } from './support-contacts.ts'
 import { synchronizeOwnerIdentity } from '../shared/owner-identity.ts'
 import { shopBrand, shopMailFrom } from './store-branding.ts'
 import { visitorSummary } from './visitors.ts'
+import { ownerStoreOrderStats } from './owner-orders.ts'
 import { productMap, authorizedProduct } from './recharge/client.ts'
 
 type OwnerSettings = {
@@ -171,11 +172,7 @@ export async function ownerShopRoutes(request: Request, env: Env, url: URL) {
           version: number
         }>(),
       supportContactsSettings(env),
-      db
-        .prepare(
-          "SELECT COUNT(*) order_count,COALESCE(SUM(CASE WHEN o.mode='live' AND o.payment_status='paid' AND o.status='success' AND o.refund_hold=0 AND COALESCE(r.supply_cents,o.cost_cents) IS NOT NULL THEN MAX(0,o.price_cents-MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))-COALESCE(r.supply_cents,o.cost_cents,0)) ELSE 0 END),0) earned_cents FROM orders o LEFT JOIN recharge_orders r ON r.order_id=o.id WHERE o.partner_id IS NULL AND o.owner_store_id='platform' AND o.is_test=0",
-        )
-        .first<{ order_count: number; earned_cents: number }>(),
+      ownerStoreOrderStats(env, 'platform'),
       visitorSummary(env, new URL('?days=30', url), 'platform'),
       ownerSupplyPrices(env),
       db

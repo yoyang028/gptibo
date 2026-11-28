@@ -35,6 +35,7 @@ import { publicAnnouncement } from './announcements.ts'
 import { rechargeReminderPreview } from './recharge-reminders.ts'
 import { adminGmailOrder, confirmGmailNotPurchased, fulfillGmail, gmailCheckoutEnabled, gmailProductsRoute, gmailSnapshot, gmailSnapshotStatement } from './account_supplier/service.ts'
 import { ownerPublicSettings, ownerShop } from './owner-shop.ts'
+import { ownerStoreOrderPage } from './owner-orders.ts'
 import { customOrderSummary, createCustomOrder, customBuyerAction, customAdminAction, shopProducts, shopProductRoutes, fulfillCustomOrder, customRetailFloor } from './shop-products.ts'
 import { customProductId, shopProductDisplayId } from '../shared/shop-products.ts'
 import { quefaPurchaseNote } from '../shared/quefa-gpt-products.ts'
@@ -118,9 +119,11 @@ export async function commerce(request: Request, env: Env): Promise<Response> {
         if (customMatch && method==='POST') {const o=await getOrder(env,customMatch[1]);if(!customProductId.test(o.plan)||o.partner_id)throw new ApiError('这不是自营发布商品订单。',409);return json({order:await customerOrder(env,await customAdminAction(request,env,o))})}
         const {page,offset}=pageParams(url)
         const storeId=url.searchParams.get('store'); if(storeId) await ownerShop(env,storeId)
-        const rows=(await env.INTEREST_DB.prepare("SELECT o.*,MAX(0,o.price_cents-COALESCE(r.supply_cents,o.cost_cents,0)-MAX(o.refunded_cents,COALESCE(r.refunded_cents,0))) profit_cents,COALESCE(r.supply_cents,o.cost_cents,0) cost_cents FROM orders o LEFT JOIN recharge_orders r ON r.order_id=o.id WHERE o.partner_id IS NULL AND o.is_test=0 AND (? IS NULL OR o.owner_store_id=?) ORDER BY o.created_at DESC LIMIT 20 OFFSET ?").bind(storeId,storeId,offset).all<Order>()).results
-        const records=await Promise.all(rows.map(async o=>{const p=await promotionFor(env,o.id,o);return {...o,...(p?{price_cents:p.cash_cents,profit_cents:o.payment_status==='paid'?p.cash_cents-p.supply_cents-o.refunded_cents:0}:{}),discount_cents:p?p.original_cents-p.cash_cents:(await env.INTEREST_DB.prepare('SELECT discount_cents FROM shop_coupon_uses WHERE order_id=?').bind(o.id).first<{discount_cents:number}>())?.discount_cents??0,custom:await customOrderSummary(env,o)}}))
-        return json({page,total:(await env.INTEREST_DB.prepare('SELECT COUNT(*) total FROM orders WHERE partner_id IS NULL AND is_test=0 AND (? IS NULL OR owner_store_id=?)').bind(storeId,storeId).first<{total:number}>())?.total??0,orders:records,rows:records})
+        const { rows, total } = await ownerStoreOrderPage(env, storeId, offset)
+        const records = await Promise.all(rows.map(async ({ sale_cents, known_cost_cents, ...order }) => ({
+          ...order, price_cents: sale_cents, cost_cents: known_cost_cents ?? 0, custom: await customOrderSummary(env, order),
+        })))
+        return json({ page, total, orders: records, rows: records })
       }
       if (path === '/api/admin/product-artwork') return await artworkRoute(request,env)
       if (path.startsWith('/api/admin/my-shop')) return await ownerStorefrontRoutes(request,env,url)

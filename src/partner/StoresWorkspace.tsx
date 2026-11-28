@@ -33,7 +33,7 @@ import {
 import { CopyButton } from '@/components/copy-button'
 import { api, errorMessage } from '@/lib/api'
 import { useResource } from '@/lib/use-resource'
-import { money, toCents, type Offer } from './model'
+import { date, money, toCents, type Offer } from './model'
 import { ProductManagement } from './ProductManagement'
 import { partnerStorefrontPath } from '../../shared/partner-link'
 import type { StorefrontProductId } from '../../shared/product-order'
@@ -164,9 +164,11 @@ export function StoresWorkspace({
   owner = false,
   selectedStoreId,
   onStoreChange,
+  onOrder,
 }: {
   selectedStoreId?: string
   onStoreChange?: (id: string) => void
+  onOrder?: (id: string, storeId: string) => void
   prefix?: string
   readOnly?: boolean
   adminManagement?: boolean
@@ -330,6 +332,14 @@ export function StoresWorkspace({
     </div>
   )
   const partnerStoreContext = !owner && storeContext
+  const ordersTab = {
+    value: 'orders',
+    label: '商店订单',
+    content: shop && <>
+      {partnerStoreContext}
+      <StoreOrderList key={shop.id} prefix={prefix} shop={shop.id} revision={revision + parentRevision} onOrder={onOrder} />
+    </>,
+  }
   const ownerOffers: Offer[] = owner && shop ? data.prices.filter(price => price.store_id === shop.id).map(price => ({
     ...price, id: price.plan, enabled: Number(price.enabled), renewal_only: 0,
   })) : []
@@ -463,6 +473,7 @@ export function StoresWorkspace({
                 </div>
               ),
             },
+            ...(owner ? [ordersTab] : []),
             {
               value: 'prices',
               label: '商品售价',
@@ -804,23 +815,9 @@ export function StoresWorkspace({
                 </div>
               ),
             },
-            {
-              value: 'orders',
-              label: '商店订单',
-              content: (
-                <>
-                  {partnerStoreContext}
-                  <StoreOrderList
-                    key={shop.id}
-                    prefix={prefix}
-                    shop={shop.id}
-                    revision={revision + parentRevision}
-                  />
-                </>
-              ),
-            },
+            ...(!owner ? [ordersTab] : []),
             ...(!owner && sortingContent ? [sortingTab] : []),
-          ].filter(item => (item.value !== 'orders' || !owner) && (item.value !== 'coupons' || data.capabilities?.coupons !== false) && (item.value !== 'domains' || data.capabilities?.customDomains !== false))}
+          ].filter(item => (item.value !== 'coupons' || data.capabilities?.coupons !== false) && (item.value !== 'domains' || data.capabilities?.customDomains !== false))}
         />
       )}
       <Dialog
@@ -1554,14 +1551,15 @@ function CouponEditor({
   )
 }
 
-function StoreOrderList({
-  prefix,
-  shop,
-  revision,
-}: {
+const storeOrderLabels: Record<string, string> = {
+  pending: '待付款', session: '待提交', processing: '处理中', success: '已完成', failed: '需处理', cancelled: '已关闭',
+}
+
+function StoreOrderList({ prefix, shop, revision, onOrder }: {
   prefix: string
   shop: string
   revision: number
+  onOrder?: (id: string, storeId: string) => void
 }) {
   const [page, setPage] = useState(1)
   const { data, error, loading } = useResource<{
@@ -1571,7 +1569,12 @@ function StoreOrderList({
       price_cents: number
       discount_cents: number
       coupon_code: string | null
+      coupon_cents?: number
+      newcomer_cents?: number
+      reward_cents?: number
       profit_cents: number | null
+      refund_cents?: number
+      payment_status?: string
       status: string
       created_at: number
     }[]
@@ -1581,72 +1584,74 @@ function StoreOrderList({
     revision,
   )
   return (
-    <div>
-      {error && <p role="alert">{error}</p>}
-      {loading && !data && <p>正在读取订单…</p>}
+    <div className="store-order-list">
+      {error && <p className="stores-error" role="alert">{error}</p>}
+      {loading && !data && <p role="status">正在读取订单…</p>}
       {data && (
         <>
-          <p>共 {data.total} 笔订单；收益按当前结算与退款状态核算。</p>
-          <div className="admin-table-scroll">
-            <Table className="admin-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>订单</TableHead>
-                  <TableHead>套餐</TableHead>
-                  <TableHead>成交价</TableHead>
-                  <TableHead>优惠</TableHead>
-                  <TableHead>差价收益</TableHead>
-                  <TableHead>状态</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.rows.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell>{o.id}</TableCell>
-                    <TableCell>{o.plan_name}</TableCell>
-                    <TableCell>{money(o.price_cents)}</TableCell>
-                    <TableCell>
-                      {o.coupon_code
-                        ? `${o.coupon_code} · ${money(o.discount_cents)}`
-                        : '—'}
-                    </TableCell>
-                    <TableCell>
-                      {o.profit_cents == null ? '—' : money(o.profit_cents)}
-                    </TableCell>
-                    <TableCell>
-                      {(
-                        {
-                          pending: '待付款',
-                          session: '待提交',
-                          processing: '处理中',
-                          success: '已完成',
-                          failed: '需处理',
-                          cancelled: '已关闭',
-                        } as Record<string, string>
-                      )[o.status] ?? o.status}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <div className="store-actions">
-            <Button
-              variant="outline"
-              disabled={page === 1 || loading}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              上一页
-            </Button>
-            <span>第 {page} 页</span>
-            <Button
-              variant="outline"
-              disabled={page * 20 >= data.total || loading}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              下一页
-            </Button>
-          </div>
+          <p className="stores-help">共 {data.total} 笔订单 · 差价收益按当前订单与退款状态核算</p>
+          {!data.total && <p className="stores-empty">当前店铺暂无订单。</p>}
+          {data.total > 0 && (
+            <>
+              <div className="admin-table-scroll">
+                <Table className="admin-table">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>订单</TableHead>
+                      <TableHead>套餐</TableHead>
+                      <TableHead>成交价</TableHead>
+                      <TableHead>优惠</TableHead>
+                      <TableHead>差价收益</TableHead>
+                      <TableHead>状态</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.rows.map(order => {
+                      const discount = order.coupon_code || (order.coupon_cents ? '优惠码' : order.newcomer_cents ? '受邀新人优惠' : order.reward_cents ? '邀新返券' : '优惠')
+                      const refund = order.refund_cents ?? 0
+                      const status = refund > 0 && refund >= order.price_cents ? '已退款' : storeOrderLabels[order.status] ?? order.status
+                      return (
+                        <TableRow key={order.id}>
+                          <TableCell>
+                            {onOrder ? <>
+                              <button type="button" className="admin-order-id" title={order.id} onClick={() => onOrder(order.id, shop)}>{order.id}</button>
+                              <small>{date(order.created_at)}</small>
+                            </> : order.id}
+                          </TableCell>
+                          <TableCell>{order.plan_name}</TableCell>
+                          <TableCell className="admin-numeric">
+                            {money(order.price_cents)}
+                            {onOrder && order.payment_status === 'unpaid' && <small>未付款</small>}
+                            {onOrder && order.payment_status === 'simulated' && <small>历史测试</small>}
+                          </TableCell>
+                          <TableCell>{order.discount_cents > 0 ? `${discount} · ${money(order.discount_cents)}` : '—'}</TableCell>
+                          <TableCell className="admin-numeric">{order.profit_cents == null ? '—' : money(order.profit_cents)}</TableCell>
+                          <TableCell>{status}{refund > 0 && <small>已退 {money(refund)}</small>}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="store-actions">
+                <Button
+                  variant="outline"
+                  disabled={page === 1 || loading}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  上一页
+                </Button>
+                <span>第 {page} 页</span>
+                <Button
+                  variant="outline"
+                  disabled={page * 20 >= data.total || loading}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  下一页
+                </Button>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

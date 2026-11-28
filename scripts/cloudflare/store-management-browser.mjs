@@ -89,7 +89,7 @@ try{
   assert.equal(await page.getByRole('link',{name:'预览当前店铺',exact:true}).getAttribute('href'),general.storefront_url)
   assert.equal(await adminBrand.innerText(),'管理后台')
   const storeTabs = page.getByRole('tablist',{name:'商店管理',exact:true})
-  assert.deepEqual(await storeTabs.getByRole('tab').allTextContents(), ['商店概览','商品售价','优惠码','商品上下架与排序','账号设置'])
+  assert.deepEqual(await storeTabs.getByRole('tab').allTextContents(), ['商店概览','商店订单','商品售价','优惠码','商品上下架与排序','账号设置'])
   assert.equal(await page.getByRole('combobox',{name:'当前店铺',exact:true}).count(),1)
   await storeTabs.getByRole('tab',{name:'优惠码',exact:true}).click()
   await page.getByRole('button',{name:'新增优惠码',exact:true}).click()

@@ -110,6 +110,53 @@ test('owner order overview and store filters share search, status and count rule
   assert.equal((await f.request('/api/admin/orders?scope=owner&store=missing',undefined,f.admin)).status,404)
 })
 
+test('store order rows and overview use the same scoped totals, coupon snapshot and confirmed difference', async t => {
+  const f = await customerFixture(); t.after(() => f.db.close())
+  const paid = { payment_status: 'paid', status: 'success' }
+  const regular = order(f.db, { ...paid, price_cents: 9725, cost_cents: 5000, refunded_cents: 300 })
+  const coupon = couponFixture(f.db)
+  coupon.use(regular)
+  f.db.prepare("UPDATE shop_coupons SET code='RENAMED',version=2 WHERE id=?").run(coupon.id)
+  const upstream = f.db.prepare(`INSERT INTO recharge_orders(order_id,account,product_code,collection_mode,create_body,payment_status,
+    supply_cents,refunded_cents,financial_hold,updated_at) VALUES(?,'fixture','plus','platform_collect','{}','paid',5100,400,?,?)`)
+  upstream.run(regular, 0, Date.now())
+  const held = order(f.db, { ...paid, cost_cents: 600 })
+  upstream.run(held, 1, Date.now())
+  const unpaid = order(f.db, { cost_cents: 600 })
+  const planet = order(f.db, { ...paid, owner_store_id: 'store-3', price_cents: 9500, member_promotion: 1, refunded_cents: 200 })
+  const now = Date.now()
+  const inviter = crypto.randomUUID()
+  f.db.prepare("INSERT INTO member_s3_user(id,name,email,emailVerified,createdAt,updatedAt) VALUES(?,'邀请人','fixture-inviter@example.test',1,?,?)").run(inviter, now, now)
+  f.db.prepare("INSERT INTO member_profiles(id,invite_code,created_at) VALUES(?,'FIXTURE-INVITER',?)").run(inviter, now)
+  f.db.prepare(`INSERT INTO member_order_promotions(order_id,store_id,referrer_id,invite_code,customer_key,original_cents,newcomer_cents,
+    cash_cents,supply_cents,supplier_snapshot,request_hash,review_status,procurement_status,allocation_status,created_at,updated_at)
+    VALUES(?,'store-3',?,'FIXTURE-INVITER','fixture',10000,500,9500,7500,'{}',?,'none','ready','captured',?,?)`).run(planet, inviter, crypto.randomUUID(), now, now)
+  const agent = await f.agent('测试渠道')
+  order(f.db, { ...paid, partner_id: agent.id, cost_cents: 600 })
+  order(f.db, { ...paid, is_test: 1, cost_cents: 600 })
+
+  const route = '/api/admin/my-shop/orders?store='
+  const main = await json(f, route + 'platform')
+  assert.equal(main.total, 3)
+  const mainRows = new Map<string, any>(main.rows.map((row: any) => [row.id, row]))
+  assert.deepEqual(new Set(mainRows.keys()), new Set([regular, held, unpaid]))
+  const row = mainRows.get(regular)
+  assert.deepEqual([row.price_cents, row.coupon_code, row.discount_cents, row.refund_cents, row.profit_cents], [9725, 'OWNER-CODE', 275, 400, 4225])
+  assert.equal(mainRows.get(held).profit_cents, null)
+  assert.equal(mainRows.get(unpaid).profit_cents, null)
+
+  const second = await json(f, route + 'store-3')
+  assert.equal(second.total, 1)
+  const [offer] = second.rows
+  assert.deepEqual([offer.id, offer.price_cents, offer.newcomer_cents, offer.discount_cents, offer.refund_cents, offer.profit_cents], [planet, 9500, 500, 500, 200, 1800])
+  assert.equal((await json(f, route + 'store-2')).total, 0)
+  assert.equal((await f.request(route + 'store-3', undefined, agent.cookie)).status, 401)
+  const { stores } = await json(f, '/api/admin/my-shop/stores')
+  assert.deepEqual(stores.map((store: any) => [store.id, store.order_count, store.earned_cents]), [
+    ['platform', 3, 4225], ['store-3', 1, 1800], ['store-2', 0, 0],
+  ])
+})
+
 test('presentation order changes without reassigning store IDs, domain ownership, prices or the reserved shop status',async t=>{
   const f=await customerFixture();t.after(()=>f.db.close())
   const stores=(await json(f,'/api/admin/my-shop/stores')).stores
